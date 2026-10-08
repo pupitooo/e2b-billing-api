@@ -16,7 +16,7 @@ CREATE TABLE usage_inbox (
     CHECK (processed_at IS NULL OR processing_error IS NULL)
 );
 
--- Pending, error-free input is the future worker's polling path.
+-- Supports polling unprocessed events without processing errors.
 CREATE INDEX usage_inbox_pending_idx
     ON usage_inbox (received_at, source, event_id)
     WHERE processed_at IS NULL AND processing_error IS NULL;
