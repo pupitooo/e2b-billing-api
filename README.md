@@ -80,8 +80,6 @@ make migration-status
 
 Migration [001_usage_inbox.sql](migrations/001_usage_inbox.sql) creates the inbox and its partial index for pending, error-free input. Migrations are explicitly invoked, so they also run against an existing Docker volume; restarting the container does not apply them.
 
-Migration [002_application_text_validation.sql](migrations/002_application_text_validation.sql) removes the earlier text checks from existing development databases. Blank text validation belongs to the planned Go ingestion API. Fresh databases use the updated initial schema; this follow-up also records version `2` when there are no old checks to remove.
-
 To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged. The initial migration creates the receipt schema; assignment customers, prices, credit, and invoices will be introduced with their own tables and seed data.
 
 ## Usage inbox contract
