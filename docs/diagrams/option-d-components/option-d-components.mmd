@@ -1,0 +1,51 @@
+---
+title: Option D - Kafka ingestion and separate accounting
+config:
+  layout: dagre
+  flowchart:
+    wrappingWidth: 300
+    nodeSpacing: 60
+    rankSpacing: 75
+---
+%% Proposed growth alternative; not selected or implemented.
+%% Broker acknowledgement means receipt, not a completed financial effect.
+%% The metering store atomically records raw identity, bucket state, and delta outbox.
+%% Delta publication retries preserve immutable IDs and content.
+%% Financial writes and delta deduplication commit together before consumer progress.
+%% Raw deduplication ownership must remain stable when partition keys change.
+%% Closing requires a coordinated boundary through raw ingestion, aggregation, and accounting.
+flowchart TB
+    platform["Sandbox platform - separate system<br/>Durable sender buffer<br/>Stable IDs + retry + status polling"]
+    ingress["Usage ingress - Go<br/>Validate stable events"]
+    raw[("Kafka raw usage<br/>Configured replicated receipt<br/>Retained input log")]
+    archiveConsumer["Raw archive consumer - Go"]
+    archive[("Object storage<br/>Raw usage history")]
+    aggregator["Aggregator + delta publisher - Go<br/>Deduplicate raw events<br/>Prepare stable accounting deltas"]
+    metering[("Metering state store<br/>Raw identities + buckets<br/>Delta outbox")]
+    deltas[("Kafka accounting deltas<br/>Customer-keyed partitions")]
+    worker["Accounting worker - Go<br/>Pricing + credit + monthly spend"]
+    accounting[("PostgreSQL accounting store<br/>Processed delta IDs + credit ledger<br/>Spend state + immutable invoices")]
+    api["Billing API - Go<br/>Commands, spend status, closing"]
+    callers["Customer / E2B administrator<br/>Closing operator"]
+
+    platform <-->|"HTTP / JSON<br/>POST /usage/batches<br/>Acknowledgement after broker receipt"| ingress
+    ingress -->|"Kafka producer protocol<br/>Stable raw events"| raw
+    raw -->|"Kafka consumer protocol"| archiveConsumer
+    archiveConsumer -->|"Object storage API<br/>Persist before archive progress"| archive
+    raw -->|"Kafka consumer protocol<br/>Replay with original identities"| aggregator
+    aggregator <-->|"State-store transaction<br/>Identity + buckets + outbox"| metering
+    aggregator -->|"Kafka producer protocol<br/>Stable immutable delta IDs"| deltas
+    deltas -->|"Kafka consumer protocol<br/>Progress after financial commit"| worker
+    worker -->|"SQL: customer lock + one commit<br/>Financial effect + processed delta ID"| accounting
+    api <-->|"SQL commands and queries<br/>Spend state + invoice snapshots"| accounting
+    platform <-->|"HTTP GET<br/>/customers/{id}/spend-status<br/>Processed status + lag"| api
+    callers <-->|"HTTP commands and queries<br/>Credit, prices, add-ons,<br/>limits, invoices, closing"| api
+
+    classDef platformNode fill:#e8f1fb,stroke:#31588a,color:#172b4d;
+    classDef goModule fill:#e9f7ee,stroke:#287d4e,color:#173b28;
+    classDef storedData fill:#edf0ff,stroke:#56649c,color:#24335c;
+    classDef actor fill:#f2f3f5,stroke:#6b7280,color:#253044;
+    class platform platformNode;
+    class ingress,archiveConsumer,aggregator,worker,api goModule;
+    class raw,archive,metering,deltas,accounting storedData;
+    class callers actor;
