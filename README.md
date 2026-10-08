@@ -4,6 +4,8 @@ Billing service for the E2B assignment, using Go and the option C architecture: 
 
 The current implementation provides PostgreSQL, versioned schema migrations, and the `usage_inbox` table. The Go API, platform simulator, accounting worker, and financial tables are planned next; there are no running HTTP endpoints yet.
 
+The [platform and billing contract](#platform-and-billing-contract) records proposed delivery responsibilities, acknowledgement rules, and agreements still to be made.
+
 ## Quick start
 
 Requirements: Docker with Docker Compose and Make. The PostgreSQL client runs inside the container.
@@ -96,6 +98,50 @@ Each row stores a measured increment over the half-open interval `[period_start,
 | `processing_error` | Error detail for unresolved input; cannot coexist with a completion timestamp. |
 
 The database rejects a repeated `(source, event_id)` and preserves the original row. The future ingestion API must compare the original content: an identical retry is accepted without another insert, while changed content for the same identity is a conflict. Customer existence and supported metric validation will be added with the corresponding application logic.
+
+## Platform and billing contract
+
+**Status: working draft for option C, updated 8 October 2026.** The delivery rules below are proposals for the future API and simulator, not implemented HTTP guarantees. Record subsequent agreements and unresolved decisions in this section. The assignment makes the platform a separately owned measurement source and requires billing to handle retries, delays, and platform unavailability; it does not specify recovery from destruction of the platform's only storage copy.
+
+### Responsibility boundary
+
+| Area | Owner | Proposed agreement |
+| --- | --- | --- |
+| Measurement and sender storage | Platform team | Generate measurements using the [usage schema](#usage-inbox-contract), assign stable identities, and durably store events before the first send. Keep unacknowledged events outside the sandbox lifecycle. |
+| Delivery and sender recovery | Platform team | Retry unacknowledged events with the same identity and content. Resume pending delivery after restart when sender storage survives. Changing batch boundaries does not change event identities. |
+| Durable receipt | Billing team | Validate and compare input, commit accepted measurements to PostgreSQL, and acknowledge only identities with a durable receipt. Preserve committed input even if the response is lost. |
+| Accounting after receipt | Billing team | Process each identity with a single financial effect. Financial writes and the inbox completion marker commit together under the customer lock; failed work remains recoverable. |
+| Interface and operational guarantees | Both teams | Agree on metric meaning, supported schema versions, response semantics, permitted delays, failure coverage, and overload behaviour. Neither team can infer the other team's durability guarantee from the transport alone. |
+
+Billing's responsibility begins at the durable inbox commit. The platform may release its sender copy only after receiving the matching acknowledgement. A lost response deliberately leaves overlapping copies; retry must not create another financial effect.
+
+Recovery of measurements lost on the platform before a billing commit, including destruction of the only sender disk, belongs to the platform team and is outside the billing MVP implementation. This boundary does not declare such loss acceptable: the platform's actual loss tolerance and failure coverage remain an explicit agreement. Billing cannot reconstruct measurements it never received without another authoritative source.
+
+The local billing setup covers restarts with the PostgreSQL volume intact. Replicated billing storage and recovery from destruction of that volume are not implemented.
+
+### Option C receipt and retry rules
+
+| Outcome | Meaning | Platform action |
+| --- | --- | --- |
+| `202` identifying accepted events | Those identities have committed inbox receipts. An identical retry acknowledges the original receipt without another insert or financial effect. Acceptance does not mean accounting has completed. | Record delivery for those identities, then allow sender cleanup. |
+| Timeout, lost connection, or transient unavailability | Durable receipt has not been confirmed to the sender; a timeout can also occur after a successful commit. | Keep the events and retry with the same identities and contents, using backoff and jitter. |
+| Existing identity with changed content | A conflict; the original measurement and its financial effect are preserved. | Retain the unresolved input for investigation; do not treat it as delivered or repeatedly submit changed content under that identity. |
+| Invalid or unsupported input | The affected input was not accepted. | Keep a visible failure record and resolve the contract or data error before resubmission. |
+
+The durable-receipt promise comes from this application contract, not from HTTP `202` alone. Exact response bodies and whole-batch versus per-event failure behaviour remain open below.
+
+Arrival order is not consumption-time order. The sender preserves the original measurement interval; billing resolves prices by consumption time and handles late usage without changing issued invoices. Credit changes and closing still require coordinated customer transactions.
+
+### Agreements still open
+
+| Decision | Owner | To specify |
+| --- | --- | --- |
+| Platform durability | Platform team | Failure coverage, allowed data loss, and recovery of the first measurement record; no unconditional loss-free guarantee is assumed. |
+| Outage and retry window | Both teams | Maximum expected unavailability, delay, automatic retry age, and matching deduplication retention. |
+| Sender capacity and overload | Platform team | Buffer capacity and the action when no durable write is possible; existing measurements must not be silently discarded. |
+| Batch acknowledgement | Both teams | Supported schema versions, batch limits, response format, and atomic versus partial acceptance. |
+| Spend-status freshness | Both teams | Polling interval and how pending input or unavailable status affects platform decisions. |
+| Broker history for growth | Both teams | Whether replay after successful accounting, independent consumers, and a raw archive are needed. Pending work must survive until durable processing or handoff; post-processing broker history is a separate choice. |
 
 ## Architecture and planned HTTP interfaces
 
