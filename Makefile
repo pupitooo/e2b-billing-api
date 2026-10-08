@@ -81,4 +81,8 @@ psql:
 	@$(COMPOSE) exec postgres sh -c 'exec psql -X --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"'
 
 test: migrate
-	@$(COMPOSE) exec -T postgres sh -c 'exec psql -X --set=ON_ERROR_STOP=on --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"' < tests/usage_inbox.sql
+	@set -eu; \
+	for test_zone in UTC Asia/Shanghai; do \
+	  printf 'Running usage inbox tests in %s\n' "$$test_zone"; \
+	  $(COMPOSE) exec -T postgres sh -c 'exec psql -X --set=ON_ERROR_STOP=on --set=test_timezone="$$1" --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"' sh "$$test_zone" < tests/usage_inbox.sql; \
+	done

@@ -168,4 +168,6 @@ make test
 
 The SQL tests verify required application-supplied versions and receipt times, preservation of those values, duplicate identity rejection, preservation of original units, independent source namespaces, large integer totals, non-negative units, valid intervals, and valid processing state transitions. They run in a transaction and roll back their fixtures.
 
+`make test` runs the suite in both UTC and `Asia/Shanghai`. Each run sets the session time zone inside the test transaction. Fixtures near a UTC month boundary verify that stored timestamps preserve the supplied instants even when their local dates fall in the next month. UTC billing month calculations will be tested with the future accounting implementation.
+
 Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.
