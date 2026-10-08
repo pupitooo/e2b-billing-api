@@ -80,7 +80,9 @@ make migration-status
 
 Migration [001_usage_inbox.sql](migrations/001_usage_inbox.sql) creates the inbox and its partial index for pending, error-free input. Migrations are explicitly invoked, so they also run against an existing Docker volume; restarting the container does not apply them.
 
-To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Keep applied migrations unchanged. The initial migration creates the receipt schema; assignment customers, prices, credit, and invoices will be introduced with their own tables and seed data.
+Migration [002_application_text_validation.sql](migrations/002_application_text_validation.sql) removes the earlier text checks from existing development databases. Blank text validation belongs to the planned Go ingestion API. Fresh databases use the updated initial schema; this follow-up also records version `2` when there are no old checks to remove.
+
+To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged. The initial migration creates the receipt schema; assignment customers, prices, credit, and invoices will be introduced with their own tables and seed data.
 
 ## Usage inbox contract
 
@@ -90,14 +92,14 @@ Each row stores a measured increment over the half-open interval `[period_start,
 | --- | --- |
 | `source`, `event_id` | Composite primary key identifying one measurement across retries. |
 | `schema_version` | Positive contract version; defaults to `1`. |
-| `customer_id`, `sandbox_id`, `metric` | Ownership and metric identifiers; blank values are rejected. |
+| `customer_id`, `sandbox_id`, `metric` | Required ownership and metric identifiers. |
 | `period_start`, `period_end` | Consumption interval as `timestamptz`; the end must follow the start. |
 | `units` | Non-negative `bigint` holding the measured increment. |
 | `received_at` | Database receipt time, assigned by default. |
 | `processed_at` | Completion timestamp; `NULL` for unprocessed input. |
 | `processing_error` | Error detail for unresolved input; cannot coexist with a completion timestamp. |
 
-The database rejects a repeated `(source, event_id)` and preserves the original row. The future ingestion API must compare the original content: an identical retry is accepted without another insert, while changed content for the same identity is a conflict. Customer existence and supported metric validation will be added with the corresponding application logic.
+The database rejects a repeated `(source, event_id)` and preserves the original row. The future ingestion API must compare the original content: an identical retry is accepted without another insert, while changed content for the same identity is a conflict. Blank text values, customer existence, and supported metrics will be validated by the application. The schema retains `NOT NULL`, the primary key, and checks for positive schema versions, non-negative units, valid intervals, and consistent processing state.
 
 ## Platform and billing contract
 
@@ -164,6 +166,6 @@ An accepted event may still await accounting. The worker will claim pending rows
 make test
 ```
 
-The SQL tests verify receipt defaults, duplicate identity rejection, preservation of original units, independent source namespaces, large integer totals, interval and identifier constraints, and valid processing state transitions. They run in a transaction and roll back their fixtures.
+The SQL tests verify receipt defaults, duplicate identity rejection, preservation of original units, independent source namespaces, large integer totals, non-negative units, valid intervals, and valid processing state transitions. They run in a transaction and roll back their fixtures.
 
 Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.

@@ -75,14 +75,6 @@ BEGIN
         NULL;
     END;
 
-    BEGIN
-        UPDATE usage_inbox SET metric = '   '
-        WHERE source = fixture_source AND event_id = fixture_id;
-        RAISE EXCEPTION 'A blank metric was accepted';
-    EXCEPTION WHEN check_violation THEN
-        NULL;
-    END;
-
     UPDATE usage_inbox SET processing_error = 'Price not found'
     WHERE source = fixture_source AND event_id = fixture_id;
 
