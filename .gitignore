@@ -13,6 +13,9 @@
 /agents.md
 /.vscode/
 
+# Local documentation generation tools.
+/tools/
+
 # Local configuration, dependencies, and operating-system files.
 .env
 .env.*

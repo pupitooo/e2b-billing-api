@@ -158,7 +158,7 @@ The highlighted inbox is implemented in this change. The other blocks describe t
 
 An accepted event may still await accounting. The worker will claim pending rows through SQL, apply prices and credit under the customer lock, and commit the financial effect with the inbox completion marker in one transaction. Monthly closing must wait for the customer's fixed boundary of accepted input before issuing an immutable invoice. The platform polls spend status independently of sending new usage.
 
-## Verification and diagram rendering
+## Verification
 
 ```sh
 make test
@@ -166,12 +166,4 @@ make test
 
 The SQL tests verify receipt defaults, duplicate identity rejection, preservation of original units, independent source namespaces, large integer totals, interval and identifier constraints, and valid processing state transitions. They run in a transaction and roll back their fixtures.
 
-To regenerate the PNG, install Node.js and Google Chrome, then run:
-
-```sh
-cd tools/diagrams
-npm ci
-npm run render
-```
-
-The renderer writes PNGs next to their native Mermaid sources. Diagram tooling is separate from the database startup and migration commands.
+Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.
