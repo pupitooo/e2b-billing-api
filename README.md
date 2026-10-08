@@ -89,13 +89,15 @@ Each row stores a measured increment over the half-open interval `[period_start,
 | Columns | Meaning |
 | --- | --- |
 | `source`, `event_id` | Composite primary key identifying one measurement across retries. |
-| `schema_version` | Positive contract version; defaults to `1`. |
+| `schema_version` | Positive contract version, supplied explicitly by the application. |
 | `customer_id`, `sandbox_id`, `metric` | Required ownership and metric identifiers. |
 | `period_start`, `period_end` | Consumption interval as `timestamptz`; the end must follow the start. |
 | `units` | Non-negative `bigint` holding the measured increment. |
-| `received_at` | Database receipt time, assigned by default. |
+| `received_at` | Billing receipt time as `timestamptz`, supplied explicitly by the application. |
 | `processed_at` | Completion timestamp; `NULL` for unprocessed input. |
 | `processing_error` | Error detail for unresolved input; cannot coexist with a completion timestamp. |
+
+Every required inbox field must be supplied explicitly; the table has no database defaults. The planned billing API will set `received_at` from its UTC clock on first receipt and preserve the original value on identical retries. Application timestamps and month calculations use UTC.
 
 The database rejects a repeated `(source, event_id)` and preserves the original row. The future ingestion API must compare the original content: an identical retry is accepted without another insert, while changed content for the same identity is a conflict. Blank text values, customer existence, and supported metrics will be validated by the application. The schema retains `NOT NULL`, the primary key, and checks for positive schema versions, non-negative units, valid intervals, and consistent processing state.
 
@@ -164,6 +166,6 @@ An accepted event may still await accounting. The worker will claim pending rows
 make test
 ```
 
-The SQL tests verify receipt defaults, duplicate identity rejection, preservation of original units, independent source namespaces, large integer totals, non-negative units, valid intervals, and valid processing state transitions. They run in a transaction and roll back their fixtures.
+The SQL tests verify required application-supplied versions and receipt times, preservation of those values, duplicate identity rejection, preservation of original units, independent source namespaces, large integer totals, non-negative units, valid intervals, and valid processing state transitions. They run in a transaction and roll back their fixtures.
 
 Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.
