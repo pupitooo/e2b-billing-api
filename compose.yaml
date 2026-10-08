@@ -1,0 +1,27 @@
+name: e2b-local
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_DB: e2b_billing
+      POSTGRES_USER: e2b
+      POSTGRES_PASSWORD: ${E2B_POSTGRES_PASSWORD:-e2b_local_dev}
+      TZ: UTC
+    command: ["postgres", "-c", "timezone=UTC", "-c", "log_timezone=UTC"]
+    ports:
+      - "127.0.0.1:${E2B_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./migrations:/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  postgres_data:
