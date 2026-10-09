@@ -44,8 +44,8 @@ services:
     ports:
       - "127.0.0.1:${E2B_DOCS_PORT:-8082}:8080"
     volumes:
-      - ./docs/api/openapi.yaml:/usr/share/caddy/openapi.yaml:ro
-      - ./docs/api/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Directory mounts preserve access when editors atomically replace files.
+      - ./docs/api:/etc/caddy:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 5s

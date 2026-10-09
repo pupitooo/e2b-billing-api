@@ -20,6 +20,12 @@
 		file_server
 	}
 
+	# Read the current specification through the directory bind mount.
+	handle /openapi.yaml {
+		root * /etc/caddy
+		file_server
+	}
+
 	handle /health {
 		respond "OK" 200
 	}
