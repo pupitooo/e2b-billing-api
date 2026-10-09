@@ -1,4 +1,4 @@
-FROM golang:1.27.2-alpine AS go-tools
+FROM public.ecr.aws/docker/library/golang:1.27.2-alpine AS go-tools
 
 WORKDIR /app
 COPY go.mod go.sum ./
