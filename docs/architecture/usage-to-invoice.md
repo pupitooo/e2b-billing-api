@@ -8,7 +8,7 @@ This document connects the explanation from the "Calculating in ticks" discussio
 
 [Editable Mermaid source](../diagrams/usage-to-invoice/usage-to-invoice.mmd).
 
-The schema below builds on [inbox migration 001](../../migrations/001_usage_inbox.sql) and [accounting migration 002](../../migrations/002_billing_model.sql), introduced in [PR #8](https://github.com/pupitooo/e2b-billing-api/pull/8). [Migration 003](../../migrations/003_assignment_seed.sql) contains the initial catalog. Migration 004 converts credit to exact ticks. Shared Go calculations for rating, credit, rounding, and UTC months are implemented in `internal/accounting`; the worker does not yet persist their results, and invoice tables remain proposed. The [financial rules](accounting-rules.md) describe the current contract.
+The schema below builds on [inbox migration 001](../../migrations/001_usage_inbox.sql) and [accounting migration 002](../../migrations/002_billing_model.sql), introduced in [PR #8](https://github.com/pupitooo/e2b-billing-api/pull/8). [Migration 003](../../migrations/003_assignment_seed.sql) contains the initial catalog. Migration 004 converts credit to exact ticks. Shared Go calculations are implemented in `internal/accounting`; the worker persists them transactionally through `internal/billing`. Migrations 005–007 add closures, operation history, durable cohorts, invoice snapshots, and frozen-group links. The [financial rules](accounting-rules.md) describe the current contract.
 
 The diagram follows the required `Credits → Rounding` order. On 9 October 2026 the user confirmed credit allocation in ticks before rounding. [Migration 004](../../migrations/004_exact_credit.sql) therefore converts balances, allocations, and the ledger to exact ticks. The earlier cent-based design is retained below as a historical alternative; the current policy uses exact ticks.
 
@@ -69,12 +69,12 @@ Cyberdyne consumes a million units before 15 October. The platform delivers them
 | Stage | Meaning in this example | Where the value is stored |
 | --- | --- | --- |
 | Usage events | 1_000 measurements of 1_000 units, each with an identity, sandbox, and interval. | 1_000 `usage_inbox` rows, each with `units = 1_000`. |
-| Rating | Assign the historical price of 5 cents per million to each measurement; one costs exactly 5_000 ticks. | The price is in `price_versions`; `accounting.Rate` performs the pure Go calculation; a future writer stores links in `usage_ratings`. |
+| Rating | Assign the historical price of 5 cents per million to each measurement; one costs exactly 5_000 ticks. | The price is in `price_versions`; `accounting.Rate` performs the pure Go calculation; the worker stores links in `usage_ratings`. |
 | RatedUsageGroup | One group containing a million units and an exact gross charge of 5 million ticks. | `rated_usage_groups.total_units = 1_000_000`, `exact_charge_ticks = 5_000_000`. |
 | Credits | No available credit and no debit. Gross and payable usage are equal. | The balance is in `customer_billing_state`; the group's allocation is zero. |
 | Rounding | The whole group produces 5 cents. | A calculation; the current schema contains the cent projection `booked_charge_cents`. |
-| InvoiceLine | An immutable "CPU usage for October 2026" line for 5 cents. | The proposed `invoice_lines` table does not exist yet. |
-| Invoice | Cyberdyne's October invoice, with lines totaling 5 cents. | The proposed `invoices` table does not exist yet. |
+| InvoiceLine | An immutable "CPU usage for October 2026" line for 5 cents. | Ordered lines in `invoices.snapshot`; frozen usage groups link through `invoiced_usage_groups`. |
+| Invoice | Cyberdyne's October invoice, with lines totaling 5 cents. | One immutable `invoices` row per customer/month, with a customer-specific number and buyer snapshot. |
 
 Invoice calculation can work with a few already rated groups instead of loading and pricing every small event again. Individual events remain traceable through their rating links, so aggregation preserves the origin of the charge.
 
@@ -104,7 +104,7 @@ The meaning of a unit belongs to the event contract. Supporting fractions of CPU
 
 ## 4. Rating: the cost under the historical price
 
-The pure Go calculation `accounting.Rate` performs rating; a future worker will connect it to transactional database writes. This schema has no separate `rating` table that calculates prices. The worker selects the price effective at consumption time and computes the exact gross charge.
+The pure Go calculation `accounting.Rate` performs rating; the worker commits its result with every financial projection and inbox completion. This schema has no separate `rating` table that calculates prices. The worker selects the price effective at consumption time and computes the exact gross charge.
 
 `price_versions` stores `price_version_id`, optional `customer_id`, `metric`, `price_per_million_cents`, and `effective_from`. `customer_id IS NULL` denotes a default price. The latest eligible customer-specific price takes precedence over the latest eligible default. Versions are append-only, so price changes preserve historical prices.
 
@@ -163,7 +163,7 @@ The SQL table is `rated_usage_groups`. Its unique key is:
 
 The discussion used the conceptual name `gross_charge_ticks` for a group's gross charge. **The actual group column is `exact_charge_ticks`.** The name `gross_charge_ticks` belongs to another table, `monthly_usage`, which sums the gross charges of all groups for a customer's original month.
 
-After 1_000 small measurements, a future worker could create:
+After 1_000 small measurements, the worker accumulates:
 
 ```text
 customer_id             cyberdyne
@@ -181,7 +181,7 @@ allocated_credit_ticks  0
 
 Grouping also enforces a correctness rule: adding sandbox or batch to the key would give each one its own rounding boundary, potentially changing the charge for the same total units. Omitting price or months would combine consumption with different accounting meanings.
 
-A group's identity cannot change, but its running totals remain mutable. The database does not yet freeze groups after invoicing. It also does not automatically prove that `total_units` equals the linked events' sum, ticks match the selected price, or cents follow the rounding rule. Future financial writers must maintain and verify these relationships.
+A group's identity cannot change; running totals can increase before issuance. Migration 007 freezes invoiced groups against updates and deletes. Database constraints do not automatically prove that units equal linked event sums, ticks match selected prices, or cents follow rounding. The transactional worker maintains these relationships, which integration tests verify.
 
 ## 6. Credits: gross charge, allocated credit, and balance
 
@@ -206,7 +206,7 @@ The current schema represents credit in three places:
 
 The ledger contains `credit_entry_id`, `customer_id`, a stable `operation_id`, optional `group_id`, a signed `amount_ticks`, and `recorded_at`. A grant is positive and has no group; a debit is negative and links to a group owned by the same customer. Zero debits are omitted. Records are append-only, and `(customer_id, operation_id)` is unique so retrying one operation cannot grant or consume credit twice.
 
-The balance is a fast ledger projection. Before allocating credit, a future writer must lock the `customer_billing_state` row and change the balance, ledger, group allocation, and `state_version` together. The database does not calculate the ledger sum or verify agreement between these projections automatically.
+The balance is a fast ledger projection. Before allocating credit, the worker locks the `customer_billing_state` row and changes the balance, ledger, group allocation, and `state_version` together. The database does not calculate the ledger sum or verify agreement between these projections automatically.
 
 ### Why the limit uses gross charges
 
@@ -256,7 +256,7 @@ round_half_up_cents(ticks) = floor((ticks + 500_000) / 1_000_000)
 | 1_000_000 ticks = 1 cent | 1 cent |
 | 617_283_945 ticks = 617.283_945 cents | 617 cents = USD 6.17 |
 
-The current `InvoiceAmounts` rounds the group's cumulative gross and net amounts. The credit line is the negative difference between those cent values, rather than an independently rounded exact debit. Line totals therefore equal rounded net usage. With 1 cent gross and exactly 0.5 cent of credit, net usage of 0.5 cent rounds to 1 cent; displayed credit is 0 cents, while the ledger retains an exact 500_000-tick debit. A future invoice snapshot must also retain those exact amounts for audit.
+The current `InvoiceAmounts` rounds the group's cumulative gross and net amounts. The credit line is the negative difference between those cent values, rather than an independently rounded exact debit. Line totals therefore equal rounded net usage. With 1 cent gross and exactly 0.5 cent of credit, net usage of 0.5 cent rounds to 1 cent; displayed credit is 0 cents, while the ledger retains an exact 500_000-tick debit. The issued invoice snapshot retains those exact amounts for audit.
 
 ### Historical design before migration 004: book only each new cent increment
 
@@ -292,17 +292,13 @@ The invoice then snapshots already booked gross cents and allocated credit. Clos
 
 `RatedUsageGroup` retains the rated accounting intermediate. `InvoiceLine` preserves what appeared on a specific issued invoice. A group can grow during an open period; an issued line must retain its values when later measurements, prices, or addresses change.
 
-The `invoice_lines` table does not exist yet. The [logical ERD](../diagrams/data-model/data-model.mmd) proposes:
-
-| Proposed column | Meaning |
-| --- | --- |
-| `invoice_line_id`, `invoice_id` | The line identity and its invoice reference. |
-| `group_id` | An optional reference for a usage or credit line. |
-| `subscription_id` | An optional reference for an add-on line. |
-| `description_snapshot` | An immutable description, including the historical rate or original month where needed. |
-| `amount_cents` | The final signed amount: usage and add-ons are positive; allocated credit is negative. |
-
-Future closing must also preserve the required quantity, metric, price, months, and credit details. Issued amounts and descriptions cannot be reconstructed later from mutable groups or catalogs. Snapshot the required data and close the groups in the same transaction.
+The logical ERD proposed separate relational invoice lines. The implementation stores
+ordered lines inside immutable `invoices.snapshot`, with `invoiced_usage_groups` linking
+back to frozen accounting groups. Each usage line snapshots metric, original month,
+price version, units, exact gross/credit ticks, description, and signed cent presentation.
+Add-on lines retain subscription identity and purchased whole-cent price. The snapshot
+and group freeze commit together; later group, catalog, or address changes cannot alter
+an issued document. The public schema is in [OpenAPI](../api/openapi.yaml).
 
 The current policy derives usage and credit lines with `InvoiceAmounts(exact_charge_ticks, allocated_credit_ticks)`. Credit can be presented as a combined line by summing already calculated cent differences, but its origin and exact ticks must remain traceable. Combining lines cannot introduce another rounding step.
 
@@ -318,15 +314,18 @@ invoice line -> frozen rated group -> usage_ratings -> usage_inbox
 
 ## 9. Invoice: an immutable monthly document
 
-The `invoices` table also does not exist yet. The proposal contains `invoice_id`, `customer_id`, `billing_month_utc`, `customer_sequence`, `address_snapshot`, `total_cents`, and `issued_at_utc`. Lines reference this invoice.
-
-The future schema must enforce one invoice per `(customer_id, billing_month_utc)` and a unique `(customer_id, customer_sequence)`. Numbering is per customer: `ACME-0001`, `ACME-0002`; Cyberdyne's numbers do not advance Acme's sequence. The conceptual `last_invoice_number` from the ERD is absent from the current `customer_billing_state`, so numbering still needs implementation.
+The `invoices` table stores customer, billing month, number, total cents, and the full
+immutable buyer/financial JSON snapshot. Its primary key permits one invoice per
+`(customer_id, billing_month)` and its unique constraint protects per-customer numbers.
+`customer_billing_state.next_invoice_number` starts at one and advances atomically
+under the account lock. Numbering is per customer: `ACME-0001`, `ACME-0002`;
+Cyberdyne's sequence is independent. Retrying a close returns the original snapshot.
 
 `total_cents` is the exact integer sum of signed lines. The address comes from `customers` at issuance and is stored in a snapshot. Later customer changes must preserve the issued document.
 
 ### Example: complete assignment invoices
 
-Pure Go calculation tests verify the following results. The future runtime and invoice writer must also reproduce them through public APIs:
+Pure Go, database, and [public API simulator tests](../simulator/billing-scenarios.md) verify these literal results:
 
 | Line | ACME-0001, October | ACME-0002, November | CYBERDYNE-0001, October |
 | --- | --- | --- | --- |
@@ -379,4 +378,4 @@ In one transaction, the worker must assign the event, update the group and origi
 
 Unique `usage_ratings` links are a necessary safeguard, but do not alone prove exactly-once financial effects. Writes must share a transaction and customer lock. On error, input remains traceable; missing customers, metrics, or prices must fail visibly rather than create free consumption.
 
-The confirmed policy allocates sub-cent ticks before rounding. Pure Go tests verify the amounts above, half-cent boundaries, split usage, price and UTC boundaries, later grants, late routing, and overflow. The worker still needs transactional integration and verification of retries, concurrency, and process failure. Closing additionally needs immutable snapshots, idempotent numbering, and agreement between line totals and invoice totals. These are remaining implementation tasks; the document and diagram distinguish them from implemented behavior.
+The confirmed policy allocates sub-cent ticks before rounding. Pure Go tests verify the amounts above, half-cent boundaries, split usage, price and UTC boundaries, later grants, late routing, and overflow. Integration tests verify atomic rollback on a late write failure, concurrent workers and closing, immutable snapshots, idempotent numbering, and agreement between line sums and totals. Public simulator workflows verify unavailable HTTP endpoints and restart after a lost committed response. Operators invoke monthly closing explicitly in increasing month order; an automatic scheduler and high-volume historical-price validation remain extensions.

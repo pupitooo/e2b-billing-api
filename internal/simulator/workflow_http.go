@@ -41,43 +41,57 @@ func (r *workflowRunner) runStep(ctx context.Context, step WorkflowStep) error {
 			return err
 		}
 		r.state.Attempts++
-		response, requestError := r.request(ctx, step)
-		retryable := requestError != nil || (response.status != step.Want.Status && (response.status == 408 || response.status == 429 || response.status >= 500))
-		err := requestError
-		if err == nil {
-			err = matchWorkflowResponse(response, step.Want, r.state.Captures)
-		}
+		response, retryable, err := r.observeStep(ctx, step)
 		if err == nil {
 			return r.completeStep(step, response.body)
 		}
-		if step.Await && response.status == step.Want.Status && !hasUnexpectedProcessingError(response.body, step.Want.Body) {
-			retryable = true
-		}
-		r.state.LastError = fmt.Sprintf("%s: %v", step.Name, err)
-		if saveError := r.store.saveJSON(r.state); saveError != nil {
+		if saveError := r.recordStepFailure(step, attempt, err); saveError != nil {
 			return saveError
 		}
-		fmt.Fprintf(r.options.Output, "Step %q attempt %d: %v\n", step.Name, attempt, err)
 		if !retryable {
 			return fmt.Errorf("step %s: %w", step.Name, err)
 		}
 		if r.options.MaxAttempts > 0 && attempt == r.options.MaxAttempts {
 			break
 		}
-		wait := delay
-		if response.retryDelay > wait {
-			wait = response.retryDelay
-		}
-		if err := (&Sender{}).sleep(ctx, wait); err != nil {
+		if err := (&Sender{}).sleep(ctx, max(delay, response.retryDelay)); err != nil {
 			return err
 		}
-		if delay >= r.options.RetryMax/2 {
-			delay = r.options.RetryMax
-		} else {
-			delay *= 2
-		}
+		delay = workflowBackoff(delay, r.options.RetryMax)
 	}
 	return fmt.Errorf("step %s exceeded attempt limit: %s", step.Name, r.state.LastError)
+}
+
+func (r *workflowRunner) observeStep(ctx context.Context, step WorkflowStep) (workflowResponse, bool, error) {
+	response, err := r.request(ctx, step)
+	retryable := err != nil || transientWorkflowStatus(response.status, step.Want.Status)
+	if err == nil {
+		err = matchWorkflowResponse(response, step.Want, r.state.Captures)
+	}
+	if step.Await && response.status == step.Want.Status && !hasUnexpectedProcessingError(response.body, step.Want.Body) {
+		retryable = true
+	}
+	return response, retryable, err
+}
+
+func transientWorkflowStatus(actual, expected int) bool {
+	return actual != expected && (actual == 408 || actual == 429 || actual >= 500)
+}
+
+func (r *workflowRunner) recordStepFailure(step WorkflowStep, attempt int, err error) error {
+	r.state.LastError = fmt.Sprintf("%s: %v", step.Name, err)
+	if saveError := r.store.saveJSON(r.state); saveError != nil {
+		return saveError
+	}
+	fmt.Fprintf(r.options.Output, "Step %q attempt %d: %v\n", step.Name, attempt, err)
+	return nil
+}
+
+func workflowBackoff(delay, maximum time.Duration) time.Duration {
+	if delay >= maximum/2 {
+		return maximum
+	}
+	return delay * 2
 }
 
 func (r *workflowRunner) request(ctx context.Context, step WorkflowStep) (workflowResponse, error) {
@@ -102,16 +116,20 @@ func (r *workflowRunner) request(ctx context.Context, step WorkflowStep) (workfl
 	}
 	result := workflowResponse{status: response.StatusCode, body: data, retryDelay: retryAfter(response.Header.Get("Retry-After"))}
 	if r.shouldLoseResponse(step, response.StatusCode) {
-		r.state.LostSteps[r.state.NextStep] = true
-		if r.options.LoseResponse {
-			r.state.LostResponseInjected = true
-		}
-		if err := r.store.saveJSON(r.state); err != nil {
-			return result, err
-		}
-		return result, fmt.Errorf("injected lost committed response; retrying unchanged identity/content")
+		return result, r.injectResponseLoss()
 	}
 	return result, nil
+}
+
+func (r *workflowRunner) injectResponseLoss() error {
+	r.state.LostSteps[r.state.NextStep] = true
+	if r.options.LoseResponse {
+		r.state.LostResponseInjected = true
+	}
+	if err := r.store.saveJSON(r.state); err != nil {
+		return err
+	}
+	return fmt.Errorf("injected lost committed response; retrying unchanged identity/content")
 }
 
 func (r *workflowRunner) shouldLoseResponse(step WorkflowStep, status int) bool {

@@ -144,18 +144,32 @@ func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounti
 	if err := recordCreditDebit(ctx, tx, e, group, allocation.Used); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO monthly_usage VALUES ($1,$2,$3::numeric)
+	if err := updateMonthlyUsage(ctx, tx, e.CustomerID, rating.UsageMonth, rating.Charge); err != nil {
+		return err
+	}
+	if err := updateAccountCredit(ctx, tx, e.CustomerID, allocation.Remaining); err != nil {
+		return err
+	}
+	return completeReceipt(ctx, tx, e)
+}
+
+func updateMonthlyUsage(ctx context.Context, tx pgx.Tx, customer string, month time.Time, charge accounting.Amount) error {
+	_, err := tx.Exec(ctx, `INSERT INTO monthly_usage VALUES ($1,$2,$3::numeric)
         ON CONFLICT (customer_id,usage_month) DO UPDATE
         SET gross_charge_ticks=monthly_usage.gross_charge_ticks+EXCLUDED.gross_charge_ticks`,
-		e.CustomerID, rating.UsageMonth, rating.Charge.Ticks().String()); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric,
-        state_version=state_version+1 WHERE customer_id=$1`, e.CustomerID, allocation.Remaining.Ticks().String()); err != nil {
-		return err
-	}
-	_, err = tx.Exec(ctx, `UPDATE usage_inbox SET processed_at=$3 WHERE source=$1 AND event_id=$2`,
-		e.Source, e.EventID, time.Now().UTC().Truncate(time.Microsecond))
+		customer, month, charge.Ticks().String())
+	return err
+}
+
+func updateAccountCredit(ctx context.Context, tx pgx.Tx, customer string, remaining accounting.Amount) error {
+	_, err := tx.Exec(ctx, `UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric,
+		state_version=state_version+1 WHERE customer_id=$1`, customer, remaining.Ticks().String())
+	return err
+}
+
+func completeReceipt(ctx context.Context, tx pgx.Tx, event usage.Event) error {
+	_, err := tx.Exec(ctx, `UPDATE usage_inbox SET processed_at=$3 WHERE source=$1 AND event_id=$2`,
+		event.Source, event.EventID, time.Now().UTC().Truncate(time.Microsecond))
 	return err
 }
 

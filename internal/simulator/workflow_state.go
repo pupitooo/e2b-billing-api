@@ -39,8 +39,18 @@ func openWorkflowState(store *Store, options WorkflowOptions) (*workflowState, e
 		return nil, fmt.Errorf("invalid workflow state; retain it for investigation: %w", err)
 	}
 	state = loaded
-	if state.Version != 1 || state.Name != options.Plan.Name || state.Fingerprint != fingerprint || state.Source != options.Source || state.NextStep < 0 || state.NextStep > len(options.Plan.Steps) || state.StepCount != len(options.Plan.Steps) || state.Captures == nil || state.LostSteps == nil {
+	if !state.matchesPlan(options, fingerprint) || !state.validCheckpoint() {
 		return nil, fmt.Errorf("workflow differs from saved state; retain its original plan, source, and file")
 	}
 	return state, nil
+}
+
+func (s *workflowState) matchesPlan(options WorkflowOptions, fingerprint string) bool {
+	return s.Name == options.Plan.Name && s.Fingerprint == fingerprint &&
+		s.Source == options.Source && s.StepCount == len(options.Plan.Steps)
+}
+
+func (s *workflowState) validCheckpoint() bool {
+	return s.Version == 1 && s.NextStep >= 0 && s.NextStep <= s.StepCount &&
+		s.Captures != nil && s.LostSteps != nil
 }

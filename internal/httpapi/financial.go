@@ -5,12 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"mime"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"e2b/billing-api/internal/billing"
 )
@@ -18,10 +15,21 @@ import (
 // commandJSON preserves the usage transport's exact-field and Unicode rules.
 // Every declared command field is explicit; only named nullable fields allow null.
 func commandJSON(w http.ResponseWriter, r *http.Request, target any, fields []string, nullable ...string) bool {
-	media, parameters, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" || (parameters["charset"] != "" && !strings.EqualFold(parameters["charset"], "utf-8")) || (r.Header.Get("Content-Encoding") != "" && !strings.EqualFold(r.Header.Get("Content-Encoding"), "identity")) {
-		writeRequestError(w, &requestError{status: 415, Code: "unsupported_media_type", Message: "Use uncompressed application/json with UTF-8 encoding."})
+	body, err := readCommandBody(w, r)
+	if err != nil {
+		writeRequestError(w, err)
 		return false
+	}
+	if err := parseCommandJSON(body, target, fields, nullable); err != nil {
+		writeRequestError(w, err)
+		return false
+	}
+	return true
+}
+
+func readCommandBody(w http.ResponseWriter, r *http.Request) ([]byte, *requestError) {
+	if !usesJSONUTF8(r) || !usesIdentityEncoding(r) {
+		return nil, &requestError{status: 415, Code: "unsupported_media_type", Message: "Use uncompressed application/json with UTF-8 encoding."}
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 65_536))
 	if err != nil {
@@ -30,30 +38,29 @@ func commandJSON(w http.ResponseWriter, r *http.Request, target any, fields []st
 		if errors.As(err, &size) {
 			status = 413
 		}
-		writeRequestError(w, &requestError{status: status, Code: "invalid_json", Message: "Cannot read command body; the maximum is 65536 bytes."})
-		return false
+		return nil, &requestError{status: status, Code: "invalid_json", Message: "Cannot read command body; the maximum is 65536 bytes."}
 	}
-	if !utf8.Valid(body) || !json.Valid(body) || hasUnpairedSurrogate(body) {
-		writeRequestError(w, invalidJSON("Use one valid Unicode JSON document.", ""))
-		return false
+	return body, nil
+}
+
+func parseCommandJSON(body []byte, target any, fields, nullable []string) *requestError {
+	if !validUnicodeJSON(body) {
+		return invalidJSON("Use one valid Unicode JSON document.", "")
 	}
 	values, err := decodeObject(body, fields)
 	if err != nil {
-		writeRequestError(w, invalidJSON(err.Error(), ""))
-		return false
+		return invalidJSON(err.Error(), "")
 	}
 	for _, field := range fields {
 		raw, present := values[field]
 		if !present || (isNull(raw) && !slices.Contains(nullable, field)) {
-			writeRequestError(w, &requestError{status: 422, Code: "invalid_command", Message: "The field must be explicitly supplied.", Field: field})
-			return false
+			return &requestError{status: 422, Code: "invalid_command", Message: "The field must be explicitly supplied.", Field: field}
 		}
 	}
 	if err := json.Unmarshal(body, target); err != nil {
-		writeRequestError(w, invalidJSON("Command field types or integer ranges are invalid.", ""))
-		return false
+		return invalidJSON("Command field types or integer ranges are invalid.", "")
 	}
-	return true
+	return nil
 }
 
 func commandTime(value, field string) (time.Time, error) {
