@@ -179,7 +179,9 @@ Database tests apply pending migrations, check schema integrity in UTC and `Asia
 
 ## Usage inbox contract
 
-Each row stores a measured increment over the half-open interval `[period_start, period_end)`, rather than a cumulative counter or a monetary charge.
+Each row stores a measured increment over the half-open interval `[period_start, period_end)`, rather than a cumulative counter or a monetary charge.[^half-open-interval]
+
+[^half-open-interval]: Including the start and excluding the end gives adjacent intervals an unambiguous boundary: `[10:00, 10:05)` and `[10:05, 10:10)` meet without overlapping, and exactly `10:05` belongs only to the second interval.
 
 | Columns | Meaning |
 | --- | --- |
