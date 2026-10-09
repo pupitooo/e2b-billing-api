@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pupitooo/e2b-billing-api/internal/httpapi"
+	"e2b/billing-api/internal/httpapi"
 )
 
 func main() {
