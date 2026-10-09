@@ -13,6 +13,7 @@
 !/docs/simulator/
 /docs/simulator/*
 !/docs/simulator/custom-scenario.json
+!/docs/simulator/scenario-style.md
 !/docs/brainstorming/
 /docs/brainstorming/*
 !/docs/brainstorming/architecture-options.md
