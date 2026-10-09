@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
       - name: Start PostgreSQL
         run: make up SERVICE=postgres
-      - name: Run SQL, Go package, and HTTP integration tests
+      - name: Run SQL, Go package, HTTP, and worker lifecycle tests
         run: make test
       - name: Show service logs on failure
         if: failure()

@@ -1,6 +1,6 @@
 # E2B Billing API
 
-Billing service for the E2B assignment, built with Go and PostgreSQL. It provides an HTTP API, versioned database migrations, a usage inbox, and an accounting model with the assignment's initial catalog.
+Billing service for the E2B assignment, built with Go and PostgreSQL. It provides an HTTP API, an independently managed worker runtime, versioned database migrations, a usage inbox, and an accounting model with the assignment's initial catalog.
 
 The project uses the selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected). The [architecture comparison](docs/brainstorming/architecture-options.md) records the design rationale.
 
@@ -139,7 +139,7 @@ Start all implemented services:
 make up
 ```
 
-`make up` starts PostgreSQL, the API, and Scalar documentation and waits for readiness. It does not apply database migrations. The API verifies its database connection on startup; ingestion returns `503` until the inbox migration has been applied.
+`make up` starts PostgreSQL, the API, worker, and Scalar documentation and waits for readiness. It does not apply database migrations. The API verifies its database connection on startup; ingestion returns `503` until the inbox migration has been applied. The worker lifecycle scaffold runs independently of the API and PostgreSQL.
 
 `make up`, `make docs`, `make restart`, and `make ps` print the actual browser addresses of running HTTP services. Use `make links` to show them again.
 
@@ -149,13 +149,17 @@ make up
 | `make up SERVICE=postgres` | Start PostgreSQL and wait for readiness. |
 | `make up SERVICE=api` | Build and start the Go API and wait for readiness. |
 | `make docs` | Start Scalar documentation and the API for browser requests. |
+| `make up SERVICE=worker` | Build and start only the standalone worker runtime. |
+| `make stop SERVICE=worker` | Stop the worker while the API continues running. |
+| `make restart SERVICE=worker` | Restart the worker without restarting the API. |
+| `make logs SERVICE=worker` | Inspect worker startup, failures, and shutdown. |
 | `make ps` | Show running and stopped services. |
 | `make links` | Show browser links for running HTTP services. |
 | `make logs SERVICE=postgres` | Show the last 100 PostgreSQL log lines. |
 | `make restart SERVICE=postgres` | Restart PostgreSQL and wait for readiness. |
 | `make stop` | Stop services while retaining containers and data. |
 | `make down` | Remove containers and the network while retaining database data. |
-| `make services` | List available service names: `api`, `docs`, and `postgres`. |
+| `make services` | List available service names: `api`, `docs`, `worker`, and `postgres`. |
 | `make help` | Show all available commands. |
 
 PostgreSQL uses the pinned `postgres:18.6-alpine` image, UTC timestamps, and a named volume. Its port is published on `127.0.0.1`. Database data survives `make stop`, `make restart`, and `make down`.
@@ -259,6 +263,66 @@ with browser requests forwarded through the same-origin `/api` proxy in
 [docs/api/Caddyfile](docs/api/Caddyfile). Refresh the page after editing the
 mounted specification. Every interface change must update this specification;
 implemented ingestion and asynchronous accounting semantics are described there.
+
+## Standalone worker
+
+The worker is a separate Go process and Compose service, with its own entry point
+in [cmd/billing-worker/main.go](cmd/billing-worker/main.go). It shares the source
+repository and container image contents with the API, but has its own process,
+restart policy, resource limits, and logs. It has no published port and does not
+require a running API. No cron or API request starts the processing loop.
+
+```sh
+make up SERVICE=worker
+make logs SERVICE=worker
+make restart SERVICE=worker
+make stop SERVICE=worker
+```
+
+**Current behavior: lifecycle scaffold.** Accounting is explicitly disabled in
+the startup log. The worker starts an idle loop and publishes a heartbeat; it
+does not connect to PostgreSQL, claim inbox rows, charge customers, or change
+`processed_at` or `processing_error`. This lets its deployment be reviewed and
+tested independently of the ongoing usage-ingestion implementation. The batch
+processor will be connected only when financial writes and the completion marker
+can commit in one transaction. No database migration is added by this change.
+
+The [worker loop](internal/worker/worker.go) runs one batch at a time, starts
+immediately, and continues without an idle delay when a processor reports more
+work. Idle results and errors wait for the configured polling interval. Each
+batch receives a deadline. SIGINT and SIGTERM cancel the loop and in-flight work;
+the executable exits unsuccessfully if work ignores cancellation beyond the
+shutdown timeout. It does not start a replacement loop in that process.
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `E2B_WORKER_POLL_INTERVAL` | `1s` | Delay after an idle or failed iteration. |
+| `E2B_WORKER_BATCH_TIMEOUT` | `5s` | Cooperative deadline for one processing batch. |
+| `E2B_WORKER_SHUTDOWN_TIMEOUT` | `5s` | Maximum wait for the loop after a termination signal. |
+| `E2B_WORKER_HEARTBEAT_MAX_AGE` | `15s` | Maximum allowed heartbeat age; must exceed batch timeout plus polling interval. |
+| `E2B_WORKER_STOP_GRACE_PERIOD` | `10s` | Compose termination grace period; keep it longer than the shutdown timeout. |
+
+Copy the settings from [.env.example](.env.example) to `.env`, then run
+`make up SERVICE=worker` to apply changes. The local worker has a 0.5 CPU and
+128 MiB memory limit. Production limits and replica counts require workload
+measurement; this scaffold establishes no processing-capacity guarantee.
+
+Compose uses `billing-worker healthcheck` to check the loop's heartbeat in
+`/tmp/billing-worker-heartbeat`. The file is replaced atomically and removed on a
+clean exit. When running the binary outside Compose, `E2B_WORKER_HEARTBEAT_FILE`
+can select a separate file for each process. Health checks report loop activity,
+including idle and error iterations; they do not confirm financial processing or
+database readiness. A stuck processor eventually makes the heartbeat stale.
+Docker's restart policy restarts an exited container; an unhealthy status alone
+does not trigger a restart. Production orchestration should monitor loop health
+and, once accounting exists, backlog size, oldest pending input, and failures.
+
+API and worker resource lifecycles are independent. Their future PostgreSQL
+connections still share the database, so accounting must use bounded connection
+pools, short transactions, and controlled concurrency. Restarting the worker
+will leave committed inbox input available for later processing. Multiple worker
+replicas will require safe claiming and customer locking before accounting is
+enabled.
 
 ## Database
 
@@ -380,16 +444,18 @@ To extend the schema, add the next numbered SQL file and a corresponding version
 ## Project layout
 
 - `cmd/billing-api/`: application entry point and server setup.
+- `cmd/billing-worker/`: standalone worker startup, configuration, and signal handling.
 - `internal/`: private application packages, with `*_test.go` package tests next to the code.
 - `migrations/`: numbered SQL migrations and the explicit PostgreSQL migration runner.
 - `tests/api/`: HTTP integration tests against a running API, enabled with the `integration` build tag.
 - `tests/inbox/`: PostgreSQL repository tests in isolated temporary schemas, enabled with the `integration` build tag.
+- `tests/worker/`: executable lifecycle and exec health-check tests, enabled with the `integration` build tag.
 - `tests/sql/`: database integrity tests executed with `psql`.
 - `docs/`: project and interface documentation.
 
 ## Testing
 
-`make test` is the primary test command. Start PostgreSQL with `make up SERVICE=postgres` before running all tests or the database suite; Go test commands build and start the API automatically.
+`make test` is the primary test command. Start PostgreSQL with `make up SERVICE=postgres` before running all tests or the database suite; the Go suite builds and starts the API and worker automatically.
 
 | Command | Purpose |
 | --- | --- |
@@ -398,7 +464,7 @@ To extend the schema, add the next numbered SQL file and a corresponding version
 | `make db-test` | Run only the database integrity suite. |
 | `make api-test` | Start PostgreSQL, migrate, and run HTTP/database acceptance tests against the API. |
 | `make inbox-test` | Start PostgreSQL and run repository tests in private schemas. |
-| `make test SUITE=go` | Run Go unit, PostgreSQL repository, and HTTP acceptance tests; services start automatically. |
+| `make test SUITE=go` | Run Go unit, PostgreSQL repository, HTTP acceptance, and worker lifecycle tests; services start automatically. |
 | `make test SUITE=db` | Run only the database integrity suite in both configured time zones. |
 | `make test RUN='^TestUsageBatchesHappyPath$'` | Run only the named Go test. Supplying `RUN` selects the Go suite by default. |
 
@@ -419,6 +485,13 @@ exercise deterministic lock waits, competing commits/rollbacks, canceled
 transactions, and each conflicting content field. Each test drops its private
 schema. The API stays running for exploration; `-count=1` executes every test.
 
+Worker package tests cover loop cancellation, deadlines, retry pacing, heartbeat
+health, and bounded shutdown. The [worker process tests](tests/worker/lifecycle_test.go)
+start the compiled executable without an API or database dependency, verify its
+health probe, send SIGTERM, and require a clean exit with heartbeat cleanup. They
+also reject invalid startup configuration. Run them through `make test`, or
+filter with `make test RUN='^TestWorkerProcessLifecycle$'`.
+
 With Go 1.27 or later installed locally, the same test can target a running API directly:
 
 ```sh
@@ -427,7 +500,7 @@ E2B_TEST_DATABASE_URL='postgres://e2b:e2b_local_dev@127.0.0.1:5432/e2b_billing?s
 go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
 ```
 
-[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check runs SQL integrity tests, Go package tests, PostgreSQL repository tests, and HTTP integration tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
+[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check runs SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
 
 ## Usage inbox contract
 

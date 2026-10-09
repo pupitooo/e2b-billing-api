@@ -12,7 +12,7 @@ export SERVICE RUN SUITE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go docs
+.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs
 
 help:
 	@printf '%s\n' \
@@ -145,7 +145,11 @@ inbox-test:
 	@$(COMPOSE) build api
 	@$(COMPOSE) run --rm --no-deps api go test -tags=integration -count=1 -v -run "$$RUN" ./tests/inbox
 
-_test-go: go-test inbox-test api-test
+_test-go: go-test inbox-test api-test _test-worker
+
+_test-worker:
+	@$(COMPOSE) up --build -d --wait --wait-timeout 120 worker
+	@$(COMPOSE) run --rm --no-deps api go test -tags=integration -count=1 -v -run "$$RUN" ./tests/worker
 
 _test-db: migrate
 	@set -eu; \

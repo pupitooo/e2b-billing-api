@@ -7,9 +7,9 @@ config:
     nodeSpacing: 60
     rankSpacing: 75
 ---
-%% Proposed starter for option C, based on the user's conditional choice.
-%% The initial implementation contains PostgreSQL and usage_inbox; Go blocks are planned.
-%% API and worker may share one Go process initially.
+%% Option C foundation includes PostgreSQL, usage_inbox, and Go runtime skeletons.
+%% API and worker run in separate processes and containers, as selected by the user.
+%% Durable ingestion and all financial processing remain planned.
 %% The two storage blocks are tables in one PostgreSQL database.
 %% Solid arrows identify HTTP or SQL interfaces.
 %% T2 includes claiming the inbox row, financial writes, and marking it processed.
@@ -17,8 +17,8 @@ config:
 flowchart LR
     platform["Sandbox platform - separate system<br/>Go simulator in the assignment<br/>Metering + durable sender buffer<br/>Stable IDs + retry + spend-status polling"]
     callers["Customer / E2B administrator<br/>Closing operator"]
-    api["Billing API - Go<br/>Validate and deduplicate usage<br/>Commands, queries, invoice closing"]
-    worker["Usage worker - Go<br/>Poll pending events<br/>Pricing + credit + monthly spend"]
+    api["Billing API - Go process<br/>Separate API container<br/>Ingestion + financial interfaces PLANNED"]
+    worker["Usage worker - Go process<br/>Separate worker container + heartbeat<br/>Polling + accounting PLANNED"]
 
     subgraph database["One PostgreSQL database - one local Compose service"]
         inbox[("usage_inbox - FIRST STEP<br/>Accepted measurements<br/>Unique source + event_id<br/>Processed marker + errors")]
