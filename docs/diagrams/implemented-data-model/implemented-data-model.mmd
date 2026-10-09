@@ -1,0 +1,118 @@
+---
+title: Implemented PostgreSQL schema (migrations 001-003)
+---
+erDiagram
+    direction LR
+
+    customers ||--o| customer_billing_state : customer_id
+    customers |o..o{ price_versions : customer_id
+    metrics ||..o{ price_versions : metric
+    customers ||..o{ rated_usage_groups : customer_id
+    price_versions ||..o{ rated_usage_groups : "(price_version_id, metric)"
+    usage_inbox ||--o| usage_ratings : "(source, event_id)"
+    rated_usage_groups ||..o{ usage_ratings : group_id
+    customers ||--o{ monthly_usage : customer_id
+    customers ||..o{ credit_entries : customer_id
+    rated_usage_groups |o..o{ credit_entries : "(group_id, customer_id)"
+    customers ||..o{ addon_subscriptions : customer_id
+    addons ||..o{ addon_subscriptions : addon_name
+
+    usage_inbox {
+        text source PK
+        text event_id PK
+        integer schema_version "Positive"
+        text customer_id
+        text sandbox_id
+        text metric
+        timestamptz period_start
+        timestamptz period_end
+        bigint units "Non-negative"
+        timestamptz received_at
+        timestamptz processed_at "Nullable"
+        text processing_error "Nullable"
+    }
+    usage_ratings {
+        text source PK,FK
+        text event_id PK,FK
+        text group_id FK
+    }
+    rated_usage_groups {
+        text group_id PK
+        text customer_id FK
+        text price_version_id FK
+        text metric FK "Composite price FK"
+        date usage_month "First day of original UTC month"
+        date billing_month "First day; not before usage_month"
+        numeric total_units "Non-negative integer"
+        billing_ticks exact_charge_ticks
+        bigint booked_charge_cents "Non-negative"
+        bigint allocated_credit_cents "Between zero and booked cents"
+    }
+    customers {
+        text customer_id PK
+        text name
+        text country
+        text billing_address
+    }
+    customer_billing_state {
+        text customer_id PK,FK
+        bigint credit_balance_cents "Non-negative"
+        bigint spend_limit_cents "Nullable; non-negative"
+        bigint state_version "Non-negative; default 0"
+    }
+    metrics {
+        text metric PK
+    }
+    price_versions {
+        text price_version_id PK
+        text customer_id FK "Nullable: default price"
+        text metric FK
+        bigint price_per_million_cents "Non-negative"
+        timestamptz effective_from "Finite"
+    }
+    monthly_usage {
+        text customer_id PK,FK
+        date usage_month PK "First day of original UTC month"
+        billing_ticks gross_charge_ticks "Before credit and add-ons"
+    }
+    credit_entries {
+        text credit_entry_id PK
+        text customer_id FK "Also part of group FK"
+        text operation_id
+        text group_id FK "Nullable: grants"
+        bigint amount_cents "Positive grant or negative debit"
+        timestamptz recorded_at "Finite"
+    }
+    addons {
+        text addon_name PK
+        bigint monthly_price_cents "Non-negative"
+    }
+    addon_subscriptions {
+        text subscription_id PK
+        text customer_id FK
+        text addon_name FK
+        bigint monthly_price_cents "Purchased price snapshot"
+        timestamptz purchased_at "Finite"
+        date start_month "First day of UTC purchase month"
+    }
+    schema_migrations {
+        integer version PK "Positive"
+        text name
+        timestamptz applied_at "Default now()"
+    }
+
+    %% This diagram covers every table and column created by migrate.sql and migrations 001-003.
+    %% All columns are NOT NULL unless explicitly labeled Nullable.
+    %% PK and FK markers identify membership in primary and foreign keys, including composite keys.
+    %% Solid relationships include parent identity in the child's primary key; dashed ones do not.
+    %% Edges show declared foreign keys only; usage_inbox has no customer or metric FK.
+    %% billing_ticks is numeric constrained to non-negative finite integers; 1 cent = 1,000,000 ticks.
+    %% price_versions UNIQUE NULLS NOT DISTINCT: (customer_id, metric, effective_from).
+    %% price_versions UNIQUE: (price_version_id, metric).
+    %% rated_usage_groups UNIQUE: (customer_id, price_version_id, usage_month, billing_month).
+    %% rated_usage_groups UNIQUE: (group_id, customer_id).
+    %% credit_entries UNIQUE: (customer_id, operation_id).
+    %% addon_subscriptions UNIQUE: (customer_id, addon_name).
+    %% price_versions, usage_ratings, and credit_entries reject updates and deletes through triggers.
+    %% Triggers also preserve group identity and validate receipt customer, metric, and UTC month.
+    %% Invoice tables, invoice numbering, and frozen groups are not implemented.

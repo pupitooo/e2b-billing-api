@@ -2,9 +2,21 @@
 
 The schema prepares PostgreSQL for the Go accounting worker. It stores the initial catalog and accounting records; rating, credit allocation, spend-status endpoints, and invoices follow in later changes.
 
+## Implemented PostgreSQL schema (ERD)
+
+This diagram shows all 12 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `003`, including the runner's `schema_migrations` table. It uses the names and types from the migrations.
+
+![Implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
+
+[Editable Mermaid source](../diagrams/implemented-data-model/implemented-data-model.mmd).
+
+All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns belonging to primary and foreign keys, including composite keys. Solid relationships include the referenced identity in the child's primary key; dashed relationships are other declared foreign keys. The Mermaid source records the composite unique constraints. `billing_ticks` is an exact `numeric` domain for non-negative finite integers; one cent is 1,000,000 ticks.
+
+`usage_inbox` has no customer or metric foreign keys. Its optional one-to-one relationship with `usage_ratings` records whether an event has been assigned to a group; each rating references one `rated_usage_groups` row. The diagram shows database cardinalities, so a customer may have zero or one account-state row even though the seed creates one for each initial customer. Receipt matching and price ownership checks are enforced by triggers, as described below. Invoice tables, invoice numbering, and frozen groups remain planned and are absent from this implemented schema.
+
 ## Logical data model (ERD)
 
-The existing ERD shows the proposed logical model, including planned invoice entities. Its names and attributes are conceptual; the table summary below describes the schema implemented by these migrations.
+The earlier ERD shows the proposed logical model, including planned invoice entities. Its names and attributes are conceptual; the implemented ERD above and the table summary below describe the schema created by these migrations.
 
 ![Proposed MVP logical data model](../diagrams/data-model/data-model.png)
 

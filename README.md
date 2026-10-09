@@ -6,6 +6,8 @@ The project uses the selected [option C architecture](docs/brainstorming/archite
 
 The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. Financial processing and invoices are planned subsequent work.
 
+The [implemented PostgreSQL ERD](docs/diagrams/implemented-data-model/implemented-data-model.png) shows the actual tables, columns, and foreign keys, including `usage_ratings`. Its [editable Mermaid source](docs/diagrams/implemented-data-model/implemented-data-model.mmd) accompanies the preview.
+
 ## Local setup
 
 ### Requirements
