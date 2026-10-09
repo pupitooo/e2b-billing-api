@@ -179,6 +179,13 @@ Database tests apply pending migrations, check schema integrity in UTC and `Asia
 
 ## Usage inbox contract
 
+This section defines the stored measurement contract:
+
+- **Measurement:** consumption interval, metric, and non-negative integer units.
+- **Identity and ownership:** event key, schema version, customer, and sandbox.
+- **Timestamps and processing state:** explicit application values, UTC conventions, completion, and unresolved errors.
+- **Validation and retries:** database constraints and the future API's content comparison rules.
+
 Each row stores a measured increment over the half-open interval `[period_start, period_end)`, rather than a cumulative counter or a monetary charge.[^half-open-interval]
 
 [^half-open-interval]: Including the start and excluding the end gives adjacent intervals an unambiguous boundary: `[10:00, 10:05)` and `[10:05, 10:10)` meet without overlapping, and exactly `10:05` belongs only to the second interval.
@@ -199,6 +206,13 @@ Every required inbox field must be supplied explicitly; the table has no databas
 The database rejects a repeated `(source, event_id)` and preserves the original row. The future ingestion API must compare the original content: an identical retry is accepted without another insert, while changed content for the same identity is a conflict. Blank text values, customer existence, and supported metrics will be validated by the application. The schema retains `NOT NULL`, the primary key, and checks for positive schema versions, non-negative units, valid intervals, and consistent processing state.
 
 ## Platform and billing contract
+
+This section defines how the platform and billing service cooperate:
+
+- [Event identity](#event-identity): source-wide uniqueness and stable IDs across retries and restarts.
+- [Responsibility boundary](#responsibility-boundary): ownership of measurement, storage, delivery, durable receipt, and accounting.
+- [Option C receipt and retry rules](#option-c-receipt-and-retry-rules): acknowledgements, retries, conflicts, and invalid input.
+- [Agreements still open](#agreements-still-open): durability, retry windows, capacity, batch responses, freshness, and broker history.
 
 **Status: working draft for option C, updated 9 October 2026.** Event identity is a confirmed design agreement; the delivery rules below remain proposals for the future API and simulator, not implemented HTTP guarantees. Record subsequent agreements and unresolved decisions in this section. The assignment makes the platform a separately owned measurement source and requires billing to handle retries, delays, and platform unavailability; it does not specify recovery from destruction of the platform's only storage copy.
 
