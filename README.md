@@ -241,7 +241,7 @@ With Go 1.27 or later installed locally, the same test can target a running API 
 E2B_API_URL=http://127.0.0.1:8081 go test -tags=integration -count=1 -v ./tests/api
 ```
 
-[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `Database tests` check now runs both the database and HTTP suites; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
+[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check runs SQL integrity tests, Go package tests, and HTTP integration tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
 
 ## Usage inbox contract
 
