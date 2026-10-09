@@ -23,7 +23,7 @@ import (
 // instant. Offset input must preserve its UTC instant at microsecond precision.
 func TestInboxInsertBatch(t *testing.T) {
 	pool := testDatabase(t, nil)
-	store := inbox.NewPostgres(pool)
+	store := inbox.NewPostgres(pool, 5*time.Second)
 	events := fixtureEvents()
 	maximum := events[0]
 	maximum.EventID = "maximum-values"
@@ -69,7 +69,7 @@ func TestInboxInsertBatch(t *testing.T) {
 // earlier committed measurement and receipt time.
 func TestInboxConflictRollback(t *testing.T) {
 	pool := testDatabase(t, nil)
-	store := inbox.NewPostgres(pool)
+	store := inbox.NewPostgres(pool, 5*time.Second)
 	events := fixtureEvents()
 	receipt := time.Date(2026, 11, 1, 0, 30, 5, 0, time.UTC)
 	if err := store.InsertBatch(context.Background(), events[:1], receipt); err != nil {
@@ -113,7 +113,7 @@ func TestInboxDatabaseFailureRollback(t *testing.T) {
 	}
 	events := fixtureEvents()
 	events[1].EventID = "reject-last"
-	err := inbox.NewPostgres(pool).InsertBatch(context.Background(), events, time.Now().UTC())
+	err := inbox.NewPostgres(pool, 5*time.Second).InsertBatch(context.Background(), events, time.Now().UTC())
 	assertPostgresError(t, err, "23514")
 	if count := eventCount(t, pool); count != 0 {
 		t.Errorf("Partial failed batch persisted %d events", count)
@@ -125,7 +125,7 @@ func TestInboxDatabaseFailureRollback(t *testing.T) {
 // second event must leave the private inbox empty.
 func TestInboxInvalidValues(t *testing.T) {
 	pool := testDatabase(t, nil)
-	store := inbox.NewPostgres(pool)
+	store := inbox.NewPostgres(pool, 5*time.Second)
 	events := fixtureEvents()
 	invalid := append([]usage.Event(nil), events...)
 	invalid[1].Units = -1
@@ -154,7 +154,7 @@ func TestInboxInvalidValues(t *testing.T) {
 // and does not poison the connection pool for the next valid batch.
 func TestInboxCancelledContext(t *testing.T) {
 	pool := testDatabase(t, nil)
-	store := inbox.NewPostgres(pool)
+	store := inbox.NewPostgres(pool, 5*time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	err := store.InsertBatch(ctx, fixtureEvents(), time.Now().UTC())
@@ -177,7 +177,7 @@ func TestInboxSynchronousCommit(t *testing.T) {
 	if _, err := pool.Exec(context.Background(), "ALTER TABLE usage_inbox ADD CHECK (current_setting('synchronous_commit') = 'on')"); err != nil {
 		t.Fatalf("Set durability verification constraint: %v", err)
 	}
-	if err := inbox.NewPostgres(pool).InsertBatch(context.Background(), fixtureEvents(), time.Now().UTC()); err != nil {
+	if err := inbox.NewPostgres(pool, 5*time.Second).InsertBatch(context.Background(), fixtureEvents(), time.Now().UTC()); err != nil {
 		t.Fatalf("Synchronous inbox commit: %v", err)
 	}
 	var setting string

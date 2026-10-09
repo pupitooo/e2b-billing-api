@@ -36,6 +36,7 @@ defaults; malformed, nonpositive, or incompatible budgets prevent startup.
 | `E2B_API_READ_HEADER_TIMEOUT` | `5s` | Read HTTP headers. |
 | `E2B_API_READ_TIMEOUT` | `15s` | Read the complete request, including its body. |
 | `E2B_API_INGESTION_TIMEOUT` | `10s` | Acquire a pool connection and commit one validated batch. |
+| `E2B_API_ROLLBACK_TIMEOUT` | `5s` | Clean up a failed transaction independently of request cancellation. |
 | `E2B_API_WRITE_TIMEOUT` | `35s` | Write deadline set after request headers, including body reading and storage. |
 | `E2B_API_IDLE_TIMEOUT` | `90s` | Reuse collector connections across minute-based reports with jitter. |
 | `E2B_API_SHUTDOWN_TIMEOUT` | `45s` | Drain HTTP requests on SIGINT or SIGTERM before closing the database pool. |
@@ -45,11 +46,11 @@ defaults; malformed, nonpositive, or incompatible budgets prevent startup.
 | `E2B_API_MAX_IN_FLIGHT_BATCHES` | `32` | Admitted batches per process, including body reading and pool waiting. |
 
 The header deadline must fit within the read deadline. The write budget must
-exceed read + ingestion + the independent five-second rollback cleanup budget,
+exceed read + ingestion + the configured rollback cleanup budget,
 leaving time for an error response. The shutdown budget must exceed header +
 write; Compose's stop grace period must exceed shutdown + rollback cleanup.
 The application validates its own budgets; configure the container's stop grace
-period separately when increasing shutdown time. These deadlines limit I/O and
+period separately when increasing shutdown or rollback time. These deadlines limit I/O and
 database work; they do not forcibly terminate arbitrary handler CPU work.
 
 When all admission slots are occupied, ingestion returns `503` / `Retry-After: 1`

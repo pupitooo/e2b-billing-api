@@ -13,10 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// RollbackTimeout bounds cleanup independently of a canceled request.
-// HTTP response and shutdown budgets must leave room for this cleanup.
-const RollbackTimeout = 5 * time.Second
-
 // PoolLimits reserves a finite connection budget for one API process.
 type PoolLimits struct {
 	MaxConns int32
@@ -60,7 +56,8 @@ func OpenPool(ctx context.Context, connectionString string, limits ...PoolLimits
 
 // Postgres stores complete batches in the existing usage_inbox schema.
 type Postgres struct {
-	pool *pgxpool.Pool
+	pool            *pgxpool.Pool
+	rollbackTimeout time.Duration
 }
 
 // ConflictError identifies a reused measurement key with different content.
@@ -75,8 +72,9 @@ func (err *ConflictError) Error() string {
 }
 
 // NewPostgres uses the caller's pool without taking ownership of its lifetime.
-func NewPostgres(pool *pgxpool.Pool) *Postgres {
-	return &Postgres{pool: pool}
+// The caller supplies a positive rollback budget independent of request cancellation.
+func NewPostgres(pool *pgxpool.Pool, rollbackTimeout time.Duration) *Postgres {
+	return &Postgres{pool: pool, rollbackTimeout: rollbackTimeout}
 }
 
 // InsertBatch validates values and commits the entire batch or rolls it back.
@@ -122,7 +120,7 @@ func (store *Postgres) InsertBatch(ctx context.Context, events []usage.Event, re
 	}
 	defer func() {
 		// Cancellation must not prevent cleanup of an already-open transaction.
-		cleanupContext, cancel := context.WithTimeout(context.Background(), RollbackTimeout)
+		cleanupContext, cancel := context.WithTimeout(context.Background(), store.rollbackTimeout)
 		defer cancel()
 		_ = transaction.Rollback(cleanupContext)
 	}()

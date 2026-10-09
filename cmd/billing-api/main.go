@@ -49,7 +49,7 @@ func run(getenv func(string) string) error {
 
 	server := &http.Server{
 		Addr:              ":8080",
-		Handler:           httpapi.NewHandler(inbox.NewPostgres(pool), cfg.ingestionTimeout, int(cfg.maxInFlight)),
+		Handler:           httpapi.NewHandler(inbox.NewPostgres(pool, cfg.rollbackTimeout), cfg.ingestionTimeout, int(cfg.maxInFlight)),
 		ReadHeaderTimeout: cfg.readHeaderTimeout,
 		ReadTimeout:       cfg.readTimeout,
 		WriteTimeout:      cfg.writeTimeout,
@@ -61,9 +61,9 @@ func run(getenv func(string) string) error {
 	}
 
 	log.Printf("Billing API listening on %s", server.Addr)
-	log.Printf("API limits: read_header=%s read=%s write=%s idle=%s ingestion=%s shutdown=%s db_min=%d db_max=%d in_flight=%d",
+	log.Printf("API limits: read_header=%s read=%s write=%s idle=%s ingestion=%s rollback=%s shutdown=%s db_min=%d db_max=%d in_flight=%d",
 		cfg.readHeaderTimeout, cfg.readTimeout, cfg.writeTimeout, cfg.idleTimeout,
-		cfg.ingestionTimeout, cfg.shutdownTimeout, cfg.poolMinConns, cfg.poolMaxConns, cfg.maxInFlight)
+		cfg.ingestionTimeout, cfg.rollbackTimeout, cfg.shutdownTimeout, cfg.poolMinConns, cfg.poolMaxConns, cfg.maxInFlight)
 	return serveUntilStopped(ctx, server, listener, cfg.shutdownTimeout)
 }
 

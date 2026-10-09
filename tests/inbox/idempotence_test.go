@@ -21,7 +21,7 @@ func TestInboxIdenticalRetry(t *testing.T) {
 	for _, state := range []string{"pending", "processed", "error"} {
 		t.Run(state, func(t *testing.T) {
 			pool := testDatabase(t, nil)
-			store := inbox.NewPostgres(pool)
+			store := inbox.NewPostgres(pool, 5*time.Second)
 			event := fixtureEvents()[0]
 			receipt := time.Date(2026, 11, 1, 0, 30, 0, 0, time.UTC)
 			if err := store.InsertBatch(context.Background(), []usage.Event{event}, receipt); err != nil {
@@ -74,7 +74,7 @@ func TestInboxChangedContent(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			pool := testDatabase(t, nil)
-			store := inbox.NewPostgres(pool)
+			store := inbox.NewPostgres(pool, 5*time.Second)
 			event := fixtureEvents()[0]
 			if err := store.InsertBatch(context.Background(), []usage.Event{event}, time.Now().UTC()); err != nil {
 				t.Fatalf("Seed original event: %v", err)
@@ -94,7 +94,7 @@ func TestInboxChangedContent(t *testing.T) {
 // preserved, and new events can commit alongside identical older measurements.
 func TestInboxBatchBoundaries(t *testing.T) {
 	pool := testDatabase(t, nil)
-	store := inbox.NewPostgres(pool)
+	store := inbox.NewPostgres(pool, 5*time.Second)
 	events := fixtureEvents()
 	request := []usage.Event{events[1], events[0], events[0]}
 	if err := store.InsertBatch(context.Background(), request, time.Now().UTC()); err != nil {
@@ -124,7 +124,7 @@ func TestInboxConflictingDuplicates(t *testing.T) {
 	events := fixtureEvents()
 	changed := events[0]
 	changed.Units++
-	err := inbox.NewPostgres(pool).InsertBatch(context.Background(), []usage.Event{events[0], events[1], changed}, time.Now().UTC())
+	err := inbox.NewPostgres(pool, 5*time.Second).InsertBatch(context.Background(), []usage.Event{events[0], events[1], changed}, time.Now().UTC())
 	assertConflict(t, err, changed)
 	if count := eventCount(t, pool); count != 0 {
 		t.Errorf("Conflicting batch persisted %d events", count)
@@ -137,7 +137,7 @@ func TestInboxConflictingDuplicates(t *testing.T) {
 // absent from their initial READ COMMITTED statement snapshot.
 func TestInboxConcurrentIdenticalBatches(t *testing.T) {
 	pool := testDatabase(t, nil)
-	store := inbox.NewPostgres(pool)
+	store := inbox.NewPostgres(pool, 5*time.Second)
 	events := fixtureEvents()
 	const writers = 12
 	start := make(chan struct{})
@@ -172,7 +172,7 @@ func TestInboxConcurrentIdenticalBatches(t *testing.T) {
 // conflict and rolls back its earlier private insert.
 func TestInboxConcurrentConflictingBatches(t *testing.T) {
 	pool := testDatabase(t, nil)
-	store := inbox.NewPostgres(pool)
+	store := inbox.NewPostgres(pool, 5*time.Second)
 	original := fixtureEvents()[0]
 	start := make(chan struct{})
 	results := make(chan error, 2)
@@ -246,7 +246,7 @@ func TestInboxWaitingWriter(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			result := make(chan error, 1)
-			store := inbox.NewPostgres(pool)
+			store := inbox.NewPostgres(pool, 5*time.Second)
 			go func() {
 				result <- store.InsertBatch(ctx, []usage.Event{extra, event}, originalReceipt.Add(time.Hour))
 			}()

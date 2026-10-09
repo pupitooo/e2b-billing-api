@@ -31,7 +31,7 @@ func BenchmarkInboxInsertBatch(b *testing.B) {
 					b.Fatalf("Open benchmark pool: %v", err)
 				}
 				b.Cleanup(pool.Close)
-				store := inbox.NewPostgres(pool)
+				store := inbox.NewPostgres(pool, 5*time.Second)
 				fixture := fixtureEvents()[0]
 				receipt := time.Now().UTC()
 				durations := make([]time.Duration, b.N)

@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"time"
-
-	"e2b/billing-api/internal/inbox"
 )
 
 type config struct {
@@ -15,6 +13,7 @@ type config struct {
 	writeTimeout      time.Duration
 	idleTimeout       time.Duration
 	ingestionTimeout  time.Duration
+	rollbackTimeout   time.Duration
 	shutdownTimeout   time.Duration
 	poolMaxConns      int32
 	poolMinConns      int32
@@ -29,6 +28,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		startupTimeout: 10 * time.Second, readHeaderTimeout: 5 * time.Second,
 		readTimeout: 15 * time.Second, writeTimeout: 35 * time.Second,
 		idleTimeout: 90 * time.Second, ingestionTimeout: 10 * time.Second,
+		rollbackTimeout: 5 * time.Second,
 		shutdownTimeout: 45 * time.Second, poolMaxConns: 8, poolMinConns: 2,
 		maxInFlight: 32,
 	}
@@ -42,6 +42,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		{"E2B_API_WRITE_TIMEOUT", &cfg.writeTimeout},
 		{"E2B_API_IDLE_TIMEOUT", &cfg.idleTimeout},
 		{"E2B_API_INGESTION_TIMEOUT", &cfg.ingestionTimeout},
+		{"E2B_API_ROLLBACK_TIMEOUT", &cfg.rollbackTimeout},
 		{"E2B_API_SHUTDOWN_TIMEOUT", &cfg.shutdownTimeout},
 	} {
 		if value := getenv(setting.name); value != "" {
@@ -81,8 +82,8 @@ func loadConfig(getenv func(string) string) (config, error) {
 	// A slow body and database cancellation must leave time for rollback and a reply.
 	if cfg.readTimeout >= cfg.writeTimeout ||
 		cfg.ingestionTimeout >= cfg.writeTimeout-cfg.readTimeout ||
-		inbox.RollbackTimeout >= cfg.writeTimeout-cfg.readTimeout-cfg.ingestionTimeout {
-		return config{}, fmt.Errorf("E2B_API_WRITE_TIMEOUT must exceed the read timeout, ingestion timeout, and %s rollback budget combined", inbox.RollbackTimeout)
+		cfg.rollbackTimeout >= cfg.writeTimeout-cfg.readTimeout-cfg.ingestionTimeout {
+		return config{}, fmt.Errorf("E2B_API_WRITE_TIMEOUT must exceed the read timeout, ingestion timeout, and %s rollback budget combined", cfg.rollbackTimeout)
 	}
 	if cfg.readHeaderTimeout >= cfg.shutdownTimeout ||
 		cfg.writeTimeout >= cfg.shutdownTimeout-cfg.readHeaderTimeout {
