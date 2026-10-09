@@ -177,6 +177,8 @@ With PostgreSQL running:
 
 Database tests apply pending migrations, check schema integrity in UTC and `Asia/Shanghai`, and roll back their test data. Output identifies the suite and time zone being tested. Any test failure makes the command fail.
 
+[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The `Database tests` check is required before merging into `main`; the branch must also be up to date with `main`. Failed runs include PostgreSQL logs, and each run removes its test containers and volume.
+
 ## Usage inbox contract
 
 This section defines the stored measurement contract:
