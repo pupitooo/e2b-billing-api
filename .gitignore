@@ -1,15 +1,26 @@
 # Local documentation stays private until explicitly included.
-# Track API documentation, the architecture comparison, and the four option diagrams.
+# Track API documentation, published architecture guides, the four option diagrams, and both ERDs.
 /docs/*
 !/docs/api/
 /docs/api/*
 !/docs/api/openapi.yaml
 !/docs/api/Caddyfile
+!/docs/architecture/
+/docs/architecture/*
+!/docs/architecture/billing-model.md
 !/docs/brainstorming/
 /docs/brainstorming/*
 !/docs/brainstorming/architecture-options.md
 !/docs/diagrams/
 /docs/diagrams/*
+!/docs/diagrams/data-model/
+/docs/diagrams/data-model/*
+!/docs/diagrams/data-model/data-model.mmd
+!/docs/diagrams/data-model/data-model.png
+!/docs/diagrams/implemented-data-model/
+/docs/diagrams/implemented-data-model/*
+!/docs/diagrams/implemented-data-model/implemented-data-model.mmd
+!/docs/diagrams/implemented-data-model/implemented-data-model.png
 !/docs/diagrams/option-a-components/
 /docs/diagrams/option-a-components/*
 !/docs/diagrams/option-a-components/option-a-components.mmd

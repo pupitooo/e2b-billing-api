@@ -21,4 +21,24 @@ SELECT NOT EXISTS (
     VALUES (1, 'usage_inbox');
 \endif
 
+SELECT NOT EXISTS (
+    SELECT 1 FROM schema_migrations WHERE version = 2
+) AS apply_002 \gset
+
+\if :apply_002
+    \ir 002_billing_model.sql
+    INSERT INTO schema_migrations (version, name)
+    VALUES (2, 'billing_model');
+\endif
+
+SELECT NOT EXISTS (
+    SELECT 1 FROM schema_migrations WHERE version = 3
+) AS apply_003 \gset
+
+\if :apply_003
+    \ir 003_assignment_seed.sql
+    INSERT INTO schema_migrations (version, name)
+    VALUES (3, 'assignment_seed');
+\endif
+
 COMMIT;
