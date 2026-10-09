@@ -77,7 +77,8 @@ func insertSubscription(ctx context.Context, tx pgx.Tx, customer string, p Addon
 	month, _ := accounting.UTCMonth(p.PurchasedAt)
 	var closed bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM closed_billing_months
-        WHERE customer_id=$1 AND billing_month>=$2)`, customer, month).Scan(&closed); err != nil {
+		WHERE customer_id=$1 AND billing_month>=$2) OR EXISTS
+		(SELECT 1 FROM invoice_closings WHERE customer_id=$1 AND billing_month>=$2)`, customer, month).Scan(&closed); err != nil {
 		return err
 	}
 	if closed {

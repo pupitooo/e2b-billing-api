@@ -4,7 +4,7 @@ Billing service for the E2B assignment, built with Go and PostgreSQL. It provide
 
 The project uses the selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected). The [architecture comparison](docs/brainstorming/architecture-options.md) records the design rationale.
 
-The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. The [financial rules](docs/architecture/accounting-rules.md) define the shared Go calculations, exact credit before rounding, and transaction/closing contract. Runtime financial processing and invoices are planned subsequent work.
+The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. The [financial rules](docs/architecture/accounting-rules.md) define the shared Go calculations, exact credit before rounding, and transaction/closing contract. Transactional accounting, financial APIs, and immutable monthly invoices are implemented.
 
 The [implemented PostgreSQL ERD](docs/diagrams/implemented-data-model/implemented-data-model.png) shows the actual tables, columns, and foreign keys, including `usage_ratings`. Its [editable Mermaid source](docs/diagrams/implemented-data-model/implemented-data-model.mmd) accompanies the preview.
 
@@ -141,7 +141,7 @@ Start all implemented services:
 make up
 ```
 
-`make up` starts PostgreSQL, the API, worker, Scalar documentation, and the simulator container and waits for readiness. The simulator waits for an explicit `make simulate` command before creating usage. Startup does not apply database migrations. The API verifies its database connection on startup; ingestion returns `503` until the inbox migration has been applied. The worker lifecycle scaffold runs independently of the API and PostgreSQL.
+`make up` starts PostgreSQL, the API, worker, Scalar documentation, and the simulator container and waits for readiness. The simulator waits for an explicit `make simulate` command before creating usage. Startup does not apply database migrations. The API verifies its database connection on startup; ingestion returns `503` until the inbox migration has been applied. The worker connects to PostgreSQL independently of the API; migrate explicitly before accounting can proceed.
 
 `make up`, `make docs`, `make restart`, and `make ps` print the actual browser addresses of running HTTP services. Use `make links` to show them again.
 
@@ -213,7 +213,7 @@ For a valid batch, the API returns HTTP `202` with `Content-Type: application/js
 The handler validates the whole batch and returns `202` only after a synchronous
 PostgreSQL commit. New rows receive one explicit UTC receipt time and pending
 accounting state. The whole batch commits or rolls back; accounting remains
-asynchronous and is subsequent work.
+asynchronous in the standalone worker.
 
 Measurements use `(source, event_id)` as identity. Identical retries succeed,
 including duplicates within a batch, regrouped batches, and different timestamp
@@ -289,7 +289,7 @@ These commands deliver Acme's October 30 measurement and then November 3.
 `make simulate ADVANCE=1 MODE=fast` releases both together. The barrier records
 operator intent; the simulator cannot check invoice or accounting completion.
 The current implementation covers transport only: accounting, credit, invoice
-operations, and spend-status polling remain subsequent work. HTTP `202`
+operations, and spend-status polling are available through the documented financial APIs; the legacy transport scenario still uses an operator barrier. HTTP `202`
 confirms the whole batch's durable inbox receipt, not financial processing.
 
 The default scenario reproduces these exact hourly totals:
@@ -432,13 +432,11 @@ make restart SERVICE=worker
 make stop SERVICE=worker
 ```
 
-**Current behavior: lifecycle scaffold.** Accounting is explicitly disabled in
-the startup log. The worker starts an idle loop and publishes a heartbeat; it
-does not connect to PostgreSQL, claim inbox rows, charge customers, or change
-`processed_at` or `processing_error`. This lets its deployment be reviewed and
-tested independently of the ongoing usage-ingestion implementation. The batch
-processor will be connected only when financial writes and the completion marker
-can commit in one transaction. No database migration is added by this change.
+**Current behavior: transactional accounting.** The worker prices one accepted receipt
+per transaction, applies exact credit to usage, updates original-month gross spend,
+and commits inbox completion with the financial effects. Unsupported inputs retain
+processing errors; transient storage failures roll back for retry. It runs independently
+of the API with a bounded database pool. The heartbeat reports loop activity.
 
 The [worker loop](internal/worker/worker.go) runs one batch at a time, starts
 immediately, and continues without an idle delay when a processor reports more
@@ -464,7 +462,7 @@ Compose supplies the local defaults shown above.
 Copy the settings from [.env.example](.env.example) to `.env`, then run
 `make up SERVICE=worker` to apply changes. The local worker has a 0.5 CPU and
 128 MiB memory limit. Production limits and replica counts require workload
-measurement; this scaffold establishes no processing-capacity guarantee.
+measurement; no sustained processing capacity has been established.
 
 Compose uses `billing-worker healthcheck` to check the loop's heartbeat in
 `/tmp/billing-worker-heartbeat`. The file is replaced atomically and removed on a
@@ -474,15 +472,11 @@ also be exported. Health checks report loop activity,
 including idle and error iterations; they do not confirm financial processing or
 database readiness. A stuck processor eventually makes the heartbeat stale.
 Docker's restart policy restarts an exited container; an unhealthy status alone
-does not trigger a restart. Production orchestration should monitor loop health
-and, once accounting exists, backlog size, oldest pending input, and failures.
+does not trigger a restart. Production orchestration should monitor loop health, backlog size, oldest pending input, and failures.
 
-API and worker resource lifecycles are independent. Their future PostgreSQL
-connections still share the database, so accounting must use bounded connection
-pools, short transactions, and controlled concurrency. Restarting the worker
-will leave committed inbox input available for later processing. Multiple worker
-replicas will require safe claiming and customer locking before accounting is
-enabled.
+API and worker resource lifecycles are independent. Their PostgreSQL connections share the database with bounded pools and short
+transactions. Restarting the worker leaves committed input available for processing.
+Concurrent workers serialize financial effects under the customer account lock.
 
 ## Database
 
@@ -840,3 +834,19 @@ selects the server's current UTC month; `GET /customers/{customer_id}/months/{mo
 selects an explicit `YYYY-MM` usage month with the current configuration. Status compares
 exact gross usage before credit, excludes add-ons, and exposes pending/error counts.
 Reaching a limit does not discard or stop accounting for measured usage.
+
+### Monthly invoices
+
+Apply migration 007, then call `POST /customers/{customer_id}/invoices` with an explicit
+`month` such as `2026-10`. Issue months in increasing order. An empty month is valid.
+The customer/month identifies this operation; retry returns the same invoice and number.
+`GET /customers/{customer_id}/invoices/{month}` reads the immutable snapshot.
+
+Closing first stores its committed pending receipt cohort. Errors block issuance; a deadline
+leaves resumable closing work. Retry after correcting an input's supported catalog and
+explicitly releasing its processing error. New accepted receipts outside that cohort route
+to another open month, even with an older receipt timestamp. Buyer details, lines, exact
+audit ticks, group freezes, closure, and the customer's next number commit together.
+Issuance never consumes credit again. Later grants and consumption cannot change an issued
+invoice. A new purchase cannot affect a closing or closed month. Operators trigger invoices
+explicitly through the API; an automatic calendar scheduler remains an extension.

@@ -199,6 +199,7 @@ db-test: _test-db
 api-test:
 	@$(COMPOSE) up -d --wait --wait-timeout 120 postgres
 	@$(MAKE) --no-print-directory migrate
+	@$(COMPOSE) stop worker
 	@$(COMPOSE) up --build -d --wait --wait-timeout 120 api
 	@$(COMPOSE) run --rm --no-deps -e E2B_API_URL=http://api:8080 api go test -tags=integration -count=1 -v -run "$$RUN" ./tests/api
 
