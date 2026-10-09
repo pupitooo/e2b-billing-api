@@ -830,3 +830,13 @@ monthly catalog price. The full charge starts in the UTC purchase month, includi
 at month end, and recurs on subsequent invoices. One subscription per customer and add-on is
 supported. Identical retries return the original snapshot; duplicate subscriptions and new
 purchases that would change a closed month return `409`. Credit never pays add-ons.
+
+### Spend limits and platform queries
+
+Apply migration 006, then use `POST /customers/{customer_id}/spend-limit` with a stable
+operation ID and nonnegative `limit_cents`, or explicit `null` for unlimited. Replaying
+an older operation preserves a newer limit. `GET /customers/{customer_id}/limit-status`
+selects the server's current UTC month; `GET /customers/{customer_id}/months/{month}/limit-status`
+selects an explicit `YYYY-MM` usage month with the current configuration. Status compares
+exact gross usage before credit, excludes add-ons, and exposes pending/error counts.
+Reaching a limit does not discard or stop accounting for measured usage.

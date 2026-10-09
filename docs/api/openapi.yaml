@@ -621,6 +621,255 @@ paths:
                 type: string
                 const: '1'
               example: '1'
+  /customers/{customer_id}/spend-limit:
+    post:
+      operationId: setSpendLimit
+      tags:
+      - Billing
+      summary: Set or remove the customer spend limit
+      description: Supply a nonnegative limit_cents or explicit null for unlimited. Zero is reached even
+        without spend. Changes apply immediately under the account lock. Replay of an old unchanged operation
+        returns its original command result and does not undo newer configuration; changed identity content
+        returns 409. Read status after changing configuration.
+      x-implementation-status: implemented
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpendLimitChange'
+            example:
+              operation_id: october-limit
+              limit_cents: 1500
+      responses:
+        '200':
+          description: Committed result or current snapshot. Identical command retries succeed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpendLimitChange'
+              example:
+                operation_id: october-limit
+                limit_cents: 1500
+        '400':
+          description: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+        '404':
+          description: Customer or catalog resource does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '409':
+          description: Operation identity has different content, financial history conflicts, or closing
+            is blocked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_conflict
+                  message: Operation identity has different content, financial history conflicts, or closing
+                    is blocked.
+        '413':
+          description: Command body exceeds 65536 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Command body exceeds 65536 bytes.
+        '415':
+          description: Use uncompressed application/json with optional UTF-8 charset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: unsupported_media_type
+                  message: Use uncompressed application/json with optional UTF-8 charset.
+        '422':
+          description: Explicit required field or value is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  message: Explicit required field or value is invalid.
+        '503':
+          description: Database deadline or storage failure. Retry unchanged operation identity and content;
+            outcome may be unknown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
+  /customers/{customer_id}/limit-status:
+    get:
+      operationId: getCurrentLimitStatus
+      tags:
+      - Billing
+      summary: Read monthly spend limit status
+      description: Read the current UTC month selected from the server clock. Compare exact original-month
+        gross usage before credit, excluding add-ons. Raising a limit can clear status; a new month selects
+        fresh gross spend. All measured usage remains billable after reaching the limit. Pending/error counts
+        expose asynchronous freshness and include all committed receipts for the customer. This projection
+        does not prove completeness of platform measurements.
+      x-implementation-status: implemented
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      responses:
+        '200':
+          description: Committed result or current snapshot. Identical command retries succeed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LimitStatus'
+              example:
+                customer_id: cyberdyne
+                month: 2026-10
+                limit_cents: 1500
+                gross_charge_ticks: '1817283945'
+                limit_reached: true
+                state_version: 3
+                pending_events: 0
+                processing_errors: 0
+        '404':
+          description: Customer or catalog resource does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '503':
+          description: Database deadline or storage failure. Retry unchanged operation identity and content;
+            outcome may be unknown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
+  /customers/{customer_id}/months/{month}/limit-status:
+    get:
+      operationId: getMonthlyLimitStatus
+      tags:
+      - Billing
+      summary: Read monthly spend limit status
+      description: Read an explicit UTC usage month with the currently configured limit. This is not a historical
+        snapshot of past limit configuration. Compare exact original-month gross usage before credit, excluding
+        add-ons. Raising a limit can clear status; a new month selects fresh gross spend. All measured usage
+        remains billable after reaching the limit. Pending/error counts expose asynchronous freshness and
+        include all committed receipts for the customer. This projection does not prove completeness of
+        platform measurements.
+      x-implementation-status: implemented
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      - name: month
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/BillingMonth'
+      responses:
+        '200':
+          description: Committed result or current snapshot. Identical command retries succeed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LimitStatus'
+              example:
+                customer_id: cyberdyne
+                month: 2026-10
+                limit_cents: 1500
+                gross_charge_ticks: '1817283945'
+                limit_reached: true
+                state_version: 3
+                pending_events: 0
+                processing_errors: 0
+        '404':
+          description: Customer or catalog resource does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '503':
+          description: Database deadline or storage failure. Retry unchanged operation identity and content;
+            outcome may be unknown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
   /healthz:
     get:
       operationId: getHealth
@@ -895,3 +1144,67 @@ components:
           type: string
           format: date
           description: First date of the UTC purchase month.
+
+    BillingMonth:
+      type: string
+      pattern: ^[1-9][0-9]{3}-(0[1-9]|1[0-2])$
+      example: 2026-10
+      description: Canonical UTC calendar month; years 1000 through 9999.
+
+    SpendLimitChange:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - limit_cents
+      properties:
+        operation_id:
+          $ref: '#/components/schemas/Identifier'
+        limit_cents:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+
+    LimitStatus:
+      type: object
+      additionalProperties: false
+      required:
+      - customer_id
+      - month
+      - limit_cents
+      - gross_charge_ticks
+      - limit_reached
+      - state_version
+      - pending_events
+      - processing_errors
+      properties:
+        customer_id:
+          $ref: '#/components/schemas/Identifier'
+        month:
+          $ref: '#/components/schemas/BillingMonth'
+        limit_cents:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+        gross_charge_ticks:
+          type: string
+          pattern: ^[0-9]+$
+        limit_reached:
+          type: boolean
+        state_version:
+          type: integer
+          format: int64
+          minimum: 0
+        pending_events:
+          type: integer
+          format: int64
+          minimum: 0
+        processing_errors:
+          type: integer
+          format: int64
+          minimum: 0
