@@ -1,12 +1,13 @@
 openapi: 3.1.2
 info:
   title: E2B Billing API
-  version: 0.2.0
+  version: 0.3.0
   description: |
-    The usage endpoint parses and validates JSON batches. Its successful 202
-    response is still a response stub: no inbox transaction is performed and
-    acceptance does not confirm durable storage or accounting. Transactional
-    storage, idempotence, and durable HTTP acceptance are incremental steps.
+    The usage endpoint validates and atomically commits measurements to the
+    PostgreSQL inbox before returning 202. Identical event retries succeed
+    without changing stored receipt or accounting state; changed content
+    conflicts. Acceptance confirms durable receipt, while accounting remains
+    asynchronous and is subsequent work.
 servers:
   - url: /api
     description: Same-origin API proxy provided by the local Scalar service
@@ -20,12 +21,12 @@ paths:
     post:
       operationId: postUsageBatches
       tags: [Usage]
-      summary: Validate a usage batch (acceptance response stub)
-      x-implementation-status: validation-only
+      summary: Commit a usage batch to the inbox
+      x-implementation-status: implemented
       description: |
-        Implemented: parse one uncompressed UTF-8 JSON document, validate its
-        envelope and every measurement, then return the accepted response stub.
-        No events are written by this endpoint yet.
+        Parse one uncompressed UTF-8 JSON document, validate its envelope and
+        every measurement, and commit the whole batch in one inbox transaction.
+        Return 202 only after a successful synchronous PostgreSQL commit.
 
         The body is limited to 1048576 bytes and 1–1000 events. Member names are
         case-sensitive; unknown and duplicate members, malformed UTF-8, and
@@ -41,14 +42,25 @@ paths:
         Positive schema versions and nonblank metrics are structurally accepted;
         customer existence and supported accounting registries are future work.
 
-        Planned durable contract: identify measurements by (source, event_id),
-        accept a whole batch atomically, and return 202 only after inbox commit.
+        Identify measurements by (source, event_id) and accept a whole batch
+        atomically, including repeated identities within the incoming batch.
         Identical content succeeds across retries and batch boundaries without
         another insert or a changed received_at. Changed measurement content
         for an existing identity returns 409 and rolls back new events in the
         batch. Billing supplies the first received_at from its UTC clock.
-        Batch identifiers do not participate in measurement comparison.
+        Compare schema_version, customer_id, sandbox_id, metric, period_start,
+        period_end, and units as domain values; timestamp offsets representing
+        the same instant are identical. Reordered events and different batch
+        boundaries do not change event identity. Batch identifiers are optional
+        producer metadata, are not stored, and do not participate in comparison.
         Accounting remains asynchronous and is not implied by acceptance.
+
+        Database work has a 10-second deadline, also honoring request
+        cancellation. Unavailable storage or a failed commit returns 503 with
+        Retry-After: 1. A 503 or a lost response can leave the commit outcome
+        unknown: retain events and retry the same identities and content after
+        backoff. Identical retries are safe even after successful accounting.
+        A 409 requires investigation; unchanged retries cannot resolve it.
       requestBody:
         required: true
         description: A nonempty batch of explicit measurement values.
@@ -74,9 +86,10 @@ paths:
       responses:
         '202':
           description: |
-            Implemented response stub after successful validation. No database
-            write occurs; this response does not yet confirm durable receipt.
-          x-implementation-status: response-stub
+            Every new measurement is durably committed; existing identical
+            measurements are preserved, including their original received_at,
+            processed_at, and processing_error. No partial batch is accepted.
+            Accounting completion is not implied.
           content:
             application/json:
               schema:
@@ -135,19 +148,43 @@ paths:
                   message: must be later than period_start
                   field: events[0].period_end
         '409':
-          x-implementation-status: planned
           description: |
-            PLANNED; not returned yet. Different measurement content for an
-            existing (source, event_id). Preserve the original record and roll
-            back the entire new batch. Unchanged retries cannot resolve the
-            conflict; the platform retains the input for investigation.
+            Different measurement content for one (source, event_id), either
+            already stored or repeated inside this request. Original rows are
+            preserved and every new row in the batch is rolled back. The
+            response identifies the conflicting key, without exposing its
+            stored content. Retain the input for investigation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictResponse'
+              example:
+                error:
+                  code: event_conflict
+                  message: The event identity already has different measurement content.
+                  source: platform-simulator
+                  event_id: acme-cpu-000001
         '503':
-          x-implementation-status: planned
           description: |
-            PLANNED; not returned yet. Inbox storage is unavailable. The
-            producer retains events and retries unchanged identities/content.
-            A lost response may leave commit outcome unknown; idempotence will
-            make retries safe once durable ingestion is connected.
+            Inbox storage is unavailable, timed out, canceled, or failed during
+            commit, including a missing schema before explicit migrations. The
+            commit outcome may be unknown. Retain events and retry unchanged
+            identities/content after backoff; storage details are not exposed.
+          headers:
+            Retry-After:
+              description: Minimum delay in seconds before retrying; value is 1.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: inbox_unavailable
+                  message: Inbox storage is unavailable. Retry the same event identities and content.
   /healthz:
     get:
       operationId: getHealth
@@ -178,7 +215,7 @@ components:
       properties:
         batch_id:
           $ref: '#/components/schemas/Identifier'
-          description: Optional tracing identifier. Does not replace event identities.
+          description: Optional producer metadata; not stored and not used for deduplication.
         events:
           type: array
           minItems: 1
@@ -192,6 +229,7 @@ components:
       description: |
         Valid RFC 3339 instant with an explicit offset and at most six
         fractional digits. The corresponding UTC year must be 1–9999.
+        The zero instant 0001-01-01T00:00:00Z is reserved for a missing value.
     UsageEvent:
       type: object
       additionalProperties: false
@@ -240,7 +278,7 @@ components:
         status:
           type: string
           enum: [accepted]
-          description: Validation-only response stub until durable acceptance is wired.
+          description: Durable inbox receipt; accounting is asynchronous.
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -253,10 +291,25 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_json, invalid_batch, request_too_large, unsupported_media_type]
+              enum: [invalid_json, invalid_batch, request_too_large, unsupported_media_type, event_conflict, inbox_unavailable]
             message:
               type: string
               description: Human-readable description; clients should use code for classification.
             field:
               type: string
               description: Optional location, such as events[0].units.
+            source:
+              $ref: '#/components/schemas/Identifier'
+              description: Producer namespace of a conflicting event; present on 409.
+            event_id:
+              $ref: '#/components/schemas/Identifier'
+              description: Conflicting identity within source; present on 409.
+    ConflictResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - properties:
+            error:
+              required: [source, event_id]
+              properties:
+                code:
+                  const: event_conflict

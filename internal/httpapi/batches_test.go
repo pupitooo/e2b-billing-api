@@ -15,7 +15,7 @@ const validUsageBatch = `{"batch_id":"test","events":[{"source":"platform-test",
 
 // TestUsageBatchValidInput verifies accepted transport forms, explicit zero
 // units, integer bounds, Unicode, and equivalent UTC-offset representations.
-// The response remains a validation-only stub until durable acceptance is wired.
+// Valid requests reach a store double that successfully confirms the batch.
 func TestUsageBatchValidInput(t *testing.T) {
 	tests := []struct {
 		name string
@@ -194,17 +194,17 @@ func TestUsageBatchMediaType(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Content-Encoding", "gzip")
 	response := httptest.NewRecorder()
-	httpapi.NewHandler().ServeHTTP(response, request)
+	httpapi.NewHandler(acceptingStore()).ServeHTTP(response, request)
 	assertRequestError(t, response, 415, "unsupported_media_type", "")
 }
 
 // TestUsageBatchReadFailure simulates interrupted body transfer. A request whose
-// body cannot be read must fail with a JSON error instead of reaching the stub.
+// body cannot be read must fail with a JSON error before reaching storage.
 func TestUsageBatchReadFailure(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", failingReader{})
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	httpapi.NewHandler().ServeHTTP(response, request)
+	httpapi.NewHandler(acceptingStore()).ServeHTTP(response, request)
 	assertRequestError(t, response, 400, "invalid_json", "")
 }
 
@@ -221,7 +221,7 @@ func postBatch(body, mediaType string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", io.NopCloser(strings.NewReader(body)))
 	request.Header.Set("Content-Type", mediaType)
 	response := httptest.NewRecorder()
-	httpapi.NewHandler().ServeHTTP(response, request)
+	httpapi.NewHandler(acceptingStore()).ServeHTTP(response, request)
 	return response
 }
 
