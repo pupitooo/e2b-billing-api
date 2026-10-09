@@ -612,6 +612,39 @@ To extend the schema, add the next numbered SQL file and a corresponding version
 - `tests/sql/`: database integrity tests executed with `psql`.
 - `docs/`: project and interface documentation.
 
+## Go formatting and static checks
+
+Enable the tracked [pre-commit hook](.githooks/pre-commit) once after cloning:
+
+```sh
+make install-hooks
+```
+
+Every subsequent normal commit checks the staged snapshot with `gofmt` and
+`go vet`, including integration-tagged test code. An unformatted file or a vet
+finding stops the commit. The hook preserves partial staging and never formats
+or stages files automatically. Fix reported problems, then stage the intended
+changes and commit again.
+
+| Command | Behavior |
+| --- | --- |
+| `make fmt` | Apply standard `gofmt` formatting to project Go files. |
+| `make fmt-check` | Fail when project Go files differ from `gofmt`; change no files. |
+| `make vet` | Run `go vet ./...` and `go vet -tags=integration ./...`. |
+| `make check` | Run formatting and vet checks together, as CI does. |
+| `make install-hooks` | Set this clone's `core.hooksPath` to the tracked `.githooks` directory. |
+
+These commands use installed Go when available, otherwise Docker builds the
+`go-tools` stage from the existing [Dockerfile](Dockerfile). No running API or
+database is needed. `E2B_GO_CHECKS_DOCKER=1 make check` explicitly uses Docker;
+CI uses this mode to match the pinned project toolchain. Local private `tools/`
+worktrees and dependency directories are excluded from formatting.
+
+Hook configuration is local Git metadata and must be enabled in each clone.
+Git permits bypassing local hooks with `--no-verify`; CI independently runs the
+same checks on every push and pull request. The standard tools are documented
+in [gofmt](https://pkg.go.dev/cmd/gofmt) and [go vet](https://pkg.go.dev/cmd/vet).
+
 ## Testing
 
 `make test` is the primary test command. Start PostgreSQL with `make up SERVICE=postgres` before running all tests or the database suite; the Go suite builds and starts the API and worker automatically.
@@ -666,7 +699,7 @@ E2B_TEST_DATABASE_URL='postgres://e2b:e2b_local_dev@127.0.0.1:5432/e2b_billing?s
 go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
 ```
 
-[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check runs SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
+[CI](.github/workflows/ci.yml) runs `make check` before `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check includes Go formatting and static analysis, SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
 
 ## Usage inbox contract
 

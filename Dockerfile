@@ -1,8 +1,10 @@
-FROM golang:1.27.2-alpine
+FROM golang:1.27.2-alpine AS go-tools
 
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
+
+FROM go-tools AS api
 COPY cmd ./cmd
 COPY internal ./internal
 COPY tests/api ./tests/api
