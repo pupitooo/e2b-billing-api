@@ -64,10 +64,10 @@ func TestInboxInsertBatch(t *testing.T) {
 	}
 }
 
-// TestInboxDuplicateRollback exercises a late primary-key failure after a new
+// TestInboxConflictRollback exercises a late content conflict after a new
 // event was inserted. The batch must roll back its new row and preserve the
-// earlier committed measurement and receipt time until idempotence is added.
-func TestInboxDuplicateRollback(t *testing.T) {
+// earlier committed measurement and receipt time.
+func TestInboxConflictRollback(t *testing.T) {
 	pool := testDatabase(t, nil)
 	store := inbox.NewPostgres(pool)
 	events := fixtureEvents()
@@ -77,8 +77,9 @@ func TestInboxDuplicateRollback(t *testing.T) {
 	}
 	changed := events[0]
 	changed.Units++
+	events[1].EventID = "000-new-before-conflict"
 	err := store.InsertBatch(context.Background(), []usage.Event{events[1], changed}, receipt.Add(time.Minute))
-	assertPostgresError(t, err, "23505")
+	assertConflict(t, err, changed)
 	if count := eventCount(t, pool); count != 1 {
 		t.Errorf("Event count after rollback = %d, want 1", count)
 	}
@@ -89,6 +90,16 @@ func TestInboxDuplicateRollback(t *testing.T) {
 	}
 	if units != events[0].Units || !received.Equal(receipt) {
 		t.Error("Failed batch changed the original measurement or receipt time")
+	}
+}
+
+// assertConflict verifies typed content conflicts identify the original event,
+// rather than exposing a generic primary-key error or silently replacing it.
+func assertConflict(t *testing.T, err error, event usage.Event) {
+	t.Helper()
+	var conflict *inbox.ConflictError
+	if !errors.As(err, &conflict) || conflict.Source != event.Source || conflict.EventID != event.EventID {
+		t.Fatalf("Conflict = %v, want identity (%q, %q)", err, event.Source, event.EventID)
 	}
 }
 
