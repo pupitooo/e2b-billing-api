@@ -1,0 +1,147 @@
+{
+  "name": "billing-exact-credit",
+  "steps": [
+    {
+      "name": "fresh account",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "grant one cent",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/credits",
+        "body": {
+          "operation_id": "one-cent",
+          "amount_cents": 1,
+          "recorded_at": "2026-10-01T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "amount_cents": 1
+        }
+      }
+    },
+    {
+      "name": "send two small sandbox increments",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "tiny-a",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "acme-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:00:00Z",
+              "period_end": "2026-10-10T12:01:00Z",
+              "units": 1250
+            },
+            {
+              "source": "{{source}}",
+              "event_id": "tiny-b",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "acme-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:01:00Z",
+              "period_end": "2026-10-10T12:02:00Z",
+              "units": 1250
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "exact subcent debits retain fractional credit",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "990000",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 3
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "issue a zero-cent presentation with exact audit ticks",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "number": "ACME-0001",
+          "total_cents": 0,
+          "gross_usage_ticks": "10000",
+          "credit_used_ticks": "10000",
+          "lines": [
+            {
+              "kind": "usage",
+              "units": "2500",
+              "amount_cents": 0,
+              "gross_ticks": "10000",
+              "credit_ticks": "10000"
+            },
+            {
+              "kind": "credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "invoice rounding did not consume another tick",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "990000",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 4
+        }
+      },
+      "await": true
+    }
+  ]
+}

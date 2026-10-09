@@ -1,7 +1,7 @@
 openapi: 3.1.2
 info:
   title: E2B Billing API
-  version: 0.4.0
+  version: 0.5.0
   description: |
     The usage endpoint validates and atomically commits measurements to the
     PostgreSQL inbox before returning 202. Identical event retries succeed
@@ -478,6 +478,17 @@ paths:
                 error:
                   code: not_found
                   message: Customer or catalog resource does not exist.
+        '422':
+          description: Invalid customer identifier or UTC month.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  message: Use nonblank Unicode without NUL, at most 256 UTF-8 bytes.
+                  field: customer_id
         '503':
           description: Database deadline or storage failure. Retry unchanged operation identity and content;
             outcome may be unknown.
@@ -782,6 +793,17 @@ paths:
                 error:
                   code: not_found
                   message: Customer or catalog resource does not exist.
+        '422':
+          description: Invalid customer identifier or UTC month.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  message: Use nonblank Unicode without NUL, at most 256 UTF-8 bytes.
+                  field: customer_id
         '503':
           description: Database deadline or storage failure. Retry unchanged operation identity and content;
             outcome may be unknown.
@@ -851,6 +873,17 @@ paths:
                 error:
                   code: not_found
                   message: Customer or catalog resource does not exist.
+        '422':
+          description: Invalid customer identifier or UTC month.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  message: Use a UTC calendar month as YYYY-MM.
+                  field: month
         '503':
           description: Database deadline or storage failure. Retry unchanged operation identity and content;
             outcome may be unknown.
@@ -1086,6 +1119,17 @@ paths:
                 error:
                   code: not_found
                   message: Customer or catalog resource does not exist.
+        '422':
+          description: Invalid customer identifier or UTC month.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  message: Use a UTC calendar month as YYYY-MM.
+                  field: month
         '503':
           description: Database deadline or storage failure. Retry unchanged operation identity and content;
             outcome may be unknown.

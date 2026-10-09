@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,7 +33,7 @@ func run(ctx context.Context, args []string, output, errorOutput io.Writer) erro
 	flags := flag.NewFlagSet("platform-simulator", flag.ContinueOnError)
 	flags.SetOutput(errorOutput)
 	action := flags.String("action", "run", "run, generate, send, status, replay, or idle")
-	scenario := flags.String("scenario", "assignment", "assignment, lost-response, duplicates, or custom")
+	scenario := flags.String("scenario", "assignment", "transport assignment, lost-response, duplicates, custom, or a billing-* public workflow")
 	mode := flags.String("mode", "fast", "fast releases a phase; step releases one step per command")
 	state := flags.String("state", "/state/run.json", "durable sender state file; retain it across restarts")
 	source := flags.String("source", "platform-simulator", "stable producer namespace for the saved run")
@@ -65,6 +67,25 @@ func run(ctx context.Context, args []string, output, errorOutput io.Writer) erro
 	}
 	if *timeout <= 0 {
 		return fmt.Errorf("timeout must be positive")
+	}
+	if strings.HasPrefix(*scenario, "billing-") {
+		if *sandboxes != 1 || *interval != time.Hour || *advance || *batchSize != 100 || *batchDelay != 0 || *duplicates != 0 || *reverse {
+			return fmt.Errorf("billing workflows declare their inputs; transport generation flags require a transport scenario")
+		}
+		path := *file
+		if path == "" {
+			path = filepath.Join("docs/simulator", *scenario+".json")
+		}
+		plan, err := simulator.LoadWorkflow(path)
+		if err != nil {
+			return err
+		}
+		return simulator.RunWorkflow(ctx, simulator.WorkflowOptions{
+			Plan: plan, StatePath: *state, Source: *source, BaseURL: *baseURL,
+			Client: &http.Client{Timeout: *timeout}, Action: *action, Mode: *mode,
+			RetryMin: *retryMin, RetryMax: *retryMax, MaxAttempts: *maxAttempts,
+			LoseResponse: *loseResponse, Output: output,
+		})
 	}
 	var plan *simulator.Plan
 	if *action == "run" || *action == "generate" {

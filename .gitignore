@@ -14,6 +14,8 @@
 /docs/simulator/*
 !/docs/simulator/custom-scenario.json
 !/docs/simulator/scenario-style.md
+!/docs/simulator/billing-*.json
+!/docs/simulator/billing-scenarios.md
 !/docs/brainstorming/
 /docs/brainstorming/*
 !/docs/brainstorming/architecture-options.md

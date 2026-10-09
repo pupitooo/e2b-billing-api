@@ -1,0 +1,198 @@
+{
+  "name": "billing-price-versions",
+  "steps": [
+    {
+      "name": "fresh account",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "append historical default before any affected rating",
+      "request": {
+        "method": "POST",
+        "path": "/prices",
+        "body": {
+          "price_version_id": "new-default",
+          "customer_id": null,
+          "metric": "cpu_seconds",
+          "price_per_million_cents": 8,
+          "effective_from": "2026-10-12T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "price_per_million_cents": 8
+        }
+      }
+    },
+    {
+      "name": "append customer override",
+      "request": {
+        "method": "POST",
+        "path": "/prices",
+        "body": {
+          "price_version_id": "new-override",
+          "customer_id": "cyberdyne",
+          "metric": "cpu_seconds",
+          "price_per_million_cents": 3,
+          "effective_from": "2026-10-19T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "price_per_million_cents": 3
+        }
+      }
+    },
+    {
+      "name": "measure at both effective consumption prices",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "new-default-hour",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "cyberdyne-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-13T12:00:00Z",
+              "period_end": "2026-10-13T13:00:00Z",
+              "units": 100000000
+            },
+            {
+              "source": "{{source}}",
+              "event_id": "override-hour",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "cyberdyne-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-20T12:00:00Z",
+              "period_end": "2026-10-20T13:00:00Z",
+              "units": 100000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "rating completed before retroactive commands",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 2
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "reject a new default that changes rated history",
+      "request": {
+        "method": "POST",
+        "path": "/prices",
+        "body": {
+          "price_version_id": "retroactive-default",
+          "customer_id": null,
+          "metric": "cpu_seconds",
+          "price_per_million_cents": 9,
+          "effective_from": "2026-10-12T01:00:00Z"
+        }
+      },
+      "want": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "billing_conflict"
+          }
+        }
+      }
+    },
+    {
+      "name": "reject an override that changes a rated default",
+      "request": {
+        "method": "POST",
+        "path": "/prices",
+        "body": {
+          "price_version_id": "retroactive-override",
+          "customer_id": "cyberdyne",
+          "metric": "cpu_seconds",
+          "price_per_million_cents": 1,
+          "effective_from": "2026-10-10T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "billing_conflict"
+          }
+        }
+      }
+    },
+    {
+      "name": "invoice retains selected default and customer override",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "number": "CYBERDYNE-0001",
+          "total_cents": 1100,
+          "gross_usage_ticks": "1100000000",
+          "credit_used_ticks": "0",
+          "lines": [
+            {
+              "kind": "usage",
+              "price_version_id": "new-default",
+              "amount_cents": 800
+            },
+            {
+              "kind": "usage",
+              "price_version_id": "new-override",
+              "amount_cents": 300
+            },
+            {
+              "kind": "credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -14,3 +14,6 @@
 !tests/worker/**
 !migrations/
 !migrations/**
+!docs/
+!docs/simulator/
+!docs/simulator/billing-*.json

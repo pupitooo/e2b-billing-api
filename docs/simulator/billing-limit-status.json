@@ -1,0 +1,319 @@
+{
+  "name": "billing-limit-status",
+  "steps": [
+    {
+      "name": "fresh account",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "set monthly USD 15 limit",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/spend-limit",
+        "body": {
+          "operation_id": "first",
+          "limit_cents": 1500
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "first",
+          "limit_cents": 1500
+        }
+      }
+    },
+    {
+      "name": "first hour remains below limit",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "cyberdyne-first",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "cyberdyne-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:00:00Z",
+              "period_end": "2026-10-10T13:00:00Z",
+              "units": 123456789
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "platform reads below-limit monthly status",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/months/2026-10/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "month": "2026-10",
+          "limit_cents": 1500,
+          "gross_charge_ticks": "617283945",
+          "limit_reached": false,
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "second hour exceeds limit",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "cyberdyne-second",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "cyberdyne-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-20T12:00:00Z",
+              "period_end": "2026-10-20T13:00:00Z",
+              "units": 200000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "platform reads reached monthly status",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/months/2026-10/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "month": "2026-10",
+          "limit_cents": 1500,
+          "gross_charge_ticks": "1817283945",
+          "limit_reached": true,
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "raise limit above gross spend",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/spend-limit",
+        "body": {
+          "operation_id": "higher",
+          "limit_cents": 2000
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "higher",
+          "limit_cents": 2000
+        }
+      }
+    },
+    {
+      "name": "platform reads cleared monthly status",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/months/2026-10/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "month": "2026-10",
+          "limit_cents": 2000,
+          "gross_charge_ticks": "1817283945",
+          "limit_reached": false,
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "restore original limit",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/spend-limit",
+        "body": {
+          "operation_id": "restore",
+          "limit_cents": 1500
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "restore",
+          "limit_cents": 1500
+        }
+      }
+    },
+    {
+      "name": "new UTC month resets gross spend",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/months/2026-11/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "month": "2026-11",
+          "limit_cents": 1500,
+          "gross_charge_ticks": "0",
+          "limit_reached": false,
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "zero limit is reached without spend",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/spend-limit",
+        "body": {
+          "operation_id": "zero",
+          "limit_cents": 0
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "zero",
+          "limit_cents": 0
+        }
+      }
+    },
+    {
+      "name": "platform sees zero limit reached in an empty month",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/months/2026-11/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "month": "2026-11",
+          "limit_cents": 0,
+          "gross_charge_ticks": "0",
+          "limit_reached": true,
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "remove limit explicitly",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/spend-limit",
+        "body": {
+          "operation_id": "unlimited",
+          "limit_cents": null
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "unlimited",
+          "limit_cents": null
+        }
+      }
+    },
+    {
+      "name": "unlimited clears even previous gross spend",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/months/2026-10/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "month": "2026-10",
+          "limit_cents": null,
+          "gross_charge_ticks": "1817283945",
+          "limit_reached": false,
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "all measured usage is still invoiced after exceeding limits",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "number": "CYBERDYNE-0001",
+          "total_cents": 1817,
+          "lines": [
+            {
+              "kind": "usage",
+              "amount_cents": 617
+            },
+            {
+              "kind": "usage",
+              "amount_cents": 1200
+            },
+            {
+              "kind": "credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

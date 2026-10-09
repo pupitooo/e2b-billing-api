@@ -69,6 +69,12 @@ func (s *Store) Save(state *State) error {
 	if err := state.validate(); err != nil {
 		return err
 	}
+	return s.saveJSON(state)
+}
+
+// saveJSON preserves either transport or workflow checkpoints using the same
+// atomic replacement, file sync, and directory sync guarantees.
+func (s *Store) saveJSON(state any) error {
 	directory := filepath.Dir(s.path)
 	file, err := os.CreateTemp(directory, ".simulator-*")
 	if err != nil {

@@ -1,0 +1,315 @@
+{
+  "name": "billing-command-retries",
+  "steps": [
+    {
+      "name": "fresh account",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "grant once with lost reply",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/credits",
+        "body": {
+          "operation_id": "welcome",
+          "amount_cents": 2500,
+          "recorded_at": "2026-10-01T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "welcome",
+          "amount_cents": 2500,
+          "recorded_at": "2026-10-01T00:00:00Z"
+        }
+      },
+      "fault": {
+        "lose_response": true
+      }
+    },
+    {
+      "name": "unchanged credit grant retry",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/credits",
+        "body": {
+          "operation_id": "welcome",
+          "amount_cents": 2500,
+          "recorded_at": "2026-10-01T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "welcome",
+          "amount_cents": 2500,
+          "recorded_at": "2026-10-01T00:00:00Z"
+        }
+      }
+    },
+    {
+      "name": "changed credit grant conflicts",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/credits",
+        "body": {
+          "operation_id": "welcome",
+          "amount_cents": 2600,
+          "recorded_at": "2026-10-01T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "billing_conflict"
+          }
+        }
+      }
+    },
+    {
+      "name": "only one grant reached the balance",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "2500000000",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 1
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "purchase once",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/addons",
+        "body": {
+          "subscription_id": "acme-pack",
+          "addon_name": "concurrency_pack",
+          "purchased_at": "2026-10-05T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "monthly_price_cents": 2000
+        }
+      }
+    },
+    {
+      "name": "unchanged purchase retry",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/addons",
+        "body": {
+          "subscription_id": "acme-pack",
+          "addon_name": "concurrency_pack",
+          "purchased_at": "2026-10-05T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "monthly_price_cents": 2000
+        }
+      }
+    },
+    {
+      "name": "second subscription identity conflicts",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/addons",
+        "body": {
+          "subscription_id": "another-pack",
+          "addon_name": "concurrency_pack",
+          "purchased_at": "2026-10-05T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "billing_conflict"
+          }
+        }
+      }
+    },
+    {
+      "name": "set first limit",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/spend-limit",
+        "body": {
+          "operation_id": "first-limit",
+          "limit_cents": 1500
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "first-limit",
+          "limit_cents": 1500
+        }
+      }
+    },
+    {
+      "name": "raise limit",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/spend-limit",
+        "body": {
+          "operation_id": "raised-limit",
+          "limit_cents": 2000
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "raised-limit",
+          "limit_cents": 2000
+        }
+      }
+    },
+    {
+      "name": "retry old change without reverting the newer limit",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/spend-limit",
+        "body": {
+          "operation_id": "first-limit",
+          "limit_cents": 1500
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "first-limit",
+          "limit_cents": 1500
+        }
+      }
+    },
+    {
+      "name": "newer limit survived old retry",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/months/2026-10/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "month": "2026-10",
+          "limit_cents": 2000,
+          "gross_charge_ticks": "0",
+          "limit_reached": false,
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "append a future default price",
+      "request": {
+        "method": "POST",
+        "path": "/prices",
+        "body": {
+          "price_version_id": "new-default",
+          "customer_id": null,
+          "metric": "cpu_seconds",
+          "price_per_million_cents": 7,
+          "effective_from": "2026-12-01T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "price_version_id": "new-default",
+          "price_per_million_cents": 7
+        }
+      }
+    },
+    {
+      "name": "retry the unchanged price version",
+      "request": {
+        "method": "POST",
+        "path": "/prices",
+        "body": {
+          "price_version_id": "new-default",
+          "customer_id": null,
+          "metric": "cpu_seconds",
+          "price_per_million_cents": 7,
+          "effective_from": "2026-12-01T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "price_version_id": "new-default",
+          "price_per_million_cents": 7
+        }
+      }
+    },
+    {
+      "name": "changed price identity conflicts",
+      "request": {
+        "method": "POST",
+        "path": "/prices",
+        "body": {
+          "price_version_id": "new-default",
+          "customer_id": null,
+          "metric": "cpu_seconds",
+          "price_per_million_cents": 8,
+          "effective_from": "2026-12-01T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "billing_conflict"
+          }
+        }
+      }
+    },
+    {
+      "name": "grants and purchases were never duplicated",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "2500000000",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 4
+        }
+      },
+      "await": true
+    }
+  ]
+}
