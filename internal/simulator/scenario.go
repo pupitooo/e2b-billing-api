@@ -36,49 +36,81 @@ func Assignment(source string, sandboxes int, interval time.Duration) (Plan, err
 	if 6*sandboxes*segments > maxScenarioEvents {
 		return Plan{}, fmt.Errorf("the scenario must contain at most %d events", maxScenarioEvents)
 	}
-	plan := Plan{Name: "assignment", Steps: []Step{
-		{Name: "october-first"}, {Name: "october-second"},
-		{Name: "late-october", Barrier: "Issue the October invoices after accounting completes; then use ADVANCE=1."},
-		{Name: "november"},
-	}}
-	fixtures := []struct {
-		step     int
-		customer string
-		day      string
-		units    int64
-	}{
-		{0, "acme", "2026-10-10", 100_000_000},
-		{0, "cyberdyne", "2026-10-10", 123_456_789},
-		{1, "acme", "2026-10-20", 200_000_000},
-		{1, "cyberdyne", "2026-10-20", 200_000_000},
-		{2, "acme", "2026-10-30", 50_000_000},
-		{3, "acme", "2026-11-03", 100_000_000},
-	}
-	for _, fixture := range fixtures {
-		start, err := time.Parse(time.RFC3339, fixture.day+"T12:00:00Z")
-		if err != nil {
-			return Plan{}, err
-		}
-		count := sandboxes * segments
-		for sandbox := range sandboxes {
-			for segment := range segments {
-				index := sandbox*segments + segment
-				units := fixture.units / int64(count)
-				if int64(index) < fixture.units%int64(count) {
-					units++
-				}
-				period := start.Add(time.Duration(segment) * interval)
-				plan.Steps[fixture.step].Events = append(plan.Steps[fixture.step].Events, Event{
-					Source:        source,
-					EventID:       fmt.Sprintf("assignment-%s-%s-s%04d-p%04d", fixture.customer, fixture.day, sandbox+1, segment+1),
-					SchemaVersion: 1, CustomerID: fixture.customer,
-					SandboxID: fmt.Sprintf("%s-sandbox-%04d", fixture.customer, sandbox+1),
-					Metric:    "cpu_seconds", PeriodStart: period, PeriodEnd: period.Add(interval), Units: units,
-				})
+	plan := Plan{Name: "assignment"}
+	for _, input := range assignmentSteps() {
+		step := Step{Name: input.name, Barrier: input.barrier}
+		for _, hour := range input.hours {
+			events, err := splitHour(source, hour, sandboxes, interval)
+			if err != nil {
+				return Plan{}, err
 			}
+			step.Events = append(step.Events, events...)
 		}
+		plan.Steps = append(plan.Steps, step)
 	}
 	return plan, plan.validate()
+}
+
+type hourInput struct {
+	customer string
+	start    string
+	units    int64
+}
+
+type assignmentStep struct {
+	name    string
+	barrier string
+	hours   []hourInput
+}
+
+// assignmentSteps keeps the binding measurements with their named business phase.
+func assignmentSteps() []assignmentStep {
+	return []assignmentStep{
+		{name: "october-first", hours: []hourInput{
+			{customer: "acme", start: "2026-10-10T12:00:00Z", units: 100_000_000},
+			{customer: "cyberdyne", start: "2026-10-10T12:00:00Z", units: 123_456_789},
+		}},
+		{name: "october-second", hours: []hourInput{
+			{customer: "acme", start: "2026-10-20T12:00:00Z", units: 200_000_000},
+			{customer: "cyberdyne", start: "2026-10-20T12:00:00Z", units: 200_000_000},
+		}},
+		{name: "late-october", barrier: "Issue the October invoices after accounting completes; then use ADVANCE=1.", hours: []hourInput{
+			{customer: "acme", start: "2026-10-30T12:00:00Z", units: 50_000_000},
+		}},
+		{name: "november", hours: []hourInput{
+			{customer: "acme", start: "2026-11-03T12:00:00Z", units: 100_000_000},
+		}},
+	}
+}
+
+// splitHour distributes integer units with a visible remainder rule. It retains
+// the previous event ordering and identity scheme for durable saved plans.
+func splitHour(source string, input hourInput, sandboxes int, interval time.Duration) ([]Event, error) {
+	start, err := time.Parse(time.RFC3339, input.start)
+	if err != nil {
+		return nil, err
+	}
+	segments := int(time.Hour / interval)
+	count := sandboxes * segments
+	events := make([]Event, 0, count)
+	for sandbox := range sandboxes {
+		for segment := range segments {
+			index := sandbox*segments + segment
+			units := input.units / int64(count)
+			if int64(index) < input.units%int64(count) {
+				units++
+			}
+			period := start.Add(time.Duration(segment) * interval)
+			events = append(events, Event{
+				Source:        source,
+				EventID:       fmt.Sprintf("assignment-%s-%s-s%04d-p%04d", input.customer, start.Format("2006-01-02"), sandbox+1, segment+1),
+				SchemaVersion: 1, CustomerID: input.customer,
+				SandboxID: fmt.Sprintf("%s-sandbox-%04d", input.customer, sandbox+1),
+				Metric:    "cpu_seconds", PeriodStart: period, PeriodEnd: period.Add(interval), Units: units,
+			})
+		}
+	}
+	return events, nil
 }
 
 // Custom loads an operator-defined scenario. Source belongs to the run, while

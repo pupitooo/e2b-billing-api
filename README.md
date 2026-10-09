@@ -850,3 +850,7 @@ audit ticks, group freezes, closure, and the customer's next number commit toget
 Issuance never consumes credit again. Later grants and consumption cannot change an issued
 invoice. A new purchase cannot affect a closing or closed month. Operators trigger invoices
 explicitly through the API; an automatic calendar scheduler remains an extension.
+
+The [scenario style guide](docs/simulator/scenario-style.md) describes the named-step format
+used for durable platform workflows and literal expected results. Simulator transport tests
+run as `TestSimulatorExecutable` with separate workflow subtests; `RUN=Simulator` still selects them.

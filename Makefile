@@ -4,6 +4,8 @@ SHELL := /bin/sh
 COMPOSE := docker compose
 SERVICE ?=
 RUN ?=
+# Test regexes are data; preserve dollar anchors in command-line overrides.
+override RUN := $(value RUN)
 # A Go test filter selects the Go suite unless SUITE is explicitly supplied.
 SUITE ?= $(if $(strip $(RUN)),go,all)
 export SERVICE RUN SUITE
