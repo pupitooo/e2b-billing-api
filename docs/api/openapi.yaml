@@ -1,7 +1,7 @@
 openapi: 3.1.2
 info:
   title: E2B Billing API
-  version: 0.3.0
+  version: 0.4.0
   description: |
     The usage endpoint validates and atomically commits measurements to the
     PostgreSQL inbox before returning 202. Identical event retries succeed
@@ -55,8 +55,12 @@ paths:
         producer metadata, are not stored, and do not participate in comparison.
         Accounting remains asynchronous and is not implied by acceptance.
 
-        Database work has a 10-second deadline, also honoring request
-        cancellation. Unavailable storage or a failed commit returns 503 with
+        Admission is bounded per API instance (32 concurrent batches by
+        default). When full, return 503 before application body parsing;
+        retain the original events for retry. Database work, including waiting
+        for a pool connection, has a configurable deadline (10 seconds by
+        default), also honoring request cancellation. Admission exhaustion,
+        unavailable storage, or a failed commit returns 503 with
         Retry-After: 1. A 503 or a lost response can leave the commit outcome
         unknown: retain events and retry the same identities and content after
         backoff. Identical retries are safe even after successful accounting.
@@ -166,8 +170,10 @@ paths:
                   event_id: acme-cpu-000001
         '503':
           description: |
-            Inbox storage is unavailable, timed out, canceled, or failed during
-            commit, including a missing schema before explicit migrations. The
+            The API's concurrent batch budget is exhausted, or inbox storage is
+            unavailable, timed out, canceled, or failed during commit, including
+            a missing schema before explicit migrations. Admission rejection
+            happens before application body parsing and writes no events. The
             commit outcome may be unknown. Retain events and retry unchanged
             identities/content after backoff; storage details are not exposed.
           headers:

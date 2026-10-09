@@ -22,6 +22,99 @@ git clone https://github.com/pupitooo/e2b-billing-api.git
 
 Docker Compose reads an optional local `.env` file. The defaults are sufficient for local development. Copy [.env.example](.env.example) to `.env` to change the API port (`E2B_API_PORT`, default `8081`), documentation port (`E2B_DOCS_PORT`, default `8082`), PostgreSQL port, or development password. Keep the same configuration for subsequent commands.
 
+### API runtime budgets
+
+The API reads configuration once at startup. Compose passes the settings below
+from `.env` into the API container; restart with `make up SERVICE=api` after
+changing them. A standalone binary reads the same environment variables.
+Durations use Go units, such as `500ms`, `10s`, or `2m`. Missing values use the
+defaults; malformed, nonpositive, or incompatible budgets prevent startup.
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `E2B_API_STARTUP_TIMEOUT` | `10s` | Open and verify the database connection. |
+| `E2B_API_READ_HEADER_TIMEOUT` | `5s` | Read HTTP headers. |
+| `E2B_API_READ_TIMEOUT` | `15s` | Read the complete request, including its body. |
+| `E2B_API_INGESTION_TIMEOUT` | `10s` | Acquire a pool connection and commit one validated batch. |
+| `E2B_API_WRITE_TIMEOUT` | `35s` | Write deadline set after request headers, including body reading and storage. |
+| `E2B_API_IDLE_TIMEOUT` | `90s` | Reuse collector connections across minute-based reports with jitter. |
+| `E2B_API_SHUTDOWN_TIMEOUT` | `45s` | Drain HTTP requests on SIGINT or SIGTERM before closing the database pool. |
+| `E2B_API_STOP_GRACE_PERIOD` | `60s` | Compose's time before forcibly killing the container. |
+| `E2B_API_DB_MAX_CONNS` | `8` | Maximum database connections per API process. |
+| `E2B_API_DB_MIN_CONNS` | `2` | Minimum warm connections; zero is allowed. |
+| `E2B_API_MAX_IN_FLIGHT_BATCHES` | `32` | Admitted batches per process, including body reading and pool waiting. |
+
+The header deadline must fit within the read deadline. The write budget must
+exceed read + ingestion + the independent five-second rollback cleanup budget,
+leaving time for an error response. The shutdown budget must exceed header +
+write; Compose's stop grace period must exceed shutdown + rollback cleanup.
+The application validates its own budgets; configure the container's stop grace
+period separately when increasing shutdown time. These deadlines limit I/O and
+database work; they do not forcibly terminate arbitrary handler CPU work.
+
+When all admission slots are occupied, ingestion returns `503` / `Retry-After: 1`
+before application body parsing. Health requests remain available. Accepted
+batches still commit atomically; producers retain rejected events and retry
+unchanged identities and content with backoff and jitter.
+
+The API's explicit pool limits override pgx pool sizes in `DATABASE_URL`.
+Budget the database across all API replicas, future accounting workers, and
+administration: their combined maximum connections must fit PostgreSQL's
+connection limit. Customer count does not imply one database connection per
+customer. Admission bounds decoded batch memory, with at most 32 MiB of raw
+bodies under the existing 1 MiB limit, plus decoded objects and HTTP overhead.
+
+### Workload assumptions and measurements
+
+The assignment asks the design to consider approximately 50,000 customers,
+each running from a few to thousands of sandboxes, with minute-based reports.
+It does not prescribe an average sandbox count, batching topology, peak rate,
+or latency target, and does not require the implementation to demonstrate that
+capacity. For the following calculations, assume one metric and one event per
+active sandbox per minute, coalesced by platform collectors across customers:
+
+| Average active sandboxes per customer | Events/s | Requests/s at 1,000 events/batch |
+| --- | --- | --- |
+| 3 | 2,500 | 2.5 |
+| 10 | 8,333.3 | 8.3 |
+| 100 | 83,333.3 | 83.3 |
+
+Rate = customers × average active sandboxes × metrics / 60. More metrics and
+retries multiply this rate. A separate batch from every customer each minute
+would instead mean about 833 HTTP requests/s, even with only ten events each.
+The 1,000-event maximum also remains subject to the 1 MiB body limit. Spread
+minute reports with jitter; a synchronized burst and recovery backlog need
+separate capacity measurements and producer buffering.
+
+On 2026-10-09, a local Docker/Linux arm64 sample used 16 concurrent writers, private
+schemas, two runs of 50 new batches, PostgreSQL 18.6, and the existing synchronous
+commit path. For 1,000-event batches, p95 latency including pool waiting was
+306–324 ms with 4 connections, 260–409 ms with 8, and 209–217 ms with 16.
+Short samples vary; more connections do not guarantee lower latency.
+Eight connections are the initial per-process budget: these observed latencies
+leave room under the ten-second deadline while reserving connections for
+other processes. It is not a sustained throughput or production-capacity claim;
+it excludes HTTP parsing, duplicate comparisons, accounting, growing indexes,
+minute bursts, and failover. Increasing the pool alone does not establish support
+for billions of monthly records.
+
+Reproduce the short storage sample after starting PostgreSQL with
+`make up SERVICE=postgres` (all benchmark data lives in owned temporary schemas):
+
+```sh
+docker compose build api
+docker compose run --rm --no-deps api go test -tags=integration -run '^$' \
+  -bench '^BenchmarkInboxInsertBatch$' -benchtime=50x -cpu=16 -count=2 ./tests/inbox
+```
+
+Tune deployments from measured p95/p99 acceptance latency, connection-acquisition
+waits, CPU, disk/WAL behavior, overload responses, and accounting backlog. At
+8,333 events/s with 1,000-event batches, a measured mean transaction time of
+0.2 s would imply about 1.7 occupied connections on average; p95 is not the mean
+and this example does not cover peaks. Validate representative payloads, retries,
+worker competition, and sustained storage growth before changing budgets or
+adding replicas. See the [architecture growth TODOs](docs/brainstorming/architecture-options.md#todo-higher-load-and-evolution-beyond-c).
+
 ### Initialize the database
 
 On first setup, start PostgreSQL and apply the schema:
@@ -143,7 +236,9 @@ with `field` included when a validation location is available. A `409` uses code
 `event_conflict` and identifies `source` and `event_id`; retain that input for
 investigation. Correct invalid requests before retrying.
 
-Database work has a 10-second deadline and honors request cancellation. A `503`
+Database work has a configurable deadline (10 seconds by default), including
+pool waiting, and honors request cancellation. Admission exhaustion also returns
+`503` before application body parsing. A `503`
 uses code `inbox_unavailable` with `Retry-After: 1`, without exposing SQL details.
 Retain events and retry the same identities and content after backoff. A `503`
 or a lost response may occur after commit; idempotence makes unchanged retries

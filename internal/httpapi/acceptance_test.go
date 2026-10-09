@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +30,94 @@ func (store storeFunc) InsertBatch(ctx context.Context, events []usage.Event, re
 // Durable database behavior is exercised separately against PostgreSQL.
 func acceptingStore() storeFunc {
 	return func(context.Context, []usage.Event, time.Time) error { return nil }
+}
+
+// TestUsageBatchConfiguredDeadline lets storage wait for its request context.
+// A short configured deadline must yield retryable 503 instead of retaining the
+// old ten-second deadline or writing an acceptance without a commit.
+func TestUsageBatchConfiguredDeadline(t *testing.T) {
+	store := storeFunc(func(ctx context.Context, _ []usage.Event, _ time.Time) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(validUsageBatch))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	httpapi.NewHandler(store, 20*time.Millisecond, 32).ServeHTTP(response, request)
+	assertRequestError(t, response, 503, "inbox_unavailable", "")
+	if response.Header().Get("Retry-After") != "1" {
+		t.Error("Timed-out batch omitted retry guidance")
+	}
+}
+
+// TestUsageBatchAdmissionBudget holds one admitted batch at storage, saturating
+// a one-slot handler. Excess work must receive retryable 503 without reading its
+// body, health must remain available, and completion must free the slot.
+func TestUsageBatchAdmissionBudget(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	var calls atomic.Int32
+	store := storeFunc(func(ctx context.Context, _ []usage.Event, _ time.Time) error {
+		if calls.Add(1) == 1 {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return nil
+	})
+	handler := httpapi.NewHandler(store, time.Second, 1)
+	first := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(validUsageBatch))
+	request.Header.Set("Content-Type", "application/json")
+	finished := make(chan struct{})
+	go func() { handler.ServeHTTP(first, request); close(finished) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("First batch did not reach storage")
+	}
+	rejected := httptest.NewRecorder()
+	reader := &observedBody{}
+	handler.ServeHTTP(rejected, httptest.NewRequest(http.MethodPost, "/usage/batches", reader))
+	assertRequestError(t, rejected, 503, "inbox_unavailable", "")
+	if reader.read || rejected.Header().Get("Retry-After") != "1" || calls.Load() != 1 {
+		t.Error("Rejected batch read its body, reached storage, or omitted retry guidance")
+	}
+	health := httptest.NewRecorder()
+	handler.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if health.Code != 200 {
+		t.Errorf("Health during overload = %d, want 200", health.Code)
+	}
+	unblock()
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("Admitted batch did not complete")
+	}
+	if first.Code != 202 {
+		t.Errorf("Admitted batch = %d, want 202", first.Code)
+	}
+	response := httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(validUsageBatch))
+	request.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(response, request)
+	if response.Code != 202 || calls.Load() != 2 {
+		t.Error("Completed batch did not release its admission slot")
+	}
+}
+
+type observedBody struct{ read bool }
+
+// Read detects any attempt to allocate or decode an overloaded batch's body.
+// The admission test expects this reader to remain untouched.
+func (body *observedBody) Read([]byte) (int, error) {
+	body.read = true
+	return 0, errors.New("unexpected body read")
 }
 
 // TestUsageBatchStoreInput verifies storage receives fully parsed measurements,
@@ -66,7 +156,7 @@ func TestUsageBatchStoreInput(t *testing.T) {
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
-	httpapi.NewHandler(store).ServeHTTP(response, request)
+	httpapi.NewHandler(store, 10*time.Second, 32).ServeHTTP(response, request)
 	if response.Code != 202 || calls != 1 {
 		t.Errorf("Acceptance status = %d, store calls %d; want 202 and one call", response.Code, calls)
 	}
@@ -93,7 +183,7 @@ func TestUsageBatchValidationBeforeStorage(t *testing.T) {
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
-	httpapi.NewHandler(store).ServeHTTP(response, request)
+	httpapi.NewHandler(store, 10*time.Second, 32).ServeHTTP(response, request)
 	assertRequestError(t, response, 422, "invalid_batch", "events[1].units")
 	if calls != 0 {
 		t.Errorf("Invalid batch invoked storage %d times", calls)
@@ -133,7 +223,7 @@ func TestUsageBatchWaitsForCommit(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	done := make(chan struct{})
 	go func() {
-		httpapi.NewHandler(store).ServeHTTP(response, request)
+		httpapi.NewHandler(store, 10*time.Second, 32).ServeHTTP(response, request)
 		close(done)
 	}()
 	select {
@@ -177,7 +267,7 @@ func TestUsageBatchStoreFailures(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(validUsageBatch))
 			request.Header.Set("Content-Type", "application/json")
 			store := storeFunc(func(context.Context, []usage.Event, time.Time) error { return tt.err })
-			httpapi.NewHandler(store).ServeHTTP(response, request)
+			httpapi.NewHandler(store, 10*time.Second, 32).ServeHTTP(response, request)
 			if strings.Contains(response.Body.String(), "secret") || strings.Contains(response.Body.String(), "accepted") {
 				t.Errorf("Failure response leaked details or acknowledged: %s", response.Body)
 			}
@@ -204,7 +294,7 @@ func TestUsageBatchStoreFailures(t *testing.T) {
 // TestUsageBatchMissingStore ensures an unconfigured handler cannot acknowledge
 // valid input, while the health route can still report HTTP server availability.
 func TestUsageBatchMissingStore(t *testing.T) {
-	handler := httpapi.NewHandler(nil)
+	handler := httpapi.NewHandler(nil, 10*time.Second, 32)
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(validUsageBatch))
 	request.Header.Set("Content-Type", "application/json")
@@ -230,6 +320,6 @@ func TestUsageBatchRequestDeadline(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(validUsageBatch)).WithContext(ctx)
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	httpapi.NewHandler(store).ServeHTTP(response, request)
+	httpapi.NewHandler(store, 10*time.Second, 32).ServeHTTP(response, request)
 	assertRequestError(t, response, 503, "inbox_unavailable", "")
 }

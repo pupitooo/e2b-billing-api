@@ -190,10 +190,10 @@ func TestInboxSynchronousCommit(t *testing.T) {
 }
 
 // testDatabase applies the tracked initial migration in a uniquely owned schema
-// and returns a pool whose search_path isolates every test from application data.
+// and returns a pool that isolates each test or benchmark from application data.
 // Cleanup closes its connections before dropping only that schema; optional
 // settings let tests exercise transaction behavior under different sessions.
-func testDatabase(t *testing.T, settings map[string]string) *pgxpool.Pool {
+func testDatabase(t testing.TB, settings map[string]string) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

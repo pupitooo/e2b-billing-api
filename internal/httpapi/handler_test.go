@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"e2b/billing-api/internal/httpapi"
 )
@@ -26,7 +27,7 @@ func TestHandlerRoutes(t *testing.T) {
 		{"unknown route", "An unregistered path returns HTTP 404.", http.MethodGet, "/missing", http.StatusNotFound, "", ""},
 		{"usage method", "The usage endpoint rejects GET requests and advertises POST in the Allow header.", http.MethodGet, "/usage/batches", http.StatusMethodNotAllowed, "POST", ""},
 	}
-	handler := httpapi.NewHandler(acceptingStore())
+	handler := httpapi.NewHandler(acceptingStore(), 10*time.Second, 32)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log(tt.description)
@@ -51,7 +52,7 @@ func TestUsageBatchResponse(t *testing.T) {
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(validUsageBatch))
 	request.Header.Set("Content-Type", "application/json")
-	httpapi.NewHandler(acceptingStore()).ServeHTTP(response, request)
+	httpapi.NewHandler(acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("Status = %d, want %d", response.Code, http.StatusAccepted)
 	}

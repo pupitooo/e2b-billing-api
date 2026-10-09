@@ -13,13 +13,38 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// RollbackTimeout bounds cleanup independently of a canceled request.
+// HTTP response and shutdown budgets must leave room for this cleanup.
+const RollbackTimeout = 5 * time.Second
+
+// PoolLimits reserves a finite connection budget for one API process.
+type PoolLimits struct {
+	MaxConns int32
+	MinConns int32
+}
+
 // OpenPool establishes PostgreSQL connections with UTC sessions. An empty
 // connection string uses the standard PG environment variables. Migrations
 // remain explicit; the caller owns the returned pool and must close it.
-func OpenPool(ctx context.Context, connectionString string) (*pgxpool.Pool, error) {
+// An optional limit overrides pool sizes from the connection string.
+func OpenPool(ctx context.Context, connectionString string, limits ...PoolLimits) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(connectionString)
 	if err != nil {
 		return nil, errors.New("invalid PostgreSQL connection configuration")
+	}
+	if len(limits) > 1 {
+		return nil, errors.New("only one inbox pool limit may be supplied")
+	}
+	if len(limits) == 1 {
+		limit := limits[0]
+		if limit.MaxConns <= 0 || limit.MinConns < 0 || limit.MinConns > limit.MaxConns {
+			return nil, errors.New("inbox pool requires positive maximum connections and minimum between zero and maximum")
+		}
+		config.MaxConns, config.MinConns = limit.MaxConns, limit.MinConns
+		// MinIdleConns can also be specified in the DSN and must fit the budget.
+		if config.MinIdleConns > config.MaxConns {
+			return nil, errors.New("pool_min_idle_conns exceeds the inbox connection budget")
+		}
 	}
 	config.ConnConfig.RuntimeParams["timezone"] = "UTC"
 	pool, err := pgxpool.NewWithConfig(ctx, config)
@@ -97,7 +122,7 @@ func (store *Postgres) InsertBatch(ctx context.Context, events []usage.Event, re
 	}
 	defer func() {
 		// Cancellation must not prevent cleanup of an already-open transaction.
-		cleanupContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cleanupContext, cancel := context.WithTimeout(context.Background(), RollbackTimeout)
 		defer cancel()
 		_ = transaction.Rollback(cleanupContext)
 	}()

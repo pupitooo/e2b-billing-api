@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"e2b/billing-api/internal/httpapi"
 )
@@ -194,7 +195,7 @@ func TestUsageBatchMediaType(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Content-Encoding", "gzip")
 	response := httptest.NewRecorder()
-	httpapi.NewHandler(acceptingStore()).ServeHTTP(response, request)
+	httpapi.NewHandler(acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
 	assertRequestError(t, response, 415, "unsupported_media_type", "")
 }
 
@@ -204,7 +205,7 @@ func TestUsageBatchReadFailure(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", failingReader{})
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	httpapi.NewHandler(acceptingStore()).ServeHTTP(response, request)
+	httpapi.NewHandler(acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
 	assertRequestError(t, response, 400, "invalid_json", "")
 }
 
@@ -221,7 +222,7 @@ func postBatch(body, mediaType string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", io.NopCloser(strings.NewReader(body)))
 	request.Header.Set("Content-Type", mediaType)
 	response := httptest.NewRecorder()
-	httpapi.NewHandler(acceptingStore()).ServeHTTP(response, request)
+	httpapi.NewHandler(acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
 	return response
 }
 
