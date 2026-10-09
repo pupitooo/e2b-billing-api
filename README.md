@@ -814,3 +814,11 @@ Supply `customer_id: null` for the default, or a customer ID for an override. An
 retry succeeds; changed content, duplicate effective instants, and retroactive changes
 that invalidate already rated usage return `409`. Pending usage can use newly added historical
 prices. See the [OpenAPI reference](docs/api/openapi.yaml) for explicit fields and examples.
+
+### Credit
+
+E2B calls `POST /customers/{customer_id}/credits` with an explicit operation ID, positive
+`amount_cents`, and audit `recorded_at`. Grants apply immediately under the account lock;
+unchanged retries succeed and changed content returns `409`. Credit pays new usage only.
+`GET /customers/{customer_id}/credit` exposes exact `credit_balance_ticks` and committed
+pending/error counts. One cent is 1_000_000 ticks; receipt acceptance can precede accounting.

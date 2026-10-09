@@ -321,6 +321,182 @@ paths:
                 type: string
                 const: '1'
               example: '1'
+  /customers/{customer_id}/credits:
+    post:
+      operationId: grantCredit
+      tags:
+      - Billing
+      summary: Grant usage-only credit
+      description: E2B grants positive whole cents, persisted as exact ticks. Reuse operation_id and all
+        content on retry; changed amount or recorded_at returns 409. Grants serialize with usage accounting,
+        apply immediately, and never rewrite earlier allocations. recorded_at is explicit audit metadata;
+        it is not a scheduled activation time. Customers do not buy credit in this assignment. No authentication
+        layer is included in the assignment.
+      x-implementation-status: implemented
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreditGrant'
+            example: &creditGrantExample
+              operation_id: welcome-acme
+              amount_cents: 2500
+              recorded_at: '2026-10-01T00:00:00Z'
+      responses:
+        '200':
+          description: Committed result or current snapshot. Identical command retries succeed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditGrant'
+              example: *creditGrantExample
+        '400':
+          description: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+        '404':
+          description: Customer or catalog resource does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '409':
+          description: Operation identity has different content, financial history conflicts, or closing
+            is blocked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_conflict
+                  message: Operation identity has different content, financial history conflicts, or closing
+                    is blocked.
+        '413':
+          description: Command body exceeds 65536 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Command body exceeds 65536 bytes.
+        '415':
+          description: Use uncompressed application/json with optional UTF-8 charset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: unsupported_media_type
+                  message: Use uncompressed application/json with optional UTF-8 charset.
+        '422':
+          description: Explicit required field or value is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  message: Explicit required field or value is invalid.
+        '503':
+          description: Database deadline or storage failure. Retry unchanged operation identity and content;
+            outcome may be unknown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
+  /customers/{customer_id}/credit:
+    get:
+      operationId: getCredit
+      tags:
+      - Billing
+      summary: Read exact remaining credit
+      description: 'Return a single database snapshot of exact balance, account version, and committed pending/error
+        receipt counts. Receipt acceptance is asynchronous: pending_events can be positive after 202. Investigate
+        processing_errors instead of assuming all accepted input was accounted for. No cent rounding changes
+        the balance.'
+      x-implementation-status: implemented
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      responses:
+        '200':
+          description: Committed result or current snapshot. Identical command retries succeed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditSnapshot'
+              example:
+                customer_id: acme
+                credit_balance_ticks: '1300000000'
+                state_version: 3
+                pending_events: 0
+                processing_errors: 0
+        '404':
+          description: Customer or catalog resource does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '503':
+          description: Database deadline or storage failure. Retry unchanged operation identity and content;
+            outcome may be unknown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
   /healthz:
     get:
       operationId: getHealth
@@ -505,3 +681,50 @@ components:
           maximum: 9223372036854775807
         effective_from:
           $ref: '#/components/schemas/ConsumptionTime'
+
+    CreditGrant:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - amount_cents
+      - recorded_at
+      properties:
+        operation_id:
+          $ref: '#/components/schemas/Identifier'
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9223372036854775807
+        recorded_at:
+          $ref: '#/components/schemas/ConsumptionTime'
+
+    CreditSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+      - customer_id
+      - credit_balance_ticks
+      - state_version
+      - pending_events
+      - processing_errors
+      properties:
+        customer_id:
+          $ref: '#/components/schemas/Identifier'
+        credit_balance_ticks:
+          type: string
+          pattern: ^[0-9]+$
+          description: Exact nonnegative ticks; one cent is 1000000 ticks.
+        state_version:
+          type: integer
+          format: int64
+          minimum: 0
+        pending_events:
+          type: integer
+          format: int64
+          minimum: 0
+        processing_errors:
+          type: integer
+          format: int64
+          minimum: 0
