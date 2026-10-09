@@ -1,0 +1,590 @@
+{
+  "name": "billing-assignment",
+  "steps": [
+    {
+      "name": "fresh Acme account",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "fresh Cyberdyne account",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "E2B grants Acme USD 25 and loses the committed reply",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/credits",
+        "body": {
+          "operation_id": "welcome",
+          "amount_cents": 2500,
+          "recorded_at": "2026-10-01T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "welcome",
+          "amount_cents": 2500,
+          "recorded_at": "2026-10-01T00:00:00Z"
+        }
+      },
+      "fault": {
+        "lose_response": true
+      }
+    },
+    {
+      "name": "Acme purchases the recurring pack",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/addons",
+        "body": {
+          "subscription_id": "acme-pack",
+          "addon_name": "concurrency_pack",
+          "purchased_at": "2026-10-05T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "monthly_price_cents": 2000,
+          "start_month": "2026-10-01"
+        }
+      }
+    },
+    {
+      "name": "Cyberdyne sets USD 15 monthly limit",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/spend-limit",
+        "body": {
+          "operation_id": "october-limit",
+          "limit_cents": 1500
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "operation_id": "october-limit",
+          "limit_cents": 1500
+        }
+      }
+    },
+    {
+      "name": "platform sends the first hourly measurements",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "acme-first",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "acme-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:00:00Z",
+              "period_end": "2026-10-10T13:00:00Z",
+              "units": 100000000
+            },
+            {
+              "source": "{{source}}",
+              "event_id": "cyberdyne-first",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "cyberdyne-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:00:00Z",
+              "period_end": "2026-10-10T13:00:00Z",
+              "units": 123456789
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "Acme has USD 21 after the first hour",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "2100000000",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 3
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "platform observes Cyberdyne below its monthly limit",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/months/2026-10/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "month": "2026-10",
+          "limit_cents": 1500,
+          "gross_charge_ticks": "617283945",
+          "limit_reached": false,
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "platform retries the exact first measurements",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "acme-first",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "acme-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:00:00Z",
+              "period_end": "2026-10-10T13:00:00Z",
+              "units": 100000000
+            },
+            {
+              "source": "{{source}}",
+              "event_id": "cyberdyne-first",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "cyberdyne-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:00:00Z",
+              "period_end": "2026-10-10T13:00:00Z",
+              "units": 123456789
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "platform sends the second hourly measurements",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "acme-second",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "acme-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-20T12:00:00Z",
+              "period_end": "2026-10-20T13:00:00Z",
+              "units": 200000000
+            },
+            {
+              "source": "{{source}}",
+              "event_id": "cyberdyne-second",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "cyberdyne-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-20T12:00:00Z",
+              "period_end": "2026-10-20T13:00:00Z",
+              "units": 200000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "Acme has USD 13 after October usage",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "1300000000",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 4
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "platform observes Cyberdyne reached its monthly limit",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/months/2026-10/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "month": "2026-10",
+          "limit_cents": 1500,
+          "gross_charge_ticks": "1817283945",
+          "limit_reached": true,
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "issue Acme October invoice",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "number": "ACME-0001",
+          "month": "2026-10",
+          "currency": "USD",
+          "total_cents": 2000,
+          "gross_usage_ticks": "1200000000",
+          "credit_used_ticks": "1200000000",
+          "lines": [
+            {
+              "kind": "usage",
+              "usage_month": "2026-10",
+              "units": "300000000",
+              "amount_cents": 1200,
+              "gross_ticks": "1200000000",
+              "credit_ticks": "1200000000"
+            },
+            {
+              "kind": "addon",
+              "description": "concurrency_pack",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "amount_cents": -1200
+            }
+          ]
+        }
+      },
+      "capture": "acme-october",
+      "fault": {
+        "lose_response": true
+      }
+    },
+    {
+      "name": "issue Cyberdyne October invoice after reaching its limit",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "number": "CYBERDYNE-0001",
+          "month": "2026-10",
+          "total_cents": 1817,
+          "gross_usage_ticks": "1817283945",
+          "credit_used_ticks": "0",
+          "lines": [
+            {
+              "kind": "usage",
+              "units": "123456789",
+              "amount_cents": 617,
+              "gross_ticks": "617283945",
+              "credit_ticks": "0"
+            },
+            {
+              "kind": "usage",
+              "units": "200000000",
+              "amount_cents": 1200,
+              "gross_ticks": "1200000000",
+              "credit_ticks": "0"
+            },
+            {
+              "kind": "credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      },
+      "capture": "cyberdyne-october"
+    },
+    {
+      "name": "platform delivers late October consumption after closing",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "acme-late",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "acme-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-30T12:00:00Z",
+              "period_end": "2026-10-30T13:00:00Z",
+              "units": 50000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      },
+      "fault": {
+        "lose_response": true
+      }
+    },
+    {
+      "name": "platform delivers November consumption",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "acme-november",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "acme-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-11-03T12:00:00Z",
+              "period_end": "2026-11-03T13:00:00Z",
+              "units": 100000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "Acme retains USD 7 after late October and November",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "700000000",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 7
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "platform sees Cyberdyne below its limit in the new UTC month",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/months/2026-11/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "month": "2026-11",
+          "limit_cents": 1500,
+          "gross_charge_ticks": "0",
+          "limit_reached": false,
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "issue Acme November invoice",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-11"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "number": "ACME-0002",
+          "month": "2026-11",
+          "total_cents": 2000,
+          "gross_usage_ticks": "600000000",
+          "credit_used_ticks": "600000000",
+          "lines": [
+            {
+              "kind": "usage",
+              "usage_month": "2026-10",
+              "description": "Late usage from 2026-10",
+              "units": "50000000",
+              "amount_cents": 200,
+              "gross_ticks": "200000000",
+              "credit_ticks": "200000000"
+            },
+            {
+              "kind": "usage",
+              "usage_month": "2026-11",
+              "units": "100000000",
+              "amount_cents": 400,
+              "gross_ticks": "400000000",
+              "credit_ticks": "400000000"
+            },
+            {
+              "kind": "addon",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "amount_cents": -600
+            }
+          ]
+        }
+      },
+      "capture": "acme-november"
+    },
+    {
+      "name": "issuance did not consume Acme credit again",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "700000000",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 8
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "October invoice remains identical after late usage",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-10"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "acme-october"
+      }
+    },
+    {
+      "name": "October close retries the immutable original number",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "same_as": "acme-october"
+      }
+    },
+    {
+      "name": "November GET returns the issued snapshot",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-11"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "acme-november"
+      }
+    },
+    {
+      "name": "Cyberdyne invoice remains unchanged",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/invoices/2026-10"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "cyberdyne-october"
+      }
+    }
+  ]
+}

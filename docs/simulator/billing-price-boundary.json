@@ -1,0 +1,101 @@
+{
+  "name": "billing-price-boundary",
+  "steps": [
+    {
+      "name": "fresh account",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "durably accept unsupported crossing interval",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "crossing",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "cyberdyne-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-14T23:30:00Z",
+              "period_end": "2026-10-15T00:30:00Z",
+              "units": 100
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "quarantine keeps the balance and all financial effects unchanged",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 1,
+          "state_version": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "visible processing error blocks invoice issuance",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "billing_conflict"
+          }
+        }
+      }
+    },
+    {
+      "name": "no invoice was issued",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/invoices/2026-10"
+      },
+      "want": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found"
+          }
+        }
+      }
+    }
+  ]
+}

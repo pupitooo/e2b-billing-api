@@ -11,6 +11,7 @@ COPY tests/api ./tests/api
 COPY tests/inbox ./tests/inbox
 COPY tests/worker ./tests/worker
 COPY migrations ./migrations
+    COPY docs/simulator ./docs/simulator
 RUN go build -o /usr/local/bin/billing-api ./cmd/billing-api
 RUN go build -o /usr/local/bin/billing-worker ./cmd/billing-worker
 RUN go build -o /usr/local/bin/platform-simulator ./cmd/platform-simulator

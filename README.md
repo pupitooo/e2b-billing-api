@@ -288,9 +288,23 @@ make simulate MODE=step
 These commands deliver Acme's October 30 measurement and then November 3.
 `make simulate ADVANCE=1 MODE=fast` releases both together. The barrier records
 operator intent; the simulator cannot check invoice or accounting completion.
-The current implementation covers transport only: accounting, credit, invoice
-operations, and spend-status polling are available through the documented financial APIs; the legacy transport scenario still uses an operator barrier. HTTP `202`
+The legacy transport scenario uses an operator barrier. The separate
+[public billing scenarios](docs/simulator/billing-scenarios.md) automate accounting,
+credit, add-on purchases, invoice issuance, and platform monthly-status reads through
+the documented financial APIs. HTTP `202`
 confirms the whole batch's durable inbox receipt, not financial processing.
+
+Run the complete billing assignment against fresh seeded accounts with the API and
+worker running:
+
+```sh
+make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json
+```
+
+Its named JSON steps declare requests and literal expected responses together,
+including exact invoice lines, credit ticks, and faults after committed replies.
+The [billing scenario guide](docs/simulator/billing-scenarios.md) lists the remaining
+workflows and commands for outage recovery in a new process.
 
 The default scenario reproduces these exact hourly totals:
 
@@ -700,6 +714,10 @@ The [simulator HTTP acceptance tests](tests/api/simulator_test.go) launch the
 separate executable against the running API, inspect committed PostgreSQL rows,
 and remove only their owned producer namespaces. Run them with
 `make test RUN=Simulator`; they also run automatically in `make test` and CI.
+The [public billing workflow tests](tests/inbox/billing_simulator_test.go) use the
+same CLI with a real HTTP router, accounting worker, and private seeded schema per
+scenario. They verify complete literal invoices and balances, monthly limit reads,
+HTTP `503`/`Retry-After`, lost committed replies, and restart with retained state.
 
 With Go 1.27 or later installed locally, the same test can target a running API directly:
 

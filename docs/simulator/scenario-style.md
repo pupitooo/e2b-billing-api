@@ -21,5 +21,6 @@ and expected result when a step fails. Retain durable state on failures so a new
 can retry the same identities and content.
 
 The transport executable tests demonstrate this style in `tests/api/simulator_test.go`.
-The public API workflow extension follows in a separate PR. Saved assignment event identities,
+Public billing workflows are documented in [billing scenarios](billing-scenarios.md).
+Saved assignment event identities,
 step names, ordering, barriers, and the custom JSON format remain compatible.

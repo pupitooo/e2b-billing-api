@@ -28,7 +28,7 @@ DUPLICATES ?= 0
 LOSE_RESPONSE ?= 0
 REVERSE ?= 0
 SIM_API_URL ?= http://api:8080
-SCENARIO_FILE ?= $(if $(filter custom,$(SCENARIO)),/scenarios/custom-scenario.json,)
+SCENARIO_FILE ?= $(if $(filter custom,$(SCENARIO)),/scenarios/custom-scenario.json,$(if $(filter billing-%,$(SCENARIO)),/scenarios/$(SCENARIO).json,))
 export SCENARIO ACTION MODE ADVANCE SOURCE STATE SANDBOXES INTERVAL BATCH_SIZE
 export DELAY TIMEOUT RETRY_MIN RETRY_MAX MAX_ATTEMPTS DUPLICATES LOSE_RESPONSE
 export REVERSE SIM_API_URL SCENARIO_FILE

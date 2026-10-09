@@ -1,0 +1,188 @@
+{
+  "name": "billing-credit-exhaustion",
+  "steps": [
+    {
+      "name": "fresh account",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "grant one cent of credit",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/credits",
+        "body": {
+          "operation_id": "one-cent",
+          "amount_cents": 1,
+          "recorded_at": "2026-10-01T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "amount_cents": 1
+        }
+      }
+    },
+    {
+      "name": "purchase at the last second of October",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/addons",
+        "body": {
+          "subscription_id": "acme-pack",
+          "addon_name": "concurrency_pack",
+          "purchased_at": "2026-10-31T23:59:59Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "monthly_price_cents": 2000,
+          "start_month": "2026-10-01"
+        }
+      }
+    },
+    {
+      "name": "two cents of usage exhaust the one-cent grant",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "exhaust-credit",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "acme-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:00:00Z",
+              "period_end": "2026-10-10T13:00:00Z",
+              "units": 500000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "available credit is exhausted exactly",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 3
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "usage credit never pays the full monthly add-on",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "number": "ACME-0001",
+          "total_cents": 2001,
+          "gross_usage_ticks": "2000000",
+          "credit_used_ticks": "1000000",
+          "lines": [
+            {
+              "kind": "usage",
+              "amount_cents": 2,
+              "gross_ticks": "2000000",
+              "credit_ticks": "1000000"
+            },
+            {
+              "kind": "addon",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "amount_cents": -1
+            }
+          ]
+        }
+      },
+      "capture": "issued"
+    },
+    {
+      "name": "later credit grant cannot rewrite issued history",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/credits",
+        "body": {
+          "operation_id": "later",
+          "amount_cents": 5,
+          "recorded_at": "2026-11-01T00:00:00Z"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "amount_cents": 5
+        }
+      }
+    },
+    {
+      "name": "invoice remains identical after a later grant",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-10"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "issued"
+      }
+    },
+    {
+      "name": "later grant survives without retroactive debits",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "5000000",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 5
+        }
+      },
+      "await": true
+    }
+  ]
+}
