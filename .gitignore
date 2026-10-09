@@ -1,5 +1,5 @@
 # Local documentation stays private until explicitly included.
-# Track API documentation, published architecture guides, and the four option diagrams.
+# Track API documentation, published architecture guides, the four option diagrams, and the logical ERD.
 /docs/*
 !/docs/api/
 /docs/api/*
@@ -13,6 +13,10 @@
 !/docs/brainstorming/architecture-options.md
 !/docs/diagrams/
 /docs/diagrams/*
+!/docs/diagrams/data-model/
+/docs/diagrams/data-model/*
+!/docs/diagrams/data-model/data-model.mmd
+!/docs/diagrams/data-model/data-model.png
 !/docs/diagrams/option-a-components/
 /docs/diagrams/option-a-components/*
 !/docs/diagrams/option-a-components/option-a-components.mmd

@@ -2,6 +2,16 @@
 
 The schema prepares PostgreSQL for the Go accounting worker. It stores the initial catalog and accounting records; rating, credit allocation, spend-status endpoints, and invoices follow in later changes.
 
+## Logical data model (ERD)
+
+The existing ERD shows the proposed logical model, including planned invoice entities. Its names and attributes are conceptual; the table summary below describes the schema implemented by these migrations.
+
+![Proposed MVP logical data model](../diagrams/data-model/data-model.png)
+
+[Editable Mermaid source](../diagrams/data-model/data-model.mmd).
+
+`UsageReceipt` is implemented as `usage_inbox` plus the separate `usage_ratings` link. The inbox deliberately has no customer or metric foreign keys. Invoice tables, invoice numbering, and frozen groups remain future work.
+
 ## Tables and relationships
 
 | Table | Purpose and relationships |
