@@ -11,6 +11,10 @@ COPY tests/worker ./tests/worker
 COPY migrations ./migrations
 RUN go build -o /usr/local/bin/billing-api ./cmd/billing-api
 RUN go build -o /usr/local/bin/billing-worker ./cmd/billing-worker
+RUN go build -o /usr/local/bin/platform-simulator ./cmd/platform-simulator
+
+# Initialize the persistent sender volume for the same unprivileged runtime.
+RUN mkdir -p /state && chown 65532:65532 /state
 
 ENV GOCACHE=/tmp/go-build
 USER 65532:65532
