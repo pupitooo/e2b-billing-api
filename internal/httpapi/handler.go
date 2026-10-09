@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"e2b/billing-api/internal/billing"
 	"e2b/billing-api/internal/inbox"
 	"e2b/billing-api/internal/usage"
 )
@@ -23,8 +24,11 @@ type BatchStore interface {
 // NewHandler routes requests through validation and the supplied durable store.
 // The owner supplies positive database and admission budgets. Excess batches
 // receive retryable 503 before application body parsing.
-func NewHandler(store BatchStore, ingestionTimeout time.Duration, maxInFlight int) http.Handler {
+func NewHandler(store BatchStore, ingestionTimeout time.Duration, maxInFlight int, financial ...*billing.Store) http.Handler {
 	mux := http.NewServeMux()
+	if len(financial) == 1 && financial[0] != nil {
+		registerPriceRoutes(mux, financial[0], ingestionTimeout)
+	}
 	inFlight := make(chan struct{}, maxInFlight)
 	mux.HandleFunc("POST /usage/batches", func(w http.ResponseWriter, r *http.Request) {
 		select {
