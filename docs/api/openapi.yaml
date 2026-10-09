@@ -1,0 +1,84 @@
+openapi: 3.1.2
+info:
+  title: E2B Billing API
+  version: 0.1.0
+  description: |
+    The current usage endpoint is a response stub. It returns 202 without
+    reading, validating, or storing measurements. Acceptance does not confirm
+    durable receipt or accounting. Validation, storage, and retry/conflict
+    handling are planned ingestion work.
+servers:
+  - url: /api
+    description: Same-origin API proxy provided by the local Scalar service
+tags:
+  - name: Usage
+    description: Measurements supplied by the sandbox platform
+  - name: Health
+    description: HTTP server availability
+paths:
+  /usage/batches:
+    post:
+      operationId: postUsageBatches
+      tags: [Usage]
+      summary: Return the usage acceptance response stub
+      x-implementation-status: stub
+      description: |
+        Return the fixed acceptance response for every POST. The current stub
+        ignores the request body and headers, including Content-Type, and does
+        not validate JSON or write to PostgreSQL. No deduplication, content
+        comparison, or accounting occurs. Repeated requests return the same
+        response; retry and conflict semantics are planned.
+      requestBody:
+        required: false
+        description: |
+          The documentation client can submit this JSON example, but the stub
+          ignores any body and does not enforce a request schema. The example
+          illustrates a proposed measurement envelope for later ingestion work.
+        content:
+          application/json:
+            schema: {}
+            examples:
+              acmeUsage:
+                summary: Proposed first Acme measurement from the assignment
+                value:
+                  batch_id: acme-batch-000001
+                  events:
+                    - source: platform-simulator
+                      event_id: acme-cpu-000001
+                      schema_version: 1
+                      customer_id: acme
+                      sandbox_id: acme-sandbox-001
+                      metric: cpu_seconds
+                      period_start: '2026-10-10T12:00:00Z'
+                      period_end: '2026-10-10T13:00:00Z'
+                      units: 100000000
+      responses:
+        '202':
+          description: Fixed response stub; does not confirm durable receipt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+              example:
+                status: accepted
+  /healthz:
+    get:
+      operationId: getHealth
+      tags: [Health]
+      summary: Check HTTP server availability
+      x-implementation-status: implemented
+      description: Returns an empty 200 response; does not check PostgreSQL.
+      responses:
+        '200':
+          description: The HTTP server is available; the response body is empty.
+components:
+  schemas:
+    AcceptedResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+          description: Fixed acknowledgement stub; ingestion is planned.

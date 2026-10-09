@@ -20,7 +20,7 @@ git clone https://github.com/pupitooo/e2b-billing-api.git
 
 ### Configuration
 
-Docker Compose reads an optional local `.env` file. The defaults are sufficient for local development. Copy [.env.example](.env.example) to `.env` to change the API port (`E2B_API_PORT`, default `8081`), PostgreSQL port, or development password. Keep the same configuration for subsequent commands.
+Docker Compose reads an optional local `.env` file. The defaults are sufficient for local development. Copy [.env.example](.env.example) to `.env` to change the API port (`E2B_API_PORT`, default `8081`), documentation port (`E2B_DOCS_PORT`, default `8082`), PostgreSQL port, or development password. Keep the same configuration for subsequent commands.
 
 ### Initialize the database
 
@@ -41,19 +41,23 @@ Start all implemented services:
 make up
 ```
 
-`make up` starts the API and PostgreSQL and waits for readiness. It does not apply database migrations. The API skeleton can also run independently of PostgreSQL.
+`make up` starts PostgreSQL, the API, and Scalar documentation and waits for readiness. It does not apply database migrations. The API skeleton can also run independently of PostgreSQL.
+
+`make up`, `make docs`, `make restart`, and `make ps` print the actual browser addresses of running HTTP services. Use `make links` to show them again.
 
 | Command | Purpose |
 | --- | --- |
 | `make up` | Start all services and wait for readiness. |
 | `make up SERVICE=postgres` | Start PostgreSQL and wait for readiness. |
 | `make up SERVICE=api` | Build and start the Go API and wait for readiness. |
+| `make docs` | Start Scalar documentation and the API for browser requests. |
 | `make ps` | Show running and stopped services. |
+| `make links` | Show browser links for running HTTP services. |
 | `make logs SERVICE=postgres` | Show the last 100 PostgreSQL log lines. |
 | `make restart SERVICE=postgres` | Restart PostgreSQL and wait for readiness. |
 | `make stop` | Stop services while retaining containers and data. |
 | `make down` | Remove containers and the network while retaining database data. |
-| `make services` | List available service names: `api` and `postgres`. |
+| `make services` | List available service names: `api`, `docs`, and `postgres`. |
 | `make help` | Show all available commands. |
 
 PostgreSQL uses the pinned `postgres:18.6-alpine` image, UTC timestamps, and a named volume. Its port is published on `127.0.0.1`. Database data survives `make stop`, `make restart`, and `make down`.
@@ -98,6 +102,17 @@ The API returns HTTP `202` with `Content-Type: application/json` and this fixed 
 ```
 
 The handler returns this fixed response for every POST request to `/usage/batches`. It ignores the request body and performs no validation, database writes, deduplication, or accounting. HTTP `202` therefore does not confirm storage of the submitted events.
+
+## API documentation
+
+Run `make docs` and open the printed documentation address (by default
+[http://127.0.0.1:8082](http://127.0.0.1:8082)). The single Scalar service uses
+the `modern` layout and an embedded **Test Request** client. It serves the
+[OpenAPI 3.1.2 specification](docs/api/openapi.yaml) and bundled assets locally,
+with browser requests forwarded through the same-origin `/api` proxy in
+[docs/api/Caddyfile](docs/api/Caddyfile). Refresh the page after editing the
+mounted specification. Every interface change must update this specification;
+the current usage response is a stub and does not confirm storage.
 
 ## Database
 
