@@ -166,19 +166,16 @@ Migration [001_usage_inbox.sql](migrations/001_usage_inbox.sql) creates the inbo
 
 To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged. The initial migration creates the receipt schema; assignment customers, prices, credit, and invoices will be introduced with their own tables and seed data.
 
-## Verification
+## Testing
 
 With PostgreSQL running:
 
-```sh
-make test
-```
+| Command | Purpose |
+| --- | --- |
+| `make test` | Run all implemented test suites; currently the database suite. Go tests will be included as the API and workers are implemented. |
+| `make db-test` | Run only the database integrity suite. |
 
-`make test` applies pending migrations before running the tests.
-
-The SQL tests verify required application-supplied versions and receipt times, preservation of those values, duplicate identity rejection, preservation of original units, independent source namespaces, large integer totals, non-negative units, valid intervals, and valid processing state transitions. They run in a transaction and roll back their fixtures.
-
-`make test` runs the suite in both UTC and `Asia/Shanghai`. Each run sets the session time zone inside the test transaction. Fixtures near a UTC month boundary verify that stored timestamps preserve the supplied instants even when their local dates fall in the next month. UTC billing month calculations will be tested with the future accounting implementation.
+Database tests apply pending migrations, check schema integrity in UTC and `Asia/Shanghai`, and roll back their test data. Output identifies the suite and time zone being tested. Any test failure makes the command fail.
 
 ## Usage inbox contract
 

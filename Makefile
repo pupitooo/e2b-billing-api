@@ -9,7 +9,7 @@ export SERVICE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps migrate migration-status psql test
+.PHONY: help services check-service up stop down restart logs ps migrate migration-status psql test db-test
 
 help:
 	@printf '%s\n' \
@@ -25,7 +25,8 @@ help:
 	  'migrate  Apply pending database migrations' \
 	  'migration-status List applied database migrations' \
 	  'psql     Open an interactive database session' \
-	  'test     Apply migrations and run database integrity tests' \
+	  'test     Run all implemented test suites' \
+	  'db-test  Apply migrations and run database integrity tests' \
 	  '' \
 	  'Service commands apply to all services when SERVICE is omitted.' \
 	  'Database commands always target postgres; start it with make up first.' \
@@ -80,9 +81,12 @@ migration-status:
 psql:
 	@$(COMPOSE) exec postgres sh -c 'exec psql -X --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"'
 
-test: migrate
+test: db-test
+
+db-test: migrate
 	@set -eu; \
 	for test_zone in UTC Asia/Shanghai; do \
-	  printf 'Running usage inbox tests in %s\n' "$$test_zone"; \
+	  printf '[db-test] Running database integrity tests (timezone: %s)\n' "$$test_zone"; \
 	  $(COMPOSE) exec -T postgres sh -c 'exec psql -X --set=ON_ERROR_STOP=on --set=test_timezone="$$1" --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"' sh "$$test_zone" < tests/usage_inbox.sql; \
-	done
+	done; \
+	printf '[db-test] Database integrity tests passed in all configured time zones.\n'
