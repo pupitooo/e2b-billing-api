@@ -4,11 +4,11 @@ Billing service for the E2B assignment, built with Go and PostgreSQL. It provide
 
 The project uses the selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected). The [architecture comparison](docs/brainstorming/architecture-options.md) records the design rationale.
 
-The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. Financial processing and invoices are planned subsequent work.
+The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. The [financial rules](docs/architecture/accounting-rules.md) define the shared Go calculations, exact credit before rounding, and transaction/closing contract. Runtime financial processing and invoices are planned subsequent work.
 
 The [implemented PostgreSQL ERD](docs/diagrams/implemented-data-model/implemented-data-model.png) shows the actual tables, columns, and foreign keys, including `usage_ratings`. Its [editable Mermaid source](docs/diagrams/implemented-data-model/implemented-data-model.mmd) accompanies the preview.
 
-The [usage-to-invoice flow](docs/architecture/usage-to-invoice.md) maps usage events, rating, exact groups, credit, rounding, invoice lines, and invoices to database records, including the current credit precision limit and planned invoice snapshots.
+The [usage-to-invoice flow](docs/architecture/usage-to-invoice.md) maps usage events, rating, exact groups, credit, rounding, invoice lines, and invoices to database records, including exact tick credit and planned invoice snapshots.
 
 ## Local setup
 
@@ -598,6 +598,8 @@ make migration-status
 Migration [001_usage_inbox.sql](migrations/001_usage_inbox.sql) creates the inbox and its partial index for pending, error-free input. Migrations are explicitly invoked, so they also run against an existing Docker volume; restarting the container does not apply them.
 
 Migration [002_billing_model.sql](migrations/002_billing_model.sql) creates the accounting tables. [003_assignment_seed.sql](migrations/003_assignment_seed.sql) loads Acme, Cyberdyne, the historical prices, and `concurrency_pack`. Account balances start at zero with no spend limit. The seed is versioned and runs once; repeating `make migrate` preserves existing data.
+
+Migration [004_exact_credit.sql](migrations/004_exact_credit.sql) converts credit balances, group allocations, and signed ledger amounts from whole cents to exact ticks. One cent becomes 1,000,000 ticks, preserving existing history. A legacy allocation exceeding exact gross usage stops the migration atomically; see the [migration guidance](docs/architecture/accounting-rules.md#migration-and-verification) before upgrading existing financial records.
 
 To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged. The initial migration creates the usage inbox schema.
 

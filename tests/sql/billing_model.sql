@@ -30,9 +30,9 @@ INSERT INTO customers (customer_id, name, country, billing_address)
 VALUES
     ('billing-model-acme', 'Test Acme', 'US', 'Test address'),
     ('billing-model-cyberdyne', 'Test Cyberdyne', 'US', 'Test address');
-INSERT INTO customer_billing_state (customer_id, credit_balance_cents, spend_limit_cents)
+INSERT INTO customer_billing_state (customer_id, credit_balance_ticks, spend_limit_cents)
 VALUES ('billing-model-acme', 0, NULL);
-INSERT INTO customer_billing_state (customer_id, credit_balance_cents, spend_limit_cents, state_version)
+INSERT INTO customer_billing_state (customer_id, credit_balance_ticks, spend_limit_cents, state_version)
 VALUES ('billing-model-cyberdyne', 0, 1500, 7);
 
 -- New accounts start at version zero unless an explicit initial version is supplied.
@@ -59,10 +59,10 @@ INSERT INTO price_versions (
 
 INSERT INTO rated_usage_groups (
     group_id, customer_id, price_version_id, metric, usage_month, billing_month,
-    total_units, exact_charge_ticks, booked_charge_cents, allocated_credit_cents
+    total_units, exact_charge_ticks, booked_charge_cents, allocated_credit_ticks
 ) VALUES
     ('billing-model-acme-oct', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu',
-        '2026-10-01', '2026-10-01', 300000000, 1200000000, 1200, 1200),
+        '2026-10-01', '2026-10-01', 300000000, 1200000000, 1200, 1200000000),
     ('billing-model-cyberdyne-oct', 'billing-model-cyberdyne', 'billing-model-default', 'billing-model-cpu',
         '2026-10-01', '2026-10-01', 123456789, 617283945, 617, 0),
     ('billing-model-acme-late', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu',
@@ -87,11 +87,11 @@ INSERT INTO usage_ratings (source, event_id, group_id) VALUES
 INSERT INTO monthly_usage (customer_id, usage_month, gross_charge_ticks) VALUES
     ('billing-model-acme', '2026-10-01', 1400000000),
     ('billing-model-cyberdyne', '2026-10-01', 617283945);
-INSERT INTO credit_entries (credit_entry_id, customer_id, operation_id, group_id, amount_cents, recorded_at)
+INSERT INTO credit_entries (credit_entry_id, customer_id, operation_id, group_id, amount_ticks, recorded_at)
 VALUES
-    ('billing-model-grant', 'billing-model-acme', 'grant-1', NULL, 2500, '2026-10-01T00:00:00Z'),
-    ('billing-model-debit', 'billing-model-acme', 'debit-1', 'billing-model-acme-oct', -1200, '2026-11-01T00:01:00Z');
-UPDATE customer_billing_state SET credit_balance_cents = 1300, state_version = 1
+    ('billing-model-grant', 'billing-model-acme', 'grant-1', NULL, 2500000000, '2026-10-01T00:00:00Z'),
+    ('billing-model-debit', 'billing-model-acme', 'debit-1', 'billing-model-acme-oct', -1200000000, '2026-11-01T00:01:00Z');
+UPDATE customer_billing_state SET credit_balance_ticks = 1300000000, state_version = 1
 WHERE customer_id = 'billing-model-acme';
 INSERT INTO addons (addon_name, monthly_price_cents) VALUES ('billing-model-addon', 2000);
 INSERT INTO addon_subscriptions (
@@ -101,7 +101,7 @@ INSERT INTO addon_subscriptions (
     '2026-10-31T23:59:59Z', '2026-10-01'
 );
 
--- Exact sub-cent totals, late usage, and independent cent balances remain representable.
+-- Exact sub-cent totals, late usage, and independent tick balances remain representable.
 DO $tests$
 BEGIN
     IF (SELECT exact_charge_ticks FROM rated_usage_groups WHERE group_id = 'billing-model-cyberdyne-oct')
@@ -117,8 +117,8 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Late usage must preserve its original and later billing months';
     END IF;
-    IF (SELECT sum(amount_cents) FROM credit_entries WHERE customer_id = 'billing-model-acme') <> 1300
-        OR (SELECT credit_balance_cents FROM customer_billing_state WHERE customer_id = 'billing-model-acme') <> 1300 THEN
+    IF (SELECT sum(amount_ticks) FROM credit_entries WHERE customer_id = 'billing-model-acme') <> 1300000000
+        OR (SELECT credit_balance_ticks FROM customer_billing_state WHERE customer_id = 'billing-model-acme') <> 1300000000 THEN
         RAISE EXCEPTION 'The model must represent 25 USD granted and 12 USD consumed with 13 USD remaining';
     END IF;
 
@@ -143,7 +143,7 @@ DECLARE
     invalid_number text;
 BEGIN
     PERFORM pg_temp.expect_billing_rejection(
-        $$UPDATE customer_billing_state SET credit_balance_cents = -1 WHERE customer_id = 'billing-model-acme'$$,
+        $$UPDATE customer_billing_state SET credit_balance_ticks = -1 WHERE customer_id = 'billing-model-acme'$$,
         '23514', 'Negative credit balance');
     PERFORM pg_temp.expect_billing_rejection(
         $$UPDATE customer_billing_state SET spend_limit_cents = -1 WHERE customer_id = 'billing-model-acme'$$,
@@ -187,14 +187,14 @@ BEGIN
         $$INSERT INTO rated_usage_groups VALUES ('billing-model-wrong-metric', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-other', '2026-10-01', '2026-12-01', 1, 4, 0, 0)$$,
         '23503', 'Price metric mismatch');
     PERFORM pg_temp.expect_billing_rejection(
-        $$INSERT INTO rated_usage_groups SELECT 'billing-model-duplicate-group', customer_id, price_version_id, metric, usage_month, billing_month, total_units, exact_charge_ticks, booked_charge_cents, allocated_credit_cents FROM rated_usage_groups WHERE group_id = 'billing-model-acme-oct'$$,
+        $$INSERT INTO rated_usage_groups SELECT 'billing-model-duplicate-group', customer_id, price_version_id, metric, usage_month, billing_month, total_units, exact_charge_ticks, booked_charge_cents, allocated_credit_ticks FROM rated_usage_groups WHERE group_id = 'billing-model-acme-oct'$$,
         '23505', 'Duplicate rounding group');
     PERFORM pg_temp.expect_billing_rejection(
         $$UPDATE rated_usage_groups SET customer_id = 'billing-model-cyberdyne' WHERE group_id = 'billing-model-acme-oct'$$,
         '23514', 'Changing group ownership');
     PERFORM pg_temp.expect_billing_rejection(
-        $$UPDATE rated_usage_groups SET allocated_credit_cents = 1201 WHERE group_id = 'billing-model-acme-oct'$$,
-        '23514', 'Credit exceeding booked usage');
+        $$UPDATE rated_usage_groups SET allocated_credit_ticks = 1200000001 WHERE group_id = 'billing-model-acme-oct'$$,
+        '23514', 'Credit exceeding exact gross usage');
     PERFORM pg_temp.expect_billing_rejection(
         $$INSERT INTO rated_usage_groups VALUES ('billing-model-bad-month', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu', '2026-10-02', '2026-11-01', 1, 4, 0, 0)$$,
         '23514', 'Month must start on day one');
@@ -237,7 +237,7 @@ BEGIN
         $$INSERT INTO credit_entries VALUES ('billing-model-positive-debit', 'billing-model-acme', 'debit-2', 'billing-model-acme-oct', 1, '2026-11-01T00:00:00Z')$$,
         '23514', 'Positive usage debit');
     PERFORM pg_temp.expect_billing_rejection(
-        $$UPDATE credit_entries SET amount_cents = 2600 WHERE credit_entry_id = 'billing-model-grant'$$,
+        $$UPDATE credit_entries SET amount_ticks = 2600000000 WHERE credit_entry_id = 'billing-model-grant'$$,
         '23514', 'Editing credit history');
     PERFORM pg_temp.expect_billing_rejection(
         $$DELETE FROM credit_entries WHERE credit_entry_id = 'billing-model-debit'$$,

@@ -1,5 +1,5 @@
 ---
-title: Implemented PostgreSQL schema (migrations 001-003)
+title: Implemented PostgreSQL schema (migrations 001-004)
 ---
 erDiagram
     direction LR
@@ -46,7 +46,7 @@ erDiagram
         numeric total_units "Non-negative integer"
         billing_ticks exact_charge_ticks
         bigint booked_charge_cents "Non-negative"
-        bigint allocated_credit_cents "Between zero and booked cents"
+        billing_ticks allocated_credit_ticks "At most exact gross ticks"
     }
     customers {
         text customer_id PK
@@ -56,7 +56,7 @@ erDiagram
     }
     customer_billing_state {
         text customer_id PK,FK
-        bigint credit_balance_cents "Non-negative"
+        billing_ticks credit_balance_ticks "Exact non-negative credit"
         bigint spend_limit_cents "Nullable; non-negative"
         bigint state_version "Non-negative; default 0"
     }
@@ -80,7 +80,7 @@ erDiagram
         text customer_id FK "Also part of group FK"
         text operation_id
         text group_id FK "Nullable: grants"
-        bigint amount_cents "Positive grant or negative debit"
+        billing_signed_ticks amount_ticks "Positive grant or negative debit"
         timestamptz recorded_at "Finite"
     }
     addons {
@@ -101,12 +101,13 @@ erDiagram
         timestamptz applied_at "Default now()"
     }
 
-    %% This diagram covers every table and column created by migrate.sql and migrations 001-003.
+    %% This diagram covers every table and column created by migrate.sql and migrations 001-004.
     %% All columns are NOT NULL unless explicitly labeled Nullable.
     %% PK and FK markers identify membership in primary and foreign keys, including composite keys.
     %% Solid relationships include parent identity in the child's primary key; dashed ones do not.
     %% Edges show declared foreign keys only; usage_inbox has no customer or metric FK.
     %% billing_ticks is numeric constrained to non-negative finite integers; 1 cent = 1,000,000 ticks.
+    %% billing_signed_ticks is numeric constrained to signed finite integers for credit history.
     %% price_versions UNIQUE NULLS NOT DISTINCT: (customer_id, metric, effective_from).
     %% price_versions UNIQUE: (price_version_id, metric).
     %% rated_usage_groups UNIQUE: (customer_id, price_version_id, usage_month, billing_month).

@@ -14,6 +14,7 @@ SET LOCAL search_path TO e2b_assignment_seed_test;
 \ir /migrations/001_usage_inbox.sql
 \ir /migrations/002_billing_model.sql
 \ir /migrations/003_assignment_seed.sql
+\ir /migrations/004_exact_credit.sql
 
 -- The assignment's exact catalog and empty opening balances must be reproducible.
 DO $tests$
@@ -32,7 +33,7 @@ BEGIN
 
     IF (SELECT count(*) FROM customer_billing_state) <> 2 OR EXISTS (
         SELECT 1 FROM customer_billing_state
-        WHERE credit_balance_cents <> 0 OR spend_limit_cents IS NOT NULL OR state_version <> 0
+        WHERE credit_balance_ticks <> 0 OR spend_limit_cents IS NOT NULL OR state_version <> 0
     ) THEN
         RAISE EXCEPTION 'Seed accounts must start with no credit, no limit, and version zero';
     END IF;
