@@ -14,11 +14,23 @@ import (
 // TestPoolConnectionBudget reserves two real connections, then attempts a
 // third acquisition. Explicit limits must override DSN settings, bound waiting
 // by the caller's deadline, and permit reuse after a checked-out slot is freed.
-func TestPoolConnectionBudget(t *testing.T) {
+func TestOpenPool(t *testing.T) {
+	tt := struct {
+		limits               inbox.PoolLimits
+		acquireTimeout       time.Duration
+		wantAcquireError     error
+		wantTotalConnections int32
+	}{
+		limits:               inbox.PoolLimits{MaxConns: 2, MinConns: 0},
+		acquireTimeout:       30 * time.Millisecond,
+		wantAcquireError:     context.DeadlineExceeded,
+		wantTotalConnections: 2,
+	}
+
 	admin := testDatabase(t, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	pool, err := inbox.OpenPool(ctx, admin.Config().ConnString(), inbox.PoolLimits{MaxConns: 2, MinConns: 0})
+	pool, err := inbox.OpenPool(ctx, admin.Config().ConnString(), tt.limits)
 	if err != nil {
 		t.Fatalf("Open limited pool: %v", err)
 	}
@@ -33,13 +45,13 @@ func TestPoolConnectionBudget(t *testing.T) {
 		t.Fatalf("Acquire second connection: %v", err)
 	}
 	t.Cleanup(second.Release)
-	wait, cancelWait := context.WithTimeout(ctx, 30*time.Millisecond)
+	wait, cancelWait := context.WithTimeout(ctx, tt.acquireTimeout)
 	defer cancelWait()
 	third, err := pool.Acquire(wait)
 	if third != nil {
 		third.Release()
 	}
-	if !errors.Is(err, context.DeadlineExceeded) || pool.Stat().TotalConns() != 2 {
+	if !errors.Is(err, tt.wantAcquireError) || pool.Stat().TotalConns() != tt.wantTotalConnections {
 		t.Fatalf("Third acquisition = %v, connections %d; want bounded wait with two connections", err, pool.Stat().TotalConns())
 	}
 	first.Release()
