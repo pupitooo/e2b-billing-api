@@ -13,6 +13,8 @@ servers:
   - url: /api
     description: Same-origin API proxy provided by the local Scalar service
 tags:
+  - name: Billing
+    description: Financial commands and customer projections
   - name: Usage
     description: Measurements supplied by the sandbox platform
   - name: Health
@@ -204,6 +206,121 @@ paths:
                 error:
                   code: inbox_unavailable
                   message: Inbox storage is unavailable. Retry the same event identities and content.
+  /prices:
+    post:
+      operationId: createPriceVersion
+      tags:
+      - Billing
+      summary: Append an immutable price version
+      description: Append a default (null customer_id) or customer override. Consumption time selects the
+        latest eligible override before falling back to default. Reuse price_version_id with identical content
+        after a lost response. Changed identity content, a duplicate effective instant, or a change invalidating
+        any already rated receipt returns 409. Retroactive changes affecting only unrated input are permitted.
+        Commands are serialized against rating under a catalog advisory lock. The reference implementation
+        scans affected rated history; this is not a demonstrated large-volume administrative path. Every
+        field is explicit; timestamps normalize to UTC.
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceVersion'
+            example: &id001
+              price_version_id: cpu-default-december
+              customer_id: null
+              metric: cpu_seconds
+              price_per_million_cents: 7
+              effective_from: '2026-12-01T00:00:00Z'
+      responses:
+        '200':
+          description: Committed result or current snapshot. Identical command retries succeed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceVersion'
+              example: *id001
+        '400':
+          description: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+        '404':
+          description: Customer or catalog resource does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '409':
+          description: Operation identity has different content, financial history conflicts, or closing
+            is blocked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_conflict
+                  message: Operation identity has different content, financial history conflicts, or closing
+                    is blocked.
+        '413':
+          description: Command body exceeds 65536 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Command body exceeds 65536 bytes.
+        '415':
+          description: Use uncompressed application/json with optional UTF-8 charset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: unsupported_media_type
+                  message: Use uncompressed application/json with optional UTF-8 charset.
+        '422':
+          description: Explicit required field or value is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  message: Explicit required field or value is invalid.
+        '503':
+          description: Database deadline or storage failure. Retry unchanged operation identity and content;
+            outcome may be unknown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
   /healthz:
     get:
       operationId: getHealth
@@ -335,3 +452,56 @@ components:
               properties:
                 code:
                   const: event_conflict
+
+    BillingError:
+      type: object
+      additionalProperties: false
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              enum:
+              - invalid_json
+              - invalid_command
+              - not_found
+              - billing_conflict
+              - billing_unavailable
+              - unsupported_media_type
+            message:
+              type: string
+            field:
+              type: string
+
+    PriceVersion:
+      type: object
+      additionalProperties: false
+      required:
+      - price_version_id
+      - customer_id
+      - metric
+      - price_per_million_cents
+      - effective_from
+      properties:
+        price_version_id:
+          $ref: '#/components/schemas/Identifier'
+        customer_id:
+          oneOf:
+          - $ref: '#/components/schemas/Identifier'
+          - type: 'null'
+        metric:
+          $ref: '#/components/schemas/Identifier'
+        price_per_million_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        effective_from:
+          $ref: '#/components/schemas/ConsumptionTime'

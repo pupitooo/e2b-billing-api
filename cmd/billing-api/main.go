@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"e2b/billing-api/internal/billing"
 	"e2b/billing-api/internal/httpapi"
 	"e2b/billing-api/internal/inbox"
 )
@@ -49,7 +50,7 @@ func run(getenv func(string) string) error {
 
 	server := &http.Server{
 		Addr:              ":8080",
-		Handler:           httpapi.NewHandler(inbox.NewPostgres(pool, cfg.rollbackTimeout), cfg.ingestionTimeout, int(cfg.maxInFlight)),
+		Handler:           httpapi.NewHandler(inbox.NewPostgres(pool, cfg.rollbackTimeout), cfg.ingestionTimeout, int(cfg.maxInFlight), billing.NewStore(pool)),
 		ReadHeaderTimeout: cfg.readHeaderTimeout,
 		ReadTimeout:       cfg.readTimeout,
 		WriteTimeout:      cfg.writeTimeout,

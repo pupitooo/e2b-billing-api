@@ -806,3 +806,11 @@ WHERE source = 'investigated-source' AND event_id = 'investigated-event'
 A receipt must fit within one UTC month and one applicable price version; units are never
 spread across boundaries by assumption. Accounting retains exact ticks and rounds only
 cumulative groups. The worker reserves two database connections per process.
+
+### Price versions
+
+`POST /prices` appends an immutable price version using its stable `price_version_id`.
+Supply `customer_id: null` for the default, or a customer ID for an override. An identical
+retry succeeds; changed content, duplicate effective instants, and retroactive changes
+that invalidate already rated usage return `409`. Pending usage can use newly added historical
+prices. See the [OpenAPI reference](docs/api/openapi.yaml) for explicit fields and examples.
