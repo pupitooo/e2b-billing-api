@@ -8,3 +8,7 @@
 !tests/
 !tests/api/
 !tests/api/**
+!tests/inbox/
+!tests/inbox/**
+!migrations/
+!migrations/**
