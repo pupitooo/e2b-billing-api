@@ -172,7 +172,7 @@ With PostgreSQL running:
 
 | Command | Purpose |
 | --- | --- |
-| `make test` | Run all implemented test suites; currently the database suite. Go tests will be included as the API and workers are implemented. |
+| `make test` | Run all test suites. |
 | `make db-test` | Run only the database integrity suite. |
 
 Database tests apply pending migrations, check schema integrity in UTC and `Asia/Shanghai`, and roll back their test data. Output identifies the suite and time zone being tested. Any test failure makes the command fail.
