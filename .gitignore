@@ -1,5 +1,5 @@
 # Local documentation stays private until explicitly included.
-# Track API documentation, published architecture guides, simulator scenarios, the four option diagrams, and both ERDs.
+# Track API documentation, published architecture guides, simulator scenarios, and their explicitly included diagrams.
 /docs/*
 !/docs/api/
 /docs/api/*
@@ -8,6 +8,7 @@
 !/docs/architecture/
 /docs/architecture/*
 !/docs/architecture/billing-model.md
+!/docs/architecture/usage-to-invoice.md
 !/docs/simulator/
 /docs/simulator/*
 !/docs/simulator/custom-scenario.json
@@ -16,6 +17,10 @@
 !/docs/brainstorming/architecture-options.md
 !/docs/diagrams/
 /docs/diagrams/*
+!/docs/diagrams/usage-to-invoice/
+/docs/diagrams/usage-to-invoice/*
+!/docs/diagrams/usage-to-invoice/usage-to-invoice.mmd
+!/docs/diagrams/usage-to-invoice/usage-to-invoice.png
 !/docs/diagrams/data-model/
 /docs/diagrams/data-model/*
 !/docs/diagrams/data-model/data-model.mmd
