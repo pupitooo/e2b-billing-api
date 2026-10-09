@@ -208,17 +208,20 @@ To extend the schema, add the next numbered SQL file and a corresponding version
 
 ## Testing
 
-With PostgreSQL running:
+`make test` is the primary test command. Start PostgreSQL with `make up SERVICE=postgres` before running all tests or the database suite; Go test commands build and start the API automatically.
 
 | Command | Purpose |
 | --- | --- |
 | `make test` | Run all test suites. |
-| `make db-test` | Run only the database integrity suite. |
-| `make api-test` | Build and start the API, then run its HTTP happy-path test. PostgreSQL is not required for the skeleton. |
+| `make test SUITE=go` | Run all Go tests, including the HTTP happy path. PostgreSQL is not required for the skeleton. |
+| `make test SUITE=db` | Run only the database integrity suite in both configured time zones. |
+| `make test RUN='^TestUsageBatchesHappyPath$'` | Run only the named Go test. Supplying `RUN` selects the Go suite by default. |
+
+`SUITE` accepts `all` (the default), `go`, or `db`. `RUN` uses the standard [Go `-run` regular-expression filter](https://go.dev/src/cmd/go/internal/test/test.go): anchors select an exact test name; a pattern such as `Usage` selects matching names. Explicit `SUITE=all RUN=Usage` runs the full SQL suite and matching Go tests. Unknown suites and `SUITE=db` combined with `RUN` fail before starting test work.
 
 Database tests apply pending migrations, check schema integrity in UTC and `Asia/Shanghai`, and roll back their test data. Output identifies the suite and time zone being tested. Any test failure makes the command fail.
 
-The [API happy-path test](tests/api/usage_batches_test.go) sends a valid Acme measurement to the running service and checks HTTP `202`, JSON content type, and `status: accepted`. It uses HTTP only, without importing the handler or asserting stub internals, so the same test can remain when validation and persistence are implemented. `make api-test` runs it in a temporary Go container on the Compose network; the API stays running for manual exploration.
+The [API happy-path test](tests/api/usage_batches_test.go) sends a valid Acme measurement to the running service and checks HTTP `202`, JSON content type, and `status: accepted`. It uses HTTP only, without importing the handler or asserting stub internals, so the same test can remain when validation and persistence are implemented. The Go suite runs in a temporary Go container on the Compose network; the API stays running for manual exploration. `-count=1` ensures every invocation actually executes the tests.
 
 With Go 1.27 or later installed locally, the same test can target a running API directly:
 
