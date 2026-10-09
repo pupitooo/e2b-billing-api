@@ -1,0 +1,24 @@
+# Local documentation stays private until explicitly included.
+# The option C diagram is the only documentation artifact tracked for now.
+/docs/*
+!/docs/diagrams/
+/docs/diagrams/*
+!/docs/diagrams/option-c-components/
+/docs/diagrams/option-c-components/*
+!/docs/diagrams/option-c-components/option-c-components.mmd
+!/docs/diagrams/option-c-components/option-c-components.png
+
+# Local agent instructions and editor settings.
+/AGENTS.md
+/agents.md
+/.vscode/
+
+# Local documentation generation tools.
+/tools/
+
+# Local configuration, dependencies, and operating-system files.
+.env
+.env.*
+!.env.example
+node_modules/
+.DS_Store

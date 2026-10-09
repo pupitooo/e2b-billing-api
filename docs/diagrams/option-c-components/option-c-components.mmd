@@ -1,0 +1,47 @@
+---
+title: Option C - building blocks and interfaces
+config:
+  layout: dagre
+  flowchart:
+    wrappingWidth: 300
+    nodeSpacing: 60
+    rankSpacing: 75
+---
+%% Proposed starter for option C, based on the user's conditional choice.
+%% The initial implementation contains PostgreSQL and usage_inbox; Go blocks are planned.
+%% API and worker may share one Go process initially.
+%% The two storage blocks are tables in one PostgreSQL database.
+%% Solid arrows identify HTTP or SQL interfaces.
+%% T2 includes claiming the inbox row, financial writes, and marking it processed.
+%% The closing barrier is per customer and must not hold the worker's customer lock while waiting.
+flowchart LR
+    platform["Sandbox platform - separate system<br/>Go simulator in the assignment<br/>Metering + durable sender buffer<br/>Stable IDs + retry + spend-status polling"]
+    callers["Customer / E2B administrator<br/>Closing operator"]
+    api["Billing API - Go<br/>Validate and deduplicate usage<br/>Commands, queries, invoice closing"]
+    worker["Usage worker - Go<br/>Poll pending events<br/>Pricing + credit + monthly spend"]
+
+    subgraph database["One PostgreSQL database - one local Compose service"]
+        inbox[("usage_inbox - FIRST STEP<br/>Accepted measurements<br/>Unique source + event_id<br/>Processed marker + errors")]
+        accounting[("Billing tables<br/>Customers, prices, subscriptions<br/>Usage charges, credit ledger, spend state<br/>Immutable invoices")]
+    end
+
+    platform <-->|"HTTP / JSON<br/>POST /usage/batches<br/>202 after T1 commit"| api
+    platform <-->|"HTTP GET<br/>/customers/{id}/spend-status<br/>Processed status + lag"| api
+    callers <-->|"HTTP commands and queries<br/>Credit, prices, add-ons,<br/>limits, invoices, closing"| api
+
+    api -->|"SQL T1: persist + deduplicate<br/>SQL reads: progress + closing boundary"| inbox
+    worker <-->|"SQL T2: poll + claim + mark processed<br/>FOR UPDATE SKIP LOCKED"| inbox
+    worker -->|"SQL T2: customer lock<br/>Financial writes + spend update<br/>ONE commit with inbox completion"| accounting
+    api <-->|"SQL commands and queries<br/>Prices / credit / add-ons / limits<br/>Invoice snapshots + spend status"| accounting
+
+    classDef platformNode fill:#e8f1fb,stroke:#31588a,color:#172b4d;
+    classDef goModule fill:#e9f7ee,stroke:#287d4e,color:#173b28;
+    classDef firstStep fill:#fff2cf,stroke:#a56800,color:#543800,stroke-width:3px;
+    classDef storedData fill:#edf0ff,stroke:#56649c,color:#24335c;
+    classDef actor fill:#f2f3f5,stroke:#6b7280,color:#253044;
+    class platform platformNode;
+    class api,worker goModule;
+    class inbox firstStep;
+    class accounting storedData;
+    class callers actor;
+    style database fill:#f9f9ff,stroke:#9b9fc0;
