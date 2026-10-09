@@ -30,8 +30,25 @@ INSERT INTO customers (customer_id, name, country, billing_address)
 VALUES
     ('billing-model-acme', 'Test Acme', 'US', 'Test address'),
     ('billing-model-cyberdyne', 'Test Cyberdyne', 'US', 'Test address');
+INSERT INTO customer_billing_state (customer_id, credit_balance_cents, spend_limit_cents)
+VALUES ('billing-model-acme', 0, NULL);
 INSERT INTO customer_billing_state (customer_id, credit_balance_cents, spend_limit_cents, state_version)
-VALUES ('billing-model-acme', 0, NULL, 0), ('billing-model-cyberdyne', 0, 1500, 0);
+VALUES ('billing-model-cyberdyne', 0, 1500, 7);
+
+-- New accounts start at version zero unless an explicit initial version is supplied.
+DO $tests$
+BEGIN
+    IF (SELECT state_version FROM customer_billing_state WHERE customer_id = 'billing-model-acme')
+        IS DISTINCT FROM 0::bigint THEN
+        RAISE EXCEPTION 'An omitted account state version must default to zero';
+    END IF;
+    IF (SELECT state_version FROM customer_billing_state WHERE customer_id = 'billing-model-cyberdyne')
+        IS DISTINCT FROM 7::bigint THEN
+        RAISE EXCEPTION 'An explicit initial account state version must be preserved';
+    END IF;
+END;
+$tests$;
+
 INSERT INTO metrics (metric) VALUES ('billing-model-cpu'), ('billing-model-other');
 INSERT INTO price_versions (
     price_version_id, customer_id, metric, price_per_million_cents, effective_from
@@ -134,6 +151,9 @@ BEGIN
     PERFORM pg_temp.expect_billing_rejection(
         $$UPDATE customer_billing_state SET state_version = -1 WHERE customer_id = 'billing-model-acme'$$,
         '23514', 'Negative state version');
+    PERFORM pg_temp.expect_billing_rejection(
+        $$UPDATE customer_billing_state SET state_version = NULL WHERE customer_id = 'billing-model-acme'$$,
+        '23502', 'Explicit null state version');
     PERFORM pg_temp.expect_billing_rejection(
         $$INSERT INTO customer_billing_state (customer_id, spend_limit_cents, state_version) VALUES ('billing-model-acme', NULL, 0)$$,
         '23502', 'Application must supply opening balance');

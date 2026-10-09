@@ -15,7 +15,7 @@ CREATE TABLE customer_billing_state (
     customer_id text PRIMARY KEY REFERENCES customers (customer_id),
     credit_balance_cents bigint NOT NULL CHECK (credit_balance_cents >= 0),
     spend_limit_cents bigint CHECK (spend_limit_cents >= 0),
-    state_version bigint NOT NULL CHECK (state_version >= 0)
+    state_version bigint NOT NULL DEFAULT 0 CHECK (state_version >= 0)
 );
 
 CREATE TABLE metrics (
