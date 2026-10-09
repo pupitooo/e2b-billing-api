@@ -83,13 +83,73 @@ postgres://e2b:e2b_local_dev@127.0.0.1:5432/e2b_billing?sslmode=disable
 
 Use `postgres` as the host from another Compose service. If the host port changes, update the local application connection string accordingly.
 
-Open an interactive SQL session:
+### Explore the database with psql
+
+`psql` is PostgreSQL's interactive command-line client. It runs inside the container, so no additional database tool needs to be installed locally.
+
+With PostgreSQL running and the [initial migration applied](#initialize-the-database), open a session from your terminal:
 
 ```sh
 make psql
 ```
 
-Inside the session, run `\d usage_inbox` to inspect the table, `TABLE schema_migrations;` to inspect applied migrations, and `\q` to exit.
+Enter the following commands at the `e2b_billing=>` prompt, rather than in your shell.
+
+List tables:
+
+```text
+\dt
+```
+
+The current tables are `usage_inbox` (received usage events) and `schema_migrations` (applied migration versions). Inspect the inbox's columns, types, constraints, and indexes:
+
+```text
+\d usage_inbox
+```
+
+Show up to 50 inbox rows, with the most recently received events first:
+
+```sql
+SELECT *
+FROM usage_inbox
+ORDER BY received_at DESC, source, event_id
+LIMIT 50;
+```
+
+An empty result (`0 rows`) is expected after initial setup. No usage is seeded yet, and the integrity tests roll back their fixtures.
+
+You can enter any SQL query in this session. End each SQL statement with a semicolon. For example, count stored events:
+
+```sql
+SELECT count(*) AS event_count FROM usage_inbox;
+```
+
+List events waiting for processing, excluding unresolved errors:
+
+```sql
+SELECT source, event_id, customer_id, metric, units, received_at
+FROM usage_inbox
+WHERE processed_at IS NULL AND processing_error IS NULL
+ORDER BY received_at, source, event_id
+LIMIT 50;
+```
+
+Inspect migration records:
+
+```sql
+TABLE schema_migrations;
+```
+
+Useful `psql` commands (these do not need a semicolon):
+
+| Command | Purpose |
+| --- | --- |
+| `\x auto` | Automatically use a vertical layout for wide query results. |
+| `\?` | Show help for `psql` commands. |
+| `\h SELECT` | Show SQL syntax help for `SELECT`. |
+| `\q` | Exit the session and return to your terminal. |
+
+If output opens in a pager, press `q` to return to the SQL prompt. If you are partway through a query, press Ctrl+C to clear it and start again.
 
 ### Database migrations
 
