@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"mime"
 	"net/http"
-	"strings"
 	"time"
 
 	"e2b/billing-api/internal/billing"
@@ -52,56 +50,67 @@ func NewHandler(store BatchStore, ingestionTimeout time.Duration, maxInFlight in
 
 func postUsageBatches(w http.ResponseWriter, r *http.Request, store BatchStore, ingestionTimeout time.Duration) {
 	receivedAt := time.Now().UTC().Truncate(time.Microsecond)
-	mediaType, parameters, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" ||
-		(parameters["charset"] != "" && !strings.EqualFold(parameters["charset"], "utf-8")) {
-		writeRequestError(w, &requestError{status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: "Use application/json with UTF-8 encoding."})
-		return
-	}
-	if encoding := r.Header.Get("Content-Encoding"); encoding != "" && !strings.EqualFold(encoding, "identity") {
-		writeRequestError(w, &requestError{status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: "Compressed request bodies are not supported."})
-		return
-	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBatchBytes))
-	if err != nil {
-		var sizeError *http.MaxBytesError
-		if errors.As(err, &sizeError) {
-			writeRequestError(w, &requestError{status: http.StatusRequestEntityTooLarge, Code: "request_too_large", Message: "The request body must not exceed 1048576 bytes."})
-		} else {
-			writeRequestError(w, &requestError{status: http.StatusBadRequest, Code: "invalid_json", Message: "Could not read the JSON request body."})
-		}
-		return
-	}
-	batch, validationError := parseUsageBatch(body)
+	batch, validationError := readUsageBatch(w, r)
 	if validationError != nil {
 		writeRequestError(w, validationError)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), ingestionTimeout)
 	defer cancel()
-	if store == nil {
-		err = errors.New("inbox store is not configured")
-	} else {
-		err = store.InsertBatch(ctx, batch.Events, receivedAt)
-	}
-	if err != nil {
-		var conflict *inbox.ConflictError
-		if errors.As(err, &conflict) {
-			writeRequestError(w, &requestError{
-				status: http.StatusConflict, Code: "event_conflict",
-				Message: "The event identity already has different measurement content.",
-				Source:  conflict.Source, EventID: conflict.EventID,
-			})
-			return
-		}
-		// A failed/lost commit response can leave the outcome unknown. Clients
-		// must retain the original keys and content when retrying after 503.
-		writeInboxUnavailable(w)
+	if err := insertUsageBatch(ctx, store, batch.Events, receivedAt); err != nil {
+		writeUsageStoreError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte("{\"status\":\"accepted\"}\n"))
+}
+
+func readUsageBatch(w http.ResponseWriter, r *http.Request) (usageBatch, *requestError) {
+	if err := usageRequestHeaders(r); err != nil {
+		return usageBatch{}, err
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBatchBytes))
+	if err != nil {
+		var sizeError *http.MaxBytesError
+		if errors.As(err, &sizeError) {
+			return usageBatch{}, &requestError{status: http.StatusRequestEntityTooLarge, Code: "request_too_large", Message: "The request body must not exceed 1048576 bytes."}
+		}
+		return usageBatch{}, invalidJSON("Could not read the JSON request body.", "")
+	}
+	return parseUsageBatch(body)
+}
+
+func usageRequestHeaders(r *http.Request) *requestError {
+	if !usesJSONUTF8(r) {
+		return &requestError{status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: "Use application/json with UTF-8 encoding."}
+	}
+	if !usesIdentityEncoding(r) {
+		return &requestError{status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: "Compressed request bodies are not supported."}
+	}
+	return nil
+}
+
+func insertUsageBatch(ctx context.Context, store BatchStore, events []usage.Event, receivedAt time.Time) error {
+	if store == nil {
+		return errors.New("inbox store is not configured")
+	}
+	return store.InsertBatch(ctx, events, receivedAt)
+}
+
+func writeUsageStoreError(w http.ResponseWriter, err error) {
+	var conflict *inbox.ConflictError
+	if errors.As(err, &conflict) {
+		writeRequestError(w, &requestError{
+			status: http.StatusConflict, Code: "event_conflict",
+			Message: "The event identity already has different measurement content.",
+			Source:  conflict.Source, EventID: conflict.EventID,
+		})
+		return
+	}
+	// A failed/lost commit response can leave the outcome unknown. Clients
+	// must retain the original keys and content when retrying after 503.
+	writeInboxUnavailable(w)
 }
 
 // writeInboxUnavailable also covers admission exhaustion: no success is

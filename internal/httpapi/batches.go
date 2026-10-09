@@ -57,7 +57,7 @@ type eventInput struct {
 }
 
 func parseUsageBatch(body []byte) (usageBatch, *requestError) {
-	if !utf8.Valid(body) || !json.Valid(body) || hasUnpairedSurrogate(body) {
+	if !validUnicodeJSON(body) {
 		return usageBatch{}, invalidJSON("The body must contain one valid UTF-8 JSON document.", "")
 	}
 	fields, err := decodeObject(body, []string{"batch_id", "events"})
@@ -65,37 +65,69 @@ func parseUsageBatch(body []byte) (usageBatch, *requestError) {
 		return usageBatch{}, invalidJSON(err.Error(), "")
 	}
 	var batch usageBatch
-	if raw, present := fields["batch_id"]; present {
-		if isNull(raw) {
-			return batch, invalidBatch("batch_id must be a nonblank string when supplied.", "batch_id")
-		}
-		if err := json.Unmarshal(raw, &batch.BatchID); err != nil {
-			return batch, invalidJSON("batch_id must be a JSON string.", "batch_id")
-		}
-		if strings.TrimSpace(batch.BatchID) == "" || strings.ContainsRune(batch.BatchID, '\x00') || len(batch.BatchID) > maxIdentifierBytes {
-			return batch, invalidBatch("batch_id must contain non-whitespace text, no NUL, and at most 256 UTF-8 bytes.", "batch_id")
-		}
+	var validationError *requestError
+	batch.BatchID, validationError = parseBatchID(fields)
+	if validationError != nil {
+		return batch, validationError
 	}
+	events, validationError := decodeBatchEvents(fields)
+	if validationError != nil {
+		return batch, validationError
+	}
+	batch.Events, validationError = parseBatchEvents(events)
+	if validationError != nil {
+		return usageBatch{}, validationError
+	}
+	return batch, nil
+}
+
+func validUnicodeJSON(body []byte) bool {
+	return utf8.Valid(body) && json.Valid(body) && !hasUnpairedSurrogate(body)
+}
+
+func parseBatchID(fields map[string]json.RawMessage) (string, *requestError) {
+	raw, present := fields["batch_id"]
+	if !present {
+		return "", nil
+	}
+	if isNull(raw) {
+		return "", invalidBatch("batch_id must be a nonblank string when supplied.", "batch_id")
+	}
+	var id string
+	if err := json.Unmarshal(raw, &id); err != nil {
+		return id, invalidJSON("batch_id must be a JSON string.", "batch_id")
+	}
+	if strings.TrimSpace(id) == "" || strings.ContainsRune(id, '\x00') || len(id) > maxIdentifierBytes {
+		return id, invalidBatch("batch_id must contain non-whitespace text, no NUL, and at most 256 UTF-8 bytes.", "batch_id")
+	}
+	return id, nil
+}
+
+func decodeBatchEvents(fields map[string]json.RawMessage) ([]json.RawMessage, *requestError) {
 	rawEvents, present := fields["events"]
 	if !present || isNull(rawEvents) {
-		return batch, invalidBatch("events is required and must be a nonempty array.", "events")
+		return nil, invalidBatch("events is required and must be a nonempty array.", "events")
 	}
 	var events []json.RawMessage
 	if err := json.Unmarshal(rawEvents, &events); err != nil {
-		return batch, invalidJSON("events must be a JSON array.", "events")
+		return nil, invalidJSON("events must be a JSON array.", "events")
 	}
 	if len(events) == 0 || len(events) > maxBatchEvents {
-		return batch, invalidBatch("events must contain between 1 and 1000 measurements.", "events")
+		return nil, invalidBatch("events must contain between 1 and 1000 measurements.", "events")
 	}
-	batch.Events = make([]usage.Event, 0, len(events))
+	return events, nil
+}
+
+func parseBatchEvents(events []json.RawMessage) ([]usage.Event, *requestError) {
+	parsed := make([]usage.Event, 0, len(events))
 	for index, raw := range events {
 		event, err := parseUsageEvent(raw, fmt.Sprintf("events[%d]", index))
 		if err != nil {
-			return usageBatch{}, err
+			return nil, err
 		}
-		batch.Events = append(batch.Events, event)
+		parsed = append(parsed, event)
 	}
-	return batch, nil
+	return parsed, nil
 }
 
 func parseUsageEvent(raw []byte, prefix string) (usage.Event, *requestError) {

@@ -6,9 +6,9 @@ The project uses the selected [option C architecture](docs/brainstorming/archite
 
 The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. The [financial rules](docs/architecture/accounting-rules.md) define the shared Go calculations, exact credit before rounding, and transaction/closing contract. Transactional accounting, financial APIs, and immutable monthly invoices are implemented.
 
-The [implemented PostgreSQL ERD](docs/diagrams/implemented-data-model/implemented-data-model.png) shows the actual tables, columns, and foreign keys, including `usage_ratings`. Its [editable Mermaid source](docs/diagrams/implemented-data-model/implemented-data-model.mmd) accompanies the preview.
+The [foundation PostgreSQL ERD](docs/diagrams/implemented-data-model/implemented-data-model.png) shows the tables, columns, and foreign keys through migration 004, including `usage_ratings`. The billing model guide describes the later closure and invoice records. Its [editable Mermaid source](docs/diagrams/implemented-data-model/implemented-data-model.mmd) accompanies the preview.
 
-The [usage-to-invoice flow](docs/architecture/usage-to-invoice.md) maps usage events, rating, exact groups, credit, rounding, invoice lines, and invoices to database records, including exact tick credit and planned invoice snapshots.
+The [usage-to-invoice flow](docs/architecture/usage-to-invoice.md) maps usage events, rating, exact groups, credit, rounding, invoice lines, and invoices to database records, including exact tick credit and immutable invoice snapshots.
 
 ## Local setup
 
@@ -65,7 +65,7 @@ batches still commit atomically; producers retain rejected events and retry
 unchanged identities and content with backoff and jitter.
 
 The API's explicit pool limits override pgx pool sizes in `DATABASE_URL`.
-Budget the database across all API replicas, future accounting workers, and
+Budget the database across all API replicas, accounting workers, and
 administration: their combined maximum connections must fit PostgreSQL's
 connection limit. Customer count does not imply one database connection per
 customer. Admission bounds decoded batch memory, with at most 32 MiB of raw
@@ -703,7 +703,7 @@ schema. The API stays running for exploration; `-count=1` executes every test.
 
 Worker package tests cover loop cancellation, deadlines, retry pacing, heartbeat
 health, and bounded shutdown. The [worker process tests](tests/worker/lifecycle_test.go)
-start the compiled executable without an API or database dependency, verify its
+start the compiled executable against PostgreSQL without an API dependency, verify its
 health probe, send SIGTERM, and require a clean exit with heartbeat cleanup. They
 also reject invalid startup configuration. Run them through `make test`, or
 filter with `make test RUN='^TestWorkerExecutable$/^worker_process_lifecycle$'`.
@@ -795,6 +795,15 @@ The diagram records the selected architecture. The available HTTP endpoints are:
 | --- | --- |
 | `GET /healthz` | Return HTTP `200` when the HTTP server is available, without checking PostgreSQL. |
 | `POST /usage/batches` | Validate and atomically commit measurements, return durable `202`, report changed content as `409`, and permit unchanged retries after `503`. |
+| `POST /prices` | Append default or customer-specific historical price versions without invalidating rated history. |
+| `POST /customers/{customer_id}/credits` | Apply an E2B grant once per operation identity. |
+| `GET /customers/{customer_id}/credit` | Read exact credit ticks and accounting progress. |
+| `POST /customers/{customer_id}/addons` | Purchase a recurring add-on with its price snapshot. |
+| `POST /customers/{customer_id}/spend-limit` | Set or remove the monthly gross-usage limit idempotently. |
+| `GET /customers/{customer_id}/limit-status` | Let the platform read the current UTC month's status. |
+| `GET /customers/{customer_id}/months/{month}/limit-status` | Read an explicit original usage month with the current limit configuration. |
+| `POST /customers/{customer_id}/invoices` | Close an explicit month, drain its durable cohort, and return one immutable numbered invoice. |
+| `GET /customers/{customer_id}/invoices/{month}` | Read the issued buyer and financial snapshot. |
 
 Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.
 

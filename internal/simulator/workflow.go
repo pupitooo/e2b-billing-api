@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -78,24 +77,11 @@ func validateWorkflow(plan Workflow) error {
 			return fmt.Errorf("workflow step names must be nonblank and unique")
 		}
 		names[step.Name] = true
-		if step.Request.Method != "GET" && step.Request.Method != "POST" {
-			return fmt.Errorf("step %s: method must be GET or POST", step.Name)
+		if err := validateWorkflowStep(step); err != nil {
+			return err
 		}
-		path, err := url.ParseRequestURI(step.Request.Path)
-		if err != nil || path.IsAbs() || path.Host != "" || !strings.HasPrefix(step.Request.Path, "/") || strings.HasPrefix(step.Request.Path, "//") || strings.Contains(step.Request.Path, "#") || step.Want.Status < 100 || step.Want.Status > 599 {
-			return fmt.Errorf("step %s: invalid relative path or expected status", step.Name)
-		}
-		if step.Await && step.Request.Method != "GET" {
-			return fmt.Errorf("step %s: only reads can await accounting", step.Name)
-		}
-		if step.Want.SameAs != "" && !captures[step.Want.SameAs] {
-			return fmt.Errorf("step %s: response capture must precede its comparison", step.Name)
-		}
-		if step.Capture != "" {
-			if captures[step.Capture] {
-				return fmt.Errorf("step %s: capture names must be unique", step.Name)
-			}
-			captures[step.Capture] = true
+		if err := registerWorkflowCapture(step, captures); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -141,7 +127,7 @@ func RunWorkflow(ctx context.Context, options WorkflowOptions) error {
 }
 
 func validateWorkflowOptions(o WorkflowOptions) error {
-	if o.StatePath == "" || strings.TrimSpace(o.Source) == "" || !utf8.ValidString(o.Source) || strings.ContainsRune(o.Source, 0) || len(o.Source) > 256 {
+	if o.StatePath == "" || !validWorkflowSource(o.Source) {
 		return fmt.Errorf("workflow requires a state file and stable source")
 	}
 	if o.Action != "run" && o.Action != "send" && o.Action != "status" {
@@ -153,8 +139,16 @@ func validateWorkflowOptions(o WorkflowOptions) error {
 	if o.Action == "status" {
 		return nil
 	}
-	address, err := url.Parse(o.BaseURL)
-	if err != nil || (address.Scheme != "http" && address.Scheme != "https") || address.Host == "" || address.User != nil || address.RawQuery != "" || address.Fragment != "" {
+	return validateWorkflowTransport(o)
+}
+
+func validWorkflowSource(source string) bool {
+	return strings.TrimSpace(source) != "" && utf8.ValidString(source) &&
+		!strings.ContainsRune(source, 0) && len(source) <= 256
+}
+
+func validateWorkflowTransport(o WorkflowOptions) error {
+	if !validBaseURL(o.BaseURL) {
 		return fmt.Errorf("workflow requires a plain HTTP(S) base URL")
 	}
 	if o.Client == nil || o.RetryMin <= 0 || o.RetryMax < o.RetryMin || o.MaxAttempts < 0 {

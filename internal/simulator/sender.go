@@ -35,9 +35,7 @@ type Sender struct {
 }
 
 func (s *Sender) validate() error {
-	address, err := url.Parse(s.BaseURL)
-	if err != nil || (address.Scheme != "http" && address.Scheme != "https") ||
-		address.Host == "" || address.User != nil || address.RawQuery != "" || address.Fragment != "" {
+	if !validBaseURL(s.BaseURL) {
 		return fmt.Errorf("api-url must be an HTTP(S) base URL without credentials, query, or fragment")
 	}
 	if s.Client == nil || s.Client.Timeout <= 0 {
@@ -53,6 +51,14 @@ func (s *Sender) validate() error {
 		return fmt.Errorf("max-attempts must be non-negative and duplicates must be between 0 and 10")
 	}
 	return nil
+}
+
+func validBaseURL(value string) bool {
+	address, err := url.Parse(value)
+	if err != nil || (address.Scheme != "http" && address.Scheme != "https") {
+		return false
+	}
+	return address.Host != "" && address.User == nil && address.RawQuery == "" && address.Fragment == ""
 }
 
 // Send drains released measurements. The receipt is saved only after every

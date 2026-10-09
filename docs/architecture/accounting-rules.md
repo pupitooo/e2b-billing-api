@@ -66,8 +66,8 @@ net_cents = round_cents(group_gross_ticks - group_credit_ticks)
 credit_line_cents = -(gross_cents - net_cents)
 ```
 
-`InvoiceAmounts` returns the positive credit deduction; the invoice writer will
-use its negative sign. Derive the credit presentation from gross and net, rather
+`InvoiceAmounts` returns the positive credit deduction; the invoice writer
+uses its negative sign. Derive the credit presentation from gross and net, rather
 than independently rounding credit, so displayed lines sum to rounded net usage.
 For one cent gross and half a cent credit, net rounds to one cent and displayed
 credit is zero cents. The ledger still records the exact half-cent debit.

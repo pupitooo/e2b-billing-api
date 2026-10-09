@@ -26,7 +26,7 @@ type Rating struct {
 // Rate selects the latest eligible customer override before falling back to a
 // default. One receipt must fit within one month and one effective price version.
 // Unknown versions, missing prices, ambiguous catalogs, and crossing intervals
-// return errors; the future worker preserves the receipt for investigation.
+// return errors; the worker preserves the receipt for investigation.
 func Rate(event usage.Event, versions []PriceVersion) (Rating, error) {
 	if err := event.Validate(); err != nil {
 		return Rating{}, err
@@ -38,45 +38,79 @@ func Rate(event usage.Event, versions []PriceVersion) (Rating, error) {
 	if err != nil {
 		return Rating{}, err
 	}
-	var selected *PriceVersion
+	prices, err := applicablePrices(event, versions)
+	if err != nil {
+		return Rating{}, err
+	}
+	selected, err := latestEligiblePrice(event, prices)
+	if err != nil {
+		return Rating{}, err
+	}
+	if crossesPriceBoundary(event, selected, prices) {
+		return Rating{}, fmt.Errorf("usage interval crosses a price version boundary")
+	}
+	charge, err := UsageCharge(event.Units, selected.PricePerMillionCents)
+	if err != nil {
+		return Rating{}, err
+	}
+	return Rating{Price: selected, UsageMonth: month, Charge: charge}, nil
+}
+
+// Validate all relevant versions, including future ones, before selecting a
+// price. Invalid or duplicate catalog entries must never be silently ignored.
+func applicablePrices(event usage.Event, versions []PriceVersion) ([]PriceVersion, error) {
+	var prices []PriceVersion
 	seen := make(map[string]bool)
 	for _, version := range versions {
 		if version.Metric != event.Metric || (version.CustomerID != "" && version.CustomerID != event.CustomerID) {
 			continue
 		}
 		if _, err := UTCMonth(version.EffectiveFrom); err != nil || version.ID == "" || version.PricePerMillionCents < 0 {
-			return Rating{}, fmt.Errorf("invalid price version: %s", version.ID)
+			return nil, fmt.Errorf("invalid price version: %s", version.ID)
 		}
 		key := version.CustomerID + "\x00" + version.EffectiveFrom.UTC().Format(time.RFC3339Nano)
 		if seen[key] {
-			return Rating{}, fmt.Errorf("ambiguous price versions at %s", version.EffectiveFrom)
+			return nil, fmt.Errorf("ambiguous price versions at %s", version.EffectiveFrom)
 		}
 		seen[key] = true
+		prices = append(prices, version)
+	}
+	return prices, nil
+}
+
+func latestEligiblePrice(event usage.Event, prices []PriceVersion) (PriceVersion, error) {
+	var selected PriceVersion
+	var found bool
+	for _, version := range prices {
 		if version.EffectiveFrom.After(event.PeriodStart) {
 			continue
 		}
-		if selected == nil || (version.CustomerID != "" && selected.CustomerID == "") ||
-			(version.CustomerID == selected.CustomerID && version.EffectiveFrom.After(selected.EffectiveFrom)) {
-			copy := version
-			selected = &copy
+		if !found || priceTakesPriority(version, selected) {
+			selected, found = version, true
 		}
 	}
-	if selected == nil {
-		return Rating{}, fmt.Errorf("no price for customer %s and metric %s at usage time", event.CustomerID, event.Metric)
+	if !found {
+		return PriceVersion{}, fmt.Errorf("no price for customer %s and metric %s at usage time", event.CustomerID, event.Metric)
 	}
-	for _, version := range versions {
-		if version.Metric != event.Metric || (version.CustomerID != "" && version.CustomerID != event.CustomerID) ||
-			!version.EffectiveFrom.After(event.PeriodStart) || !version.EffectiveFrom.Before(event.PeriodEnd) {
+	return selected, nil
+}
+
+func priceTakesPriority(candidate, current PriceVersion) bool {
+	if candidate.CustomerID != current.CustomerID {
+		return candidate.CustomerID != ""
+	}
+	return candidate.EffectiveFrom.After(current.EffectiveFrom)
+}
+
+func crossesPriceBoundary(event usage.Event, selected PriceVersion, prices []PriceVersion) bool {
+	for _, version := range prices {
+		if !version.EffectiveFrom.After(event.PeriodStart) || !version.EffectiveFrom.Before(event.PeriodEnd) {
 			continue
 		}
 		// Default changes are masked while an eligible override remains active.
 		if selected.CustomerID == "" || version.CustomerID == selected.CustomerID {
-			return Rating{}, fmt.Errorf("usage interval crosses a price version boundary")
+			return true
 		}
 	}
-	charge, err := UsageCharge(event.Units, selected.PricePerMillionCents)
-	if err != nil {
-		return Rating{}, err
-	}
-	return Rating{Price: *selected, UsageMonth: month, Charge: charge}, nil
+	return false
 }
