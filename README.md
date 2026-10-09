@@ -294,13 +294,19 @@ batch receives a deadline. SIGINT and SIGTERM cancel the loop and in-flight work
 the executable exits unsuccessfully if work ignores cancellation beyond the
 shutdown timeout. It does not start a replacement loop in that process.
 
-| Setting | Default | Purpose |
+| Setting | Compose default | Purpose |
 | --- | --- | --- |
 | `E2B_WORKER_POLL_INTERVAL` | `1s` | Delay after an idle or failed iteration. |
 | `E2B_WORKER_BATCH_TIMEOUT` | `5s` | Cooperative deadline for one processing batch. |
 | `E2B_WORKER_SHUTDOWN_TIMEOUT` | `5s` | Maximum wait for the loop after a termination signal. |
 | `E2B_WORKER_HEARTBEAT_MAX_AGE` | `15s` | Maximum allowed heartbeat age; must exceed batch timeout plus polling interval. |
+| `E2B_WORKER_HEARTBEAT_FILE` | `/tmp/billing-worker-heartbeat` | Writable heartbeat path shared by the worker and its health probe. |
 | `E2B_WORKER_STOP_GRACE_PERIOD` | `10s` | Compose termination grace period; keep it longer than the shutdown timeout. |
+
+The Go executable has no configuration defaults: all four durations and the
+heartbeat path must be supplied through environment variables. Missing, empty,
+invalid, or incompatible settings prevent startup, including healthcheck mode.
+Compose supplies the local defaults shown above.
 
 Copy the settings from [.env.example](.env.example) to `.env`, then run
 `make up SERVICE=worker` to apply changes. The local worker has a 0.5 CPU and
@@ -310,7 +316,8 @@ measurement; this scaffold establishes no processing-capacity guarantee.
 Compose uses `billing-worker healthcheck` to check the loop's heartbeat in
 `/tmp/billing-worker-heartbeat`. The file is replaced atomically and removed on a
 clean exit. When running the binary outside Compose, `E2B_WORKER_HEARTBEAT_FILE`
-can select a separate file for each process. Health checks report loop activity,
+must select a writable file for each process, and all duration settings must
+also be exported. Health checks report loop activity,
 including idle and error iterations; they do not confirm financial processing or
 database readiness. A stuck processor eventually makes the heartbeat stale.
 Docker's restart policy restarts an exited container; an unhealthy status alone

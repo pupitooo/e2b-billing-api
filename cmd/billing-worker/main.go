@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -71,11 +72,7 @@ func waitForAccounting(context.Context) (bool, error) {
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
-	cfg := config{
-		pollInterval: time.Second, batchTimeout: 5 * time.Second,
-		shutdownTimeout: 5 * time.Second, heartbeatMaxAge: 15 * time.Second,
-		heartbeatFile: "/tmp/billing-worker-heartbeat",
-	}
+	var cfg config
 	settings := []struct {
 		name  string
 		value *time.Duration
@@ -86,16 +83,19 @@ func loadConfig(getenv func(string) string) (config, error) {
 		{"E2B_WORKER_HEARTBEAT_MAX_AGE", &cfg.heartbeatMaxAge},
 	}
 	for _, setting := range settings {
-		if value := getenv(setting.name); value != "" {
-			duration, err := time.ParseDuration(value)
-			if err != nil || duration <= 0 {
-				return config{}, fmt.Errorf("%s must be a positive Go duration", setting.name)
-			}
-			*setting.value = duration
+		value := getenv(setting.name)
+		if value == "" {
+			return config{}, fmt.Errorf("%s is required", setting.name)
 		}
+		duration, err := time.ParseDuration(value)
+		if err != nil || duration <= 0 {
+			return config{}, fmt.Errorf("%s must be a positive Go duration", setting.name)
+		}
+		*setting.value = duration
 	}
-	if value := getenv("E2B_WORKER_HEARTBEAT_FILE"); value != "" {
-		cfg.heartbeatFile = value
+	cfg.heartbeatFile = getenv("E2B_WORKER_HEARTBEAT_FILE")
+	if strings.TrimSpace(cfg.heartbeatFile) == "" {
+		return config{}, fmt.Errorf("E2B_WORKER_HEARTBEAT_FILE is required")
 	}
 	if cfg.batchTimeout >= cfg.heartbeatMaxAge || cfg.pollInterval >= cfg.heartbeatMaxAge-cfg.batchTimeout {
 		return config{}, fmt.Errorf("E2B_WORKER_HEARTBEAT_MAX_AGE must exceed the batch timeout plus polling interval")

@@ -9,25 +9,37 @@ import (
 	"time"
 )
 
-// TestLoadConfigDefaults verifies that an unset environment produces the
-// documented polling, batch, shutdown, and heartbeat configuration.
-func TestLoadConfigDefaults(t *testing.T) {
-	cfg, err := loadConfig(configEnvironment(nil))
-	if err != nil {
-		t.Fatalf("Load default configuration: %v", err)
+// TestLoadConfigRequiresEnvironment verifies that each missing or empty setting
+// fails with its name instead of silently selecting a runtime default.
+func TestLoadConfigRequiresEnvironment(t *testing.T) {
+	for _, name := range []string{
+		"E2B_WORKER_POLL_INTERVAL", "E2B_WORKER_BATCH_TIMEOUT",
+		"E2B_WORKER_SHUTDOWN_TIMEOUT", "E2B_WORKER_HEARTBEAT_MAX_AGE",
+		"E2B_WORKER_HEARTBEAT_FILE",
+	} {
+		t.Run(name, func(t *testing.T) {
+			getenv := configEnvironment(nil)
+			_, err := loadConfig(func(key string) string {
+				if key == name {
+					return ""
+				}
+				return getenv(key)
+			})
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("Missing-setting error = %v, want %s", err, name)
+			}
+		})
 	}
-	want := config{
-		pollInterval: time.Second, batchTimeout: 5 * time.Second,
-		shutdownTimeout: 5 * time.Second, heartbeatMaxAge: 15 * time.Second,
-		heartbeatFile: "/tmp/billing-worker-heartbeat",
+	if _, err := loadConfig(func(string) string { return "" }); err == nil {
+		t.Fatal("An empty environment must fail configuration")
 	}
-	if cfg != want {
-		t.Fatalf("Default configuration = %+v, want %+v", cfg, want)
+	if _, err := loadConfig(configEnvironment(map[string]string{"E2B_WORKER_HEARTBEAT_FILE": " \t\n"})); err == nil {
+		t.Fatal("A whitespace-only heartbeat path must fail configuration")
 	}
 }
 
 // TestLoadConfigOverrides verifies that all supported environment settings
-// replace their defaults, including fractional intervals and a custom file.
+// supply the runtime configuration, including fractional intervals and a custom file.
 func TestLoadConfigOverrides(t *testing.T) {
 	filename := filepath.Join(t.TempDir(), "custom heartbeat")
 	values := map[string]string{
@@ -151,8 +163,18 @@ func TestWorkerCommandRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-// configEnvironment supplies only the fixture's settings so configuration tests
+// configEnvironment supplies a complete valid environment with fixture overrides so tests
 // remain independent of the developer or CI process environment.
 func configEnvironment(values map[string]string) func(string) string {
-	return func(name string) string { return values[name] }
+	settings := map[string]string{
+		"E2B_WORKER_POLL_INTERVAL":     "1s",
+		"E2B_WORKER_BATCH_TIMEOUT":     "5s",
+		"E2B_WORKER_SHUTDOWN_TIMEOUT":  "5s",
+		"E2B_WORKER_HEARTBEAT_MAX_AGE": "15s",
+		"E2B_WORKER_HEARTBEAT_FILE":    "/tmp/billing-worker-heartbeat",
+	}
+	for name, value := range values {
+		settings[name] = value
+	}
+	return func(name string) string { return settings[name] }
 }

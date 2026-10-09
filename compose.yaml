@@ -78,6 +78,7 @@ services:
       E2B_WORKER_BATCH_TIMEOUT: ${E2B_WORKER_BATCH_TIMEOUT:-5s}
       E2B_WORKER_SHUTDOWN_TIMEOUT: ${E2B_WORKER_SHUTDOWN_TIMEOUT:-5s}
       E2B_WORKER_HEARTBEAT_MAX_AGE: ${E2B_WORKER_HEARTBEAT_MAX_AGE:-15s}
+      E2B_WORKER_HEARTBEAT_FILE: ${E2B_WORKER_HEARTBEAT_FILE:-/tmp/billing-worker-heartbeat}
     healthcheck:
       test: ["CMD", "billing-worker", "healthcheck"]
       interval: 5s
