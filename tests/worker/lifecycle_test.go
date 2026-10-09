@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// The worker executable publishes health before processing, exits cleanly on
-// SIGTERM, and rejects invalid startup without leaving a healthy heartbeat.
+// The database-backed worker publishes health before accounting, exits cleanly
+// on SIGTERM, and rejects invalid startup without leaving a healthy heartbeat.
 func TestWorkerExecutable(t *testing.T) {
 	t.Run("worker process lifecycle", func(t *testing.T) {
 		tt := struct {
@@ -30,7 +30,7 @@ func TestWorkerExecutable(t *testing.T) {
 			wantExitError:         false,
 			wantHeartbeatMissing:  true,
 			wantStoppedProbeError: true,
-			wantStartupOutput:     `"accounting_enabled":false`,
+			wantStartupOutput:     `"accounting_enabled":true`,
 		}
 
 		binary := workerBinary(t)
@@ -73,7 +73,7 @@ func TestWorkerExecutable(t *testing.T) {
 			t.Fatal("A stopped worker must not pass its health check")
 		}
 		if !bytes.Contains(output.Bytes(), []byte(tt.wantStartupOutput)) {
-			t.Fatalf("Startup must explicitly identify the idle accounting scaffold:\n%s", &output)
+			t.Fatalf("Startup must identify enabled accounting:\n%s", &output)
 		}
 	})
 	t.Run("worker process rejects invalid config", func(t *testing.T) {

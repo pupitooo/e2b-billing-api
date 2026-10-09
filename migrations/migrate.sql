@@ -51,4 +51,14 @@ SELECT NOT EXISTS (
     VALUES (4, 'exact_credit');
 \endif
 
+SELECT NOT EXISTS (
+    SELECT 1 FROM schema_migrations WHERE version = 5
+) AS apply_005 \gset
+
+\if :apply_005
+    \ir 005_accounting_processing.sql
+    INSERT INTO schema_migrations (version, name)
+    VALUES (5, 'accounting_processing');
+\endif
+
 COMMIT;

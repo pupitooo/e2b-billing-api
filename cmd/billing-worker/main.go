@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"e2b/billing-api/internal/billing"
+	"e2b/billing-api/internal/inbox"
 	"e2b/billing-api/internal/worker"
 )
 
@@ -46,11 +48,18 @@ func run(args []string, getenv func(string) string) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	logger.Info("Starting standalone billing worker", "accounting_enabled", false,
+	startup, cancel := context.WithTimeout(ctx, cfg.batchTimeout)
+	pool, err := inbox.OpenPool(startup, getenv("DATABASE_URL"), inbox.PoolLimits{MaxConns: 2, MinConns: 0})
+	cancel()
+	if err != nil {
+		logger.Error("Initialize accounting database", "error", err)
+		return 1
+	}
+	defer pool.Close()
+	logger.Info("Starting standalone billing worker", "accounting_enabled", true,
 		"poll_interval", cfg.pollInterval.String(), "batch_timeout", cfg.batchTimeout.String())
-	logger.Info("Accounting is not implemented; the worker leaves all inbox rows unchanged")
 	w := worker.Worker{
-		ProcessBatch:  waitForAccounting,
+		ProcessBatch:  billing.NewStore(pool).ProcessBatch,
 		PollInterval:  cfg.pollInterval,
 		BatchTimeout:  cfg.batchTimeout,
 		HeartbeatFile: cfg.heartbeatFile,
@@ -62,13 +71,6 @@ func run(args []string, getenv func(string) string) int {
 	}
 	logger.Info("Billing worker stopped")
 	return 0
-}
-
-// The standalone runtime can be deployed before the financial model exists.
-// Replace this idle step with transactional accounting in the next worker change;
-// never acknowledge inbox completion without committing the financial effect.
-func waitForAccounting(context.Context) (bool, error) {
-	return false, nil
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
