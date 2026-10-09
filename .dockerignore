@@ -10,5 +10,7 @@
 !tests/api/**
 !tests/inbox/
 !tests/inbox/**
+!tests/worker/
+!tests/worker/**
 !migrations/
 !migrations/**

@@ -1,6 +1,6 @@
 # Billing architecture options
 
-Option C is the selected starting architecture. The first implementation provides PostgreSQL and `usage_inbox`; the Go API, platform simulator, worker, and financial tables remain planned. This document records the alternatives considered and the basic rationale. TODO sections reserve the analysis needed before claiming support for higher load.
+Option C is the selected starting architecture. The implementation provides PostgreSQL, `usage_inbox`, an HTTP API response skeleton, and a standalone Go worker runtime. Durable HTTP ingestion, accounting, financial tables, and the platform simulator remain planned. This document records the alternatives considered and the basic rationale. TODO sections reserve the analysis needed before claiming support for higher load.
 
 Go is fixed for every option. Storage, transport, and processing arrangements vary. These are assignment design proposals, not descriptions of E2B's production infrastructure. Payment processing, tax calculation, and authentication are outside the assignment.
 
@@ -37,7 +37,9 @@ The API performs ingestion and accounting in one PostgreSQL transaction. Receipt
 
 ## Option C: PostgreSQL inbox and asynchronous Go worker
 
-The API commits validated measurements to `usage_inbox` and then acknowledges receipt. A worker subsequently claims pending rows and commits their financial effects with the processed marker. API and worker may initially share one Go process and one PostgreSQL database.
+The planned ingestion API commits validated measurements to `usage_inbox` and then acknowledges receipt. A worker will subsequently claim pending rows and commit their financial effects with the processed marker. The API and worker run as separate Go processes and Compose services, sharing the repository and one PostgreSQL database. They can be restarted and deployed independently; production can scale their replica counts separately. The current worker only runs its lifecycle and heartbeat, with accounting disabled.
+
+Process isolation contains a worker crash and allows separate resource limits. It does not isolate shared database contention: a future worker can still delay API writes through long transactions or exhausted database capacity. Bounded connection pools, batch sizes, query deadlines, and measured concurrency remain necessary.
 
 **Weak point:** accepted input can be ahead of the financial state. If Cyberdyne's second example hour is waiting in the inbox, the platform can still see the earlier spend below its USD 15 limit. Exposing processing progress and bounding backlog makes this visible; invoice closing also needs a fixed boundary of accepted input. Those measures require extra state, waiting, error recovery, and a freshness agreement. The shared database remains an availability and capacity dependency for both ingestion and accounting.
 

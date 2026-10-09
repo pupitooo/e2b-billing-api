@@ -65,6 +65,27 @@ services:
       retries: 12
       start_period: 5s
 
+  worker:
+    build: .
+    command: ["billing-worker"]
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 128m
+    stop_grace_period: ${E2B_WORKER_STOP_GRACE_PERIOD:-10s}
+    environment:
+      TZ: UTC
+      E2B_WORKER_POLL_INTERVAL: ${E2B_WORKER_POLL_INTERVAL:-1s}
+      E2B_WORKER_BATCH_TIMEOUT: ${E2B_WORKER_BATCH_TIMEOUT:-5s}
+      E2B_WORKER_SHUTDOWN_TIMEOUT: ${E2B_WORKER_SHUTDOWN_TIMEOUT:-5s}
+      E2B_WORKER_HEARTBEAT_MAX_AGE: ${E2B_WORKER_HEARTBEAT_MAX_AGE:-15s}
+      E2B_WORKER_HEARTBEAT_FILE: ${E2B_WORKER_HEARTBEAT_FILE:-/tmp/billing-worker-heartbeat}
+    healthcheck:
+      test: ["CMD", "billing-worker", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
   postgres:
     image: postgres:18.6-alpine
     restart: unless-stopped
