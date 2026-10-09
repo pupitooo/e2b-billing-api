@@ -785,3 +785,24 @@ The diagram records the selected architecture. The available HTTP endpoints are:
 | `POST /usage/batches` | Validate and atomically commit measurements, return durable `202`, report changed content as `409`, and permit unchanged retries after `503`. |
 
 Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.
+
+## Transactional usage accounting
+
+The standalone worker rates one receipt per transaction under the customer's account lock.
+Historical pricing, cumulative group rounding, exact usage-only credit, original-month gross spend,
+and inbox completion commit together. Concurrent workers and identical replay cannot charge twice.
+Migration `005_accounting_processing.sql` adds immutable closed-month records for late-usage routing.
+
+Unsupported customers, schemas, prices, and intervals are retained with `processing_error`.
+Database failures roll back for retry. After diagnosing and correcting an unsupported input's
+catalog or configuration, an operator may explicitly release that owned receipt:
+
+```sql
+UPDATE usage_inbox SET processing_error = NULL
+WHERE source = 'investigated-source' AND event_id = 'investigated-event'
+  AND processed_at IS NULL;
+```
+
+A receipt must fit within one UTC month and one applicable price version; units are never
+spread across boundaries by assumption. Accounting retains exact ticks and rounds only
+cumulative groups. The worker reserves two database connections per process.

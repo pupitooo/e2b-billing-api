@@ -7,7 +7,8 @@ info:
     PostgreSQL inbox before returning 202. Identical event retries succeed
     without changing stored receipt or accounting state; changed content
     conflicts. Acceptance confirms durable receipt, while accounting remains
-    asynchronous and is subsequent work.
+    asynchronous in the standalone worker. Unsupported customers, schemas,
+    metrics, or crossing intervals are retained with a processing error.
 servers:
   - url: /api
     description: Same-origin API proxy provided by the local Scalar service
@@ -40,7 +41,10 @@ paths:
         UTC years 1000–9999, and at most six fractional digits. Interval ordering
         compares instants. Identifiers are preserved; instants normalize to UTC.
         Positive schema versions and nonblank metrics are structurally accepted;
-        customer existence and supported accounting registries are future work.
+        customer existence, schema version 1, and historical prices are checked
+        asynchronously by the accounting worker. A receipt must fit one UTC
+        month and one applicable price version; unsupported input is retained
+        with processing_error and contributes no financial effect.
 
         Identify measurements by (source, event_id) and accept a whole batch
         atomically, including repeated identities within the incoming batch.
