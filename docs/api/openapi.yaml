@@ -1,12 +1,13 @@
 openapi: 3.1.2
 info:
   title: E2B Billing API
-  version: 0.1.0
+  version: 0.3.0
   description: |
-    The current usage endpoint is a response stub. It returns 202 without
-    reading, validating, or storing measurements. Acceptance does not confirm
-    durable receipt or accounting. Validation, storage, and retry/conflict
-    handling are planned ingestion work.
+    The usage endpoint validates and atomically commits measurements to the
+    PostgreSQL inbox before returning 202. Identical event retries succeed
+    without changing stored receipt or accounting state; changed content
+    conflicts. Acceptance confirms durable receipt, while accounting remains
+    asynchronous and is subsequent work.
 servers:
   - url: /api
     description: Same-origin API proxy provided by the local Scalar service
@@ -20,26 +21,56 @@ paths:
     post:
       operationId: postUsageBatches
       tags: [Usage]
-      summary: Return the usage acceptance response stub
-      x-implementation-status: stub
+      summary: Commit a usage batch to the inbox
+      x-implementation-status: implemented
       description: |
-        Return the fixed acceptance response for every POST. The current stub
-        ignores the request body and headers, including Content-Type, and does
-        not validate JSON or write to PostgreSQL. No deduplication, content
-        comparison, or accounting occurs. Repeated requests return the same
-        response; retry and conflict semantics are planned.
+        Parse one uncompressed UTF-8 JSON document, validate its envelope and
+        every measurement, and commit the whole batch in one inbox transaction.
+        Return 202 only after a successful synchronous PostgreSQL commit.
+
+        The body is limited to 1048576 bytes and 1–1000 events. Member names are
+        case-sensitive; unknown and duplicate members, malformed UTF-8, and
+        unpaired UTF-16 escapes are rejected. Identifiers and an optional
+        batch_id are limited to 256 UTF-8 bytes each. Required event fields must
+        be explicitly supplied and non-null, including units when its value is
+        zero. Version and units use integer tokens without fractional or
+        exponent notation; decoding outside int32/int64 ranges returns 400.
+
+        Timestamps use RFC 3339 with an explicit offset, valid calendar values,
+        UTC years 1–9999, and at most six fractional digits. Interval ordering
+        compares instants. Identifiers are preserved; instants normalize to UTC.
+        Positive schema versions and nonblank metrics are structurally accepted;
+        customer existence and supported accounting registries are future work.
+
+        Identify measurements by (source, event_id) and accept a whole batch
+        atomically, including repeated identities within the incoming batch.
+        Identical content succeeds across retries and batch boundaries without
+        another insert or a changed received_at. Changed measurement content
+        for an existing identity returns 409 and rolls back new events in the
+        batch. Billing supplies the first received_at from its UTC clock.
+        Compare schema_version, customer_id, sandbox_id, metric, period_start,
+        period_end, and units as domain values; timestamp offsets representing
+        the same instant are identical. Reordered events and different batch
+        boundaries do not change event identity. Batch identifiers are optional
+        producer metadata, are not stored, and do not participate in comparison.
+        Accounting remains asynchronous and is not implied by acceptance.
+
+        Database work has a 10-second deadline, also honoring request
+        cancellation. Unavailable storage or a failed commit returns 503 with
+        Retry-After: 1. A 503 or a lost response can leave the commit outcome
+        unknown: retain events and retry the same identities and content after
+        backoff. Identical retries are safe even after successful accounting.
+        A 409 requires investigation; unchanged retries cannot resolve it.
       requestBody:
-        required: false
-        description: |
-          The documentation client can submit this JSON example, but the stub
-          ignores any body and does not enforce a request schema. The example
-          illustrates a proposed measurement envelope for later ingestion work.
+        required: true
+        description: A nonempty batch of explicit measurement values.
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/UsageBatch'
             examples:
               acmeUsage:
-                summary: Proposed first Acme measurement from the assignment
+                summary: First Acme measurement from the assignment
                 value:
                   batch_id: acme-batch-000001
                   events:
@@ -54,13 +85,106 @@ paths:
                       units: 100000000
       responses:
         '202':
-          description: Fixed response stub; does not confirm durable receipt.
+          description: |
+            Every new measurement is durably committed; existing identical
+            measurements are preserved, including their original received_at,
+            processed_at, and processing_error. No partial batch is accepted.
+            Accounting completion is not implied.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AcceptedResponse'
               example:
                 status: accepted
+        '400':
+          description: |
+            Malformed or ambiguous JSON, incorrect JSON types, or numeric
+            tokens outside the representable int32/int64 ranges. No batch is
+            accepted. Correct the request before retrying.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: invalid_json
+                  message: The object contains a duplicate field.
+                  field: events[0]
+        '413':
+          description: The body exceeds 1048576 bytes. Split the batch before retrying.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: request_too_large
+                  message: The request body must not exceed 1048576 bytes.
+        '415':
+          description: |
+            Content-Type must be application/json with optional UTF-8 charset.
+            Content-Encoding must be omitted or identity; compression is not
+            supported. Correct the headers and encoding before retrying.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: unsupported_media_type
+                  message: Use application/json with UTF-8 encoding.
+        '422':
+          description: |
+            A required field is absent/null or a value violates the batch or
+            measurement contract. No partial batch is accepted. Correct the
+            reported value before retrying; zero units must be explicit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: invalid_batch
+                  message: must be later than period_start
+                  field: events[0].period_end
+        '409':
+          description: |
+            Different measurement content for one (source, event_id), either
+            already stored or repeated inside this request. Original rows are
+            preserved and every new row in the batch is rolled back. The
+            response identifies the conflicting key, without exposing its
+            stored content. Retain the input for investigation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictResponse'
+              example:
+                error:
+                  code: event_conflict
+                  message: The event identity already has different measurement content.
+                  source: platform-simulator
+                  event_id: acme-cpu-000001
+        '503':
+          description: |
+            Inbox storage is unavailable, timed out, canceled, or failed during
+            commit, including a missing schema before explicit migrations. The
+            commit outcome may be unknown. Retain events and retry unchanged
+            identities/content after backoff; storage details are not exposed.
+          headers:
+            Retry-After:
+              description: Minimum delay in seconds before retrying; value is 1.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: inbox_unavailable
+                  message: Inbox storage is unavailable. Retry the same event identities and content.
   /healthz:
     get:
       operationId: getHealth
@@ -73,6 +197,79 @@ paths:
           description: The HTTP server is available; the response body is empty.
 components:
   schemas:
+    Identifier:
+      type: string
+      minLength: 1
+      maxLength: 256
+      description: |
+        Preserved text containing at least one non-whitespace character, valid
+        Unicode, and no NUL. The actual maximum is 256 UTF-8 bytes, including
+        leading/trailing whitespace; maxLength also bounds its character count.
+      allOf:
+        - pattern: '^[^\u0000]*$'
+        - pattern: '[^\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]'
+    UsageBatch:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        batch_id:
+          $ref: '#/components/schemas/Identifier'
+          description: Optional producer metadata; not stored and not used for deduplication.
+        events:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/UsageEvent'
+    ConsumptionTime:
+      type: string
+      format: date-time
+      pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$'
+      description: |
+        Valid RFC 3339 instant with an explicit offset and at most six
+        fractional digits. The corresponding UTC year must be 1–9999.
+        The zero instant 0001-01-01T00:00:00Z is reserved for a missing value.
+    UsageEvent:
+      type: object
+      additionalProperties: false
+      description: |
+        Measured increment over [period_start, period_end). The end must follow
+        the start as an instant. Fields must be explicit and non-null. Units
+        are neither a cumulative counter nor a monetary amount.
+      required: [source, event_id, schema_version, customer_id, sandbox_id, metric, period_start, period_end, units]
+      properties:
+        source:
+          $ref: '#/components/schemas/Identifier'
+          description: Stable producer namespace preserved across restarts and retries.
+        event_id:
+          $ref: '#/components/schemas/Identifier'
+          description: Identity unique within source; preserved with content on retries.
+        schema_version:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Positive contract version encoded as an integer token.
+        customer_id:
+          $ref: '#/components/schemas/Identifier'
+        sandbox_id:
+          $ref: '#/components/schemas/Identifier'
+        metric:
+          $ref: '#/components/schemas/Identifier'
+          description: Resource identifier; accounting registries are future work.
+        period_start:
+          $ref: '#/components/schemas/ConsumptionTime'
+          description: Inclusive start of consumption.
+        period_end:
+          $ref: '#/components/schemas/ConsumptionTime'
+          description: Exclusive end; must be later than period_start.
+        units:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+          description: Explicit increment encoded as an integer token; zero is valid.
     AcceptedResponse:
       type: object
       additionalProperties: false
@@ -81,4 +278,38 @@ components:
         status:
           type: string
           enum: [accepted]
-          description: Fixed acknowledgement stub; ingestion is planned.
+          description: Durable inbox receipt; accounting is asynchronous.
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_json, invalid_batch, request_too_large, unsupported_media_type, event_conflict, inbox_unavailable]
+            message:
+              type: string
+              description: Human-readable description; clients should use code for classification.
+            field:
+              type: string
+              description: Optional location, such as events[0].units.
+            source:
+              $ref: '#/components/schemas/Identifier'
+              description: Producer namespace of a conflicting event; present on 409.
+            event_id:
+              $ref: '#/components/schemas/Identifier'
+              description: Conflicting identity within source; present on 409.
+    ConflictResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - properties:
+            error:
+              required: [source, event_id]
+              properties:
+                code:
+                  const: event_conflict

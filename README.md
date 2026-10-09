@@ -41,7 +41,7 @@ Start all implemented services:
 make up
 ```
 
-`make up` starts PostgreSQL, the API, and Scalar documentation and waits for readiness. It does not apply database migrations. The API skeleton can also run independently of PostgreSQL.
+`make up` starts PostgreSQL, the API, and Scalar documentation and waits for readiness. It does not apply database migrations. The API verifies its database connection on startup; ingestion returns `503` until the inbox migration has been applied.
 
 `make up`, `make docs`, `make restart`, and `make ps` print the actual browser addresses of running HTTP services. Use `make links` to show them again.
 
@@ -74,6 +74,11 @@ make up SERVICE=api
 
 The API is available at `http://127.0.0.1:8081` by default. `GET /healthz` returns `200` when the HTTP server is available; it does not check the database. The entry point is [cmd/billing-api/main.go](cmd/billing-api/main.go), with routes in [internal/httpapi/handler.go](internal/httpapi/handler.go).
 
+Compose supplies the PostgreSQL connection through standard `PGHOST`, `PGPORT`,
+`PGDATABASE`, `PGUSER`, `PGPASSWORD`, and `PGSSLMODE` variables. A process
+started outside Compose can supply these variables or `DATABASE_URL`; sessions
+always use UTC. Starting the API or documentation also starts PostgreSQL.
+
 Send a usage request:
 
 ```sh
@@ -95,13 +100,54 @@ curl -i http://127.0.0.1:8081/usage/batches \
   }'
 ```
 
-The API returns HTTP `202` with `Content-Type: application/json` and this fixed body:
+For a valid batch, the API returns HTTP `202` with `Content-Type: application/json` and this fixed body:
 
 ```json
 {"status":"accepted"}
 ```
 
-The handler returns this fixed response for every POST request to `/usage/batches`. It ignores the request body and performs no validation, database writes, deduplication, or accounting. HTTP `202` therefore does not confirm storage of the submitted events.
+The handler validates the whole batch and returns `202` only after a synchronous
+PostgreSQL commit. New rows receive one explicit UTC receipt time and pending
+accounting state. The whole batch commits or rolls back; accounting remains
+asynchronous and is subsequent work.
+
+Measurements use `(source, event_id)` as identity. Identical retries succeed,
+including duplicates within a batch, regrouped batches, and different timestamp
+offsets for the same instant. Comparison includes schema version, customer,
+sandbox, metric, both interval endpoints, and units. Retries preserve original
+`received_at`, `processed_at`, and `processing_error`. Changed content returns
+`409` and rolls back all new rows in that request. The optional `batch_id` is
+accepted producer metadata; it is not stored or used for deduplication.
+
+Requests require uncompressed UTF-8 `application/json`, one JSON document,
+case-sensitive field names, and no unknown or duplicate members. The body limit
+is 1 MiB (1048576 bytes), with 1–1000 events and at most 256 UTF-8 bytes per
+identifier or optional `batch_id`. Every required event field must be explicit
+and non-null; zero units are valid. Versions and units use int32/int64 integer
+tokens without decimal or exponent notation. Consumption times require valid
+RFC 3339 calendar values, an explicit offset, and at most six fractional digits.
+Identifiers are preserved and time instants normalize to UTC.
+
+| Status | Behavior |
+| --- | --- |
+| `202` | Whole batch durably committed; identical existing measurements preserved. |
+| `400` | Invalid or ambiguous JSON, incorrect types, or numeric decoding outside int32/int64 ranges. |
+| `413` | The body exceeds 1048576 bytes. |
+| `415` | Unsupported content type, charset, or compression. |
+| `422` | Missing/null fields, invalid measurement values, or an event-count limit violation. |
+| `409` | Different measurement content for one event identity, stored or repeated in the request. |
+| `503` | Inbox unavailable, transaction canceled/timed out, or commit failed; outcome may be unknown. |
+
+Errors use `{"error":{"code":"invalid_batch","message":"...","field":"events[0].units"}}`,
+with `field` included when a validation location is available. A `409` uses code
+`event_conflict` and identifies `source` and `event_id`; retain that input for
+investigation. Correct invalid requests before retrying.
+
+Database work has a 10-second deadline and honors request cancellation. A `503`
+uses code `inbox_unavailable` with `Retry-After: 1`, without exposing SQL details.
+Retain events and retry the same identities and content after backoff. A `503`
+or a lost response may occur after commit; idempotence makes unchanged retries
+safe. See the [OpenAPI specification](docs/api/openapi.yaml) for the full contract.
 
 ## API documentation
 
@@ -112,7 +158,7 @@ the `modern` layout and an embedded **Test Request** client. It serves the
 with browser requests forwarded through the same-origin `/api` proxy in
 [docs/api/Caddyfile](docs/api/Caddyfile). Refresh the page after editing the
 mounted specification. Every interface change must update this specification;
-the current usage response is a stub and does not confirm storage.
+implemented ingestion and asynchronous accounting semantics are described there.
 
 ## Database
 
@@ -225,6 +271,7 @@ To extend the schema, add the next numbered SQL file and a corresponding version
 - `internal/`: private application packages, with `*_test.go` package tests next to the code.
 - `migrations/`: numbered SQL migrations and the explicit PostgreSQL migration runner.
 - `tests/api/`: HTTP integration tests against a running API, enabled with the `integration` build tag.
+- `tests/inbox/`: PostgreSQL repository tests in isolated temporary schemas, enabled with the `integration` build tag.
 - `tests/sql/`: database integrity tests executed with `psql`.
 - `docs/`: project and interface documentation.
 
@@ -237,8 +284,9 @@ To extend the schema, add the next numbered SQL file and a corresponding version
 | `make test` | Run all test suites. |
 | `make go-test` | Run Go package tests without starting external services. |
 | `make db-test` | Run only the database integrity suite. |
-| `make api-test` | Build and start the API, then run its HTTP happy-path test. |
-| `make test SUITE=go` | Run all Go tests, including the HTTP happy path. PostgreSQL is not required for the current HTTP handlers. |
+| `make api-test` | Start PostgreSQL, migrate, and run HTTP/database acceptance tests against the API. |
+| `make inbox-test` | Start PostgreSQL and run repository tests in private schemas. |
+| `make test SUITE=go` | Run Go unit, PostgreSQL repository, and HTTP acceptance tests; services start automatically. |
 | `make test SUITE=db` | Run only the database integrity suite in both configured time zones. |
 | `make test RUN='^TestUsageBatchesHappyPath$'` | Run only the named Go test. Supplying `RUN` selects the Go suite by default. |
 
@@ -248,15 +296,26 @@ The [handler tests](internal/httpapi/handler_test.go) use `httptest` to check ro
 
 The [SQL integrity tests](tests/sql/usage_inbox.sql) apply pending migrations, check schema integrity in UTC and `Asia/Shanghai`, and roll back their test data. Output identifies the suite and time zone being tested. Any test failure makes the command fail.
 
-The [API happy-path test](tests/api/usage_batches_test.go) sends a valid Acme measurement to the running service and checks HTTP `202`, JSON content type, and `status: accepted`. It uses HTTP only, without importing the handler. The Go suite runs in a temporary Go container on the Compose network; the API stays running for manual exploration. `-count=1` ensures every invocation actually executes the tests.
+The original [API happy-path request](tests/api/usage_batches_test.go) and response
+expectations remain unchanged. The [acceptance tests](tests/api/acceptance_test.go)
+send HTTP requests to the running service and inspect committed rows through
+a separate PostgreSQL connection. They cover durable receipt, preserved retry
+metadata, atomic conflicts, invalid later events, and concurrent HTTP retries.
+They remove only their owned rows, retaining any pre-existing fixed happy-path
+fixture. The [repository tests](tests/inbox/idempotence_test.go) additionally
+exercise deterministic lock waits, competing commits/rollbacks, canceled
+transactions, and each conflicting content field. Each test drops its private
+schema. The API stays running for exploration; `-count=1` executes every test.
 
 With Go 1.27 or later installed locally, the same test can target a running API directly:
 
 ```sh
-E2B_API_URL=http://127.0.0.1:8081 go test -tags=integration -count=1 -v ./tests/api
+E2B_API_URL=http://127.0.0.1:8081 \
+E2B_TEST_DATABASE_URL='postgres://e2b:e2b_local_dev@127.0.0.1:5432/e2b_billing?sslmode=disable' \
+go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
 ```
 
-[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check runs SQL integrity tests, Go package tests, and HTTP integration tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
+[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check runs SQL integrity tests, Go package tests, PostgreSQL repository tests, and HTTP integration tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
 
 ## Usage inbox contract
 
@@ -265,7 +324,7 @@ This section defines the stored measurement contract:
 - **Measurement:** consumption interval, metric, and non-negative integer units.
 - **Identity and ownership:** event key, schema version, customer, and sandbox.
 - **Timestamps and processing state:** explicit application values, UTC conventions, completion, and unresolved errors.
-- **Validation and retries:** database constraints and duplicate rejection.
+- **Validation and retries:** application validation, content comparison, and atomic storage.
 
 Each row stores a measured increment over the half-open interval `[period_start, period_end)`, rather than a cumulative counter or a monetary charge.[^half-open-interval]
 
@@ -284,7 +343,33 @@ Each row stores a measured increment over the half-open interval `[period_start,
 
 Every required inbox field must be supplied explicitly; the table has no database defaults. PostgreSQL sessions use UTC.
 
-The composite primary key rejects repeated `(source, event_id)` values. The schema enforces required values, positive schema versions, non-negative units, increasing interval endpoints, and consistent processing state. Text content, customer existence, and supported metrics are not validated by the database. The HTTP handler does not write to this table.
+The composite primary key prevents repeated `(source, event_id)` rows. The
+[PostgreSQL repository](internal/inbox/postgres.go) inserts with conflict
+detection, then compares stored content in a fresh READ COMMITTED statement.
+All writers sort keys before acquiring locks, preventing deadlocks between
+overlapping batches in opposite input order. Identical measurements are read
+without updating receipt or accounting state; different content aborts the
+transaction. The database enforces required values, positive schema versions,
+non-negative units, increasing endpoints, and consistent processing state.
+Text content, customer existence, and supported metrics are not validated by
+the database. The application validates text and finite timestamp precision.
+
+The [Go event model](internal/usage/event.go) provides standalone application
+validation of measurement values: identifiers must contain a non-whitespace
+character, use valid UTF-8, and contain no NUL characters; schema versions must
+be positive and units non-negative. Interval endpoints must be supplied, have
+UTC years from 1 through 9999, use at most microsecond precision, and increase
+when compared as instants. Finer timestamp precision is rejected to avoid losing
+measurement content when it is later stored in PostgreSQL. Customer existence
+and supported version or metric registries are separate concerns.
+
+The [event tests](internal/usage/event_test.go) cover required values, integer
+boundaries, Unicode whitespace, timestamp precision, and intervals across time
+zones and UTC month boundaries. Run them with `make go-test RUN=EventValidate`.
+The HTTP parser now invokes this validator after checking JSON field presence,
+including the distinction between omitted units and valid zero units. It reports
+the first invalid value with its event index and field name; no partial batch is
+acknowledged. Only successful repository commit produces an acknowledgement.
 
 ## Architecture and HTTP interfaces
 
@@ -297,6 +382,6 @@ The diagram records the selected architecture. The available HTTP endpoints are:
 | Interface | Behavior |
 | --- | --- |
 | `GET /healthz` | Return HTTP `200` when the HTTP server is available, without checking PostgreSQL. |
-| `POST /usage/batches` | Return HTTP `202` and `{"status":"accepted"}` without reading or storing the request body. |
+| `POST /usage/batches` | Validate and atomically commit measurements, return durable `202`, report changed content as `409`, and permit unchanged retries after `503`. |
 
 Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.

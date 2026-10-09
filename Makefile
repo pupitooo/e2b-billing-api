@@ -12,7 +12,7 @@ export SERVICE RUN SUITE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test _test-db _test-go docs
+.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go docs
 
 help:
 	@printf '%s\n' \
@@ -34,6 +34,7 @@ help:
 	  'go-test  Run Go package tests without external services' \
 	  'db-test  Run SQL integrity tests in both time zones' \
 	  'api-test Start the API and run HTTP integration tests' \
+	  'inbox-test Run PostgreSQL repository tests in private schemas' \
 	  'docs     Start Scalar documentation and the API for browser requests' \
 	  '' \
 	  'Service commands apply to all services when SERVICE is omitted.' \
@@ -134,10 +135,17 @@ go-test:
 db-test: _test-db
 
 api-test:
+	@$(COMPOSE) up -d --wait --wait-timeout 120 postgres
+	@$(MAKE) --no-print-directory migrate
 	@$(COMPOSE) up --build -d --wait --wait-timeout 120 api
 	@$(COMPOSE) run --rm --no-deps -e E2B_API_URL=http://api:8080 api go test -tags=integration -count=1 -v -run "$$RUN" ./tests/api
 
-_test-go: go-test api-test
+inbox-test:
+	@$(COMPOSE) up -d --wait --wait-timeout 120 postgres
+	@$(COMPOSE) build api
+	@$(COMPOSE) run --rm --no-deps api go test -tags=integration -count=1 -v -run "$$RUN" ./tests/inbox
+
+_test-go: go-test inbox-test api-test
 
 _test-db: migrate
 	@set -eu; \

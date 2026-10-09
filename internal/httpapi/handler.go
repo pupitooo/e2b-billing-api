@@ -1,19 +1,99 @@
 package httpapi
 
-import "net/http"
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"mime"
+	"net/http"
+	"strings"
+	"time"
 
-func NewHandler() http.Handler {
+	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/usage"
+)
+
+// BatchStore returns success only after the whole batch is committed. It must
+// preserve identical measurements and report changed content as ConflictError.
+type BatchStore interface {
+	InsertBatch(context.Context, []usage.Event, time.Time) error
+}
+
+// NewHandler routes requests through validation and the supplied durable store.
+func NewHandler(store BatchStore) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /usage/batches", postUsageBatches)
+	mux.HandleFunc("POST /usage/batches", func(w http.ResponseWriter, r *http.Request) {
+		postUsageBatches(w, r, store)
+	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux
 }
 
-func postUsageBatches(w http.ResponseWriter, _ *http.Request) {
-	// TODO: Validate and persist the batch before acknowledging receipt.
+func postUsageBatches(w http.ResponseWriter, r *http.Request, store BatchStore) {
+	receivedAt := time.Now().UTC().Truncate(time.Microsecond)
+	mediaType, parameters, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" ||
+		(parameters["charset"] != "" && !strings.EqualFold(parameters["charset"], "utf-8")) {
+		writeRequestError(w, &requestError{status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: "Use application/json with UTF-8 encoding."})
+		return
+	}
+	if encoding := r.Header.Get("Content-Encoding"); encoding != "" && !strings.EqualFold(encoding, "identity") {
+		writeRequestError(w, &requestError{status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: "Compressed request bodies are not supported."})
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBatchBytes))
+	if err != nil {
+		var sizeError *http.MaxBytesError
+		if errors.As(err, &sizeError) {
+			writeRequestError(w, &requestError{status: http.StatusRequestEntityTooLarge, Code: "request_too_large", Message: "The request body must not exceed 1048576 bytes."})
+		} else {
+			writeRequestError(w, &requestError{status: http.StatusBadRequest, Code: "invalid_json", Message: "Could not read the JSON request body."})
+		}
+		return
+	}
+	batch, validationError := parseUsageBatch(body)
+	if validationError != nil {
+		writeRequestError(w, validationError)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	if store == nil {
+		err = errors.New("inbox store is not configured")
+	} else {
+		err = store.InsertBatch(ctx, batch.Events, receivedAt)
+	}
+	if err != nil {
+		var conflict *inbox.ConflictError
+		if errors.As(err, &conflict) {
+			writeRequestError(w, &requestError{
+				status: http.StatusConflict, Code: "event_conflict",
+				Message: "The event identity already has different measurement content.",
+				Source:  conflict.Source, EventID: conflict.EventID,
+			})
+			return
+		}
+		// A failed/lost commit response can leave the outcome unknown. Clients
+		// must retain the original keys and content when retrying after 503.
+		w.Header().Set("Retry-After", "1")
+		writeRequestError(w, &requestError{
+			status: http.StatusServiceUnavailable, Code: "inbox_unavailable",
+			Message: "Inbox storage is unavailable. Retry the same event identities and content.",
+		})
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte("{\"status\":\"accepted\"}\n"))
+}
+
+func writeRequestError(w http.ResponseWriter, err *requestError) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(err.status)
+	_ = json.NewEncoder(w).Encode(struct {
+		Error *requestError `json:"error"`
+	}{err})
 }

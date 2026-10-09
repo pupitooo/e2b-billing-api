@@ -4,8 +4,17 @@ services:
   api:
     build: .
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       TZ: UTC
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: e2b_billing
+      PGUSER: e2b
+      PGPASSWORD: ${E2B_POSTGRES_PASSWORD:-e2b_local_dev}
+      PGSSLMODE: disable
     ports:
       - "127.0.0.1:${E2B_API_PORT:-8081}:8080"
     healthcheck:

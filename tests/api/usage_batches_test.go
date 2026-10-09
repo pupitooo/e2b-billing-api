@@ -12,7 +12,12 @@ import (
 	"time"
 )
 
+// TestUsageBatchesHappyPath sends the assignment's Acme measurement to a running
+// API and verifies HTTP 202 with the accepted JSON response. The request and
+// expectations remain the original contract; acceptance now follows inbox
+// commit. Cleanup removes this fixture only when it did not exist beforehand.
 func TestUsageBatchesHappyPath(t *testing.T) {
+	preserveHappyPathFixture(t)
 	apiURL := os.Getenv("E2B_API_URL")
 	if apiURL == "" {
 		apiURL = "http://127.0.0.1:8081"
