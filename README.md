@@ -822,3 +822,11 @@ E2B calls `POST /customers/{customer_id}/credits` with an explicit operation ID,
 unchanged retries succeed and changed content returns `409`. Credit pays new usage only.
 `GET /customers/{customer_id}/credit` exposes exact `credit_balance_ticks` and committed
 pending/error counts. One cent is 1_000_000 ticks; receipt acceptance can precede accounting.
+
+### Add-on purchases
+
+`POST /customers/{customer_id}/addons` uses a stable `subscription_id` and snapshots the
+monthly catalog price. The full charge starts in the UTC purchase month, including purchases
+at month end, and recurs on subsequent invoices. One subscription per customer and add-on is
+supported. Identical retries return the original snapshot; duplicate subscriptions and new
+purchases that would change a closed month return `409`. Credit never pays add-ons.

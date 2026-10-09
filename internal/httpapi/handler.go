@@ -29,6 +29,7 @@ func NewHandler(store BatchStore, ingestionTimeout time.Duration, maxInFlight in
 	if len(financial) == 1 && financial[0] != nil {
 		registerPriceRoutes(mux, financial[0], ingestionTimeout)
 		registerCreditRoutes(mux, financial[0], ingestionTimeout)
+		registerAddonRoutes(mux, financial[0], ingestionTimeout)
 	}
 	inFlight := make(chan struct{}, maxInFlight)
 	mux.HandleFunc("POST /usage/batches", func(w http.ResponseWriter, r *http.Request) {

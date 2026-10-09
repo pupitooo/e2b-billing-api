@@ -497,6 +497,130 @@ paths:
                 type: string
                 const: '1'
               example: '1'
+  /customers/{customer_id}/addons:
+    post:
+      operationId: purchaseAddon
+      tags:
+      - Billing
+      summary: Purchase a recurring monthly add-on
+      description: Snapshot the catalog monthly price at purchase. Bill its full price from the UTC purchase
+        month onward, including month-end purchases. Credit never pays add-ons. One subscription per customer/add-on
+        is supported; quantities, cancellation, and proration are outside the assignment. Reuse subscription_id
+        and unchanged content after a lost response. Changed content or a second identity for an existing
+        subscription returns 409. A new purchase cannot start at or before an already closed month; retry
+        of an existing purchase still succeeds.
+      x-implementation-status: implemented
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddonPurchase'
+            example:
+              subscription_id: acme-concurrency
+              addon_name: concurrency_pack
+              purchased_at: '2026-10-05T00:00:00Z'
+      responses:
+        '200':
+          description: Committed result or current snapshot. Identical command retries succeed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+              example:
+                subscription_id: acme-concurrency
+                customer_id: acme
+                addon_name: concurrency_pack
+                monthly_price_cents: 2000
+                purchased_at: '2026-10-05T00:00:00Z'
+                start_month: '2026-10-01'
+        '400':
+          description: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+        '404':
+          description: Customer or catalog resource does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '409':
+          description: Operation identity has different content, financial history conflicts, or closing
+            is blocked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_conflict
+                  message: Operation identity has different content, financial history conflicts, or closing
+                    is blocked.
+        '413':
+          description: Command body exceeds 65536 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Command body exceeds 65536 bytes.
+        '415':
+          description: Use uncompressed application/json with optional UTF-8 charset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: unsupported_media_type
+                  message: Use uncompressed application/json with optional UTF-8 charset.
+        '422':
+          description: Explicit required field or value is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  message: Explicit required field or value is invalid.
+        '503':
+          description: Database deadline or storage failure. Retry unchanged operation identity and content;
+            outcome may be unknown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
   /healthz:
     get:
       operationId: getHealth
@@ -728,3 +852,46 @@ components:
           type: integer
           format: int64
           minimum: 0
+
+    AddonPurchase:
+      type: object
+      additionalProperties: false
+      required:
+      - subscription_id
+      - addon_name
+      - purchased_at
+      properties:
+        subscription_id:
+          $ref: '#/components/schemas/Identifier'
+        addon_name:
+          $ref: '#/components/schemas/Identifier'
+        purchased_at:
+          $ref: '#/components/schemas/ConsumptionTime'
+
+    Subscription:
+      type: object
+      additionalProperties: false
+      required:
+      - subscription_id
+      - customer_id
+      - addon_name
+      - monthly_price_cents
+      - purchased_at
+      - start_month
+      properties:
+        subscription_id:
+          $ref: '#/components/schemas/Identifier'
+        customer_id:
+          $ref: '#/components/schemas/Identifier'
+        addon_name:
+          $ref: '#/components/schemas/Identifier'
+        monthly_price_cents:
+          type: integer
+          format: int64
+          minimum: 0
+        purchased_at:
+          $ref: '#/components/schemas/ConsumptionTime'
+        start_month:
+          type: string
+          format: date
+          description: First date of the UTC purchase month.
