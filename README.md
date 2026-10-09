@@ -6,24 +6,44 @@ The current implementation provides PostgreSQL, versioned schema migrations, and
 
 The [platform and billing contract](#platform-and-billing-contract) records proposed delivery responsibilities, acknowledgement rules, and agreements still to be made.
 
-## Quick start
+## Local setup
 
-Requirements: Docker with Docker Compose and Make. The PostgreSQL client runs inside the container.
+### Requirements
+
+Docker with Docker Compose and Make. The PostgreSQL client runs inside the container. Run all `make` commands from the repository root.
+
+### Get the source
+
+If you do not already have a local checkout, clone the repository:
 
 ```sh
 git clone https://github.com/pupitooo/e2b-billing-api.git
-cd e2b-billing-api
-make up
-make migrate
-make migration-status
-make test
 ```
 
-`make up` starts the services and waits for readiness. `make migrate` applies pending migrations to a fresh or existing database. `make test` checks inbox integrity and rolls back its fixtures.
+### Configuration
 
-## Local configuration and service commands
+Docker Compose reads an optional local `.env` file. The defaults are sufficient for local development. Copy [.env.example](.env.example) to `.env` to change the host port or development password. Keep the same configuration for subsequent commands.
 
-Docker Compose reads an optional local `.env` file. Copy `.env.example` to `.env` to change the host port or development password. Keep the same configuration for subsequent commands.
+### Initialize the database
+
+On first setup, start PostgreSQL and apply the schema:
+
+```sh
+make up SERVICE=postgres
+make migrate
+```
+
+The database is now ready for connections. Run migrations again when an update introduces schema changes; see [Database migrations](#database-migrations). An existing database with all migrations applied needs no initialization on restart.
+
+## Running services
+
+Start all implemented services:
+
+```sh
+make up
+```
+
+`make up` starts the services and waits for readiness. It does not apply database migrations. Currently, PostgreSQL is the only implemented service; the Go API, platform simulator, and accounting worker will use the same Compose file and service commands as they are added.
 
 | Command | Purpose |
 | --- | --- |
@@ -41,7 +61,9 @@ PostgreSQL uses the pinned `postgres:18.6-alpine` image, UTC timestamps, and a n
 
 `E2B_POSTGRES_PASSWORD` initializes the role password when the volume is empty. Changing the environment variable later does not update the password in an existing database.
 
-## Database connection
+## Database
+
+### Database connection
 
 | Setting | Default |
 | --- | --- |
@@ -61,15 +83,77 @@ postgres://e2b:e2b_local_dev@127.0.0.1:5432/e2b_billing?sslmode=disable
 
 Use `postgres` as the host from another Compose service. If the host port changes, update the local application connection string accordingly.
 
-Open an interactive SQL session:
+### Explore the database with psql
+
+`psql` is PostgreSQL's interactive command-line client. It runs inside the container, so no additional database tool needs to be installed locally.
+
+With PostgreSQL running and the [initial migration applied](#initialize-the-database), open a session from your terminal:
 
 ```sh
 make psql
 ```
 
-Inside the session, run `\d usage_inbox` to inspect the table, `TABLE schema_migrations;` to inspect applied migrations, and `\q` to exit.
+Enter the following commands at the `e2b_billing=>` prompt, rather than in your shell.
 
-## Database migrations
+List tables:
+
+```text
+\dt
+```
+
+The current tables are `usage_inbox` (received usage events) and `schema_migrations` (applied migration versions). Inspect the inbox's columns, types, constraints, and indexes:
+
+```text
+\d usage_inbox
+```
+
+Show up to 50 inbox rows, with the most recently received events first:
+
+```sql
+SELECT *
+FROM usage_inbox
+ORDER BY received_at DESC, source, event_id
+LIMIT 50;
+```
+
+An empty result (`0 rows`) is expected after initial setup. No usage is seeded yet, and the integrity tests roll back their fixtures.
+
+You can enter any SQL query in this session. End each SQL statement with a semicolon. For example, count stored events:
+
+```sql
+SELECT count(*) AS event_count FROM usage_inbox;
+```
+
+List events waiting for processing, excluding unresolved errors:
+
+```sql
+SELECT source, event_id, customer_id, metric, units, received_at
+FROM usage_inbox
+WHERE processed_at IS NULL AND processing_error IS NULL
+ORDER BY received_at, source, event_id
+LIMIT 50;
+```
+
+Inspect migration records:
+
+```sql
+TABLE schema_migrations;
+```
+
+Useful `psql` commands (these do not need a semicolon):
+
+| Command | Purpose |
+| --- | --- |
+| `\x auto` | Automatically use a vertical layout for wide query results. |
+| `\?` | Show help for `psql` commands. |
+| `\h SELECT` | Show SQL syntax help for `SELECT`. |
+| `\q` | Exit the session and return to your terminal. |
+
+If output opens in a pager, press `q` to return to the SQL prompt. If you are partway through a query, press Ctrl+C to clear it and start again.
+
+### Database migrations
+
+With PostgreSQL running, apply pending migrations after first setup or an update that adds migrations, then inspect the applied versions:
 
 ```sh
 make migrate
@@ -80,28 +164,65 @@ make migration-status
 
 Migration [001_usage_inbox.sql](migrations/001_usage_inbox.sql) creates the inbox and its partial index for pending, error-free input. Migrations are explicitly invoked, so they also run against an existing Docker volume; restarting the container does not apply them.
 
-To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Keep applied migrations unchanged. The initial migration creates the receipt schema; assignment customers, prices, credit, and invoices will be introduced with their own tables and seed data.
+To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged. The initial migration creates the receipt schema; assignment customers, prices, credit, and invoices will be introduced with their own tables and seed data.
+
+## Testing
+
+With PostgreSQL running:
+
+| Command | Purpose |
+| --- | --- |
+| `make test` | Run all test suites. |
+| `make db-test` | Run only the database integrity suite. |
+
+Database tests apply pending migrations, check schema integrity in UTC and `Asia/Shanghai`, and roll back their test data. Output identifies the suite and time zone being tested. Any test failure makes the command fail.
+
+[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The `Database tests` check is required before merging into `main`; the branch must also be up to date with `main`. Failed runs include PostgreSQL logs, and each run removes its test containers and volume.
 
 ## Usage inbox contract
 
-Each row stores a measured increment over the half-open interval `[period_start, period_end)`, rather than a cumulative counter or a monetary charge.
+This section defines the stored measurement contract:
+
+- **Measurement:** consumption interval, metric, and non-negative integer units.
+- **Identity and ownership:** event key, schema version, customer, and sandbox.
+- **Timestamps and processing state:** explicit application values, UTC conventions, completion, and unresolved errors.
+- **Validation and retries:** database constraints and the future API's content comparison rules.
+
+Each row stores a measured increment over the half-open interval `[period_start, period_end)`, rather than a cumulative counter or a monetary charge.[^half-open-interval]
+
+[^half-open-interval]: Including the start and excluding the end gives adjacent intervals an unambiguous boundary: `[10:00, 10:05)` and `[10:05, 10:10)` meet without overlapping, and exactly `10:05` belongs only to the second interval.
 
 | Columns | Meaning |
 | --- | --- |
 | `source`, `event_id` | Composite primary key identifying one measurement across retries. |
-| `schema_version` | Positive contract version; defaults to `1`. |
-| `customer_id`, `sandbox_id`, `metric` | Ownership and metric identifiers; blank values are rejected. |
+| `schema_version` | Positive contract version, supplied explicitly by the application. |
+| `customer_id`, `sandbox_id`, `metric` | Required ownership and metric identifiers. |
 | `period_start`, `period_end` | Consumption interval as `timestamptz`; the end must follow the start. |
 | `units` | Non-negative `bigint` holding the measured increment. |
-| `received_at` | Database receipt time, assigned by default. |
+| `received_at` | Billing receipt time as `timestamptz`, supplied explicitly by the application. |
 | `processed_at` | Completion timestamp; `NULL` for unprocessed input. |
 | `processing_error` | Error detail for unresolved input; cannot coexist with a completion timestamp. |
 
-The database rejects a repeated `(source, event_id)` and preserves the original row. The future ingestion API must compare the original content: an identical retry is accepted without another insert, while changed content for the same identity is a conflict. Customer existence and supported metric validation will be added with the corresponding application logic.
+Every required inbox field must be supplied explicitly; the table has no database defaults. The planned billing API will set `received_at` from its UTC clock on first receipt and preserve the original value on identical retries. Application timestamps and month calculations use UTC.
+
+The database rejects a repeated `(source, event_id)` and preserves the original row. The future ingestion API must compare the original content: an identical retry is accepted without another insert, while changed content for the same identity is a conflict. Blank text values, customer existence, and supported metrics will be validated by the application. The schema retains `NOT NULL`, the primary key, and checks for positive schema versions, non-negative units, valid intervals, and consistent processing state.
 
 ## Platform and billing contract
 
-**Status: working draft for option C, updated 8 October 2026.** The delivery rules below are proposals for the future API and simulator, not implemented HTTP guarantees. Record subsequent agreements and unresolved decisions in this section. The assignment makes the platform a separately owned measurement source and requires billing to handle retries, delays, and platform unavailability; it does not specify recovery from destruction of the platform's only storage copy.
+This section defines how the platform and billing service cooperate:
+
+- [Event identity](#event-identity): source-wide uniqueness and stable IDs across retries and restarts.
+- [Responsibility boundary](#responsibility-boundary): ownership of measurement, storage, delivery, durable receipt, and accounting.
+- [Option C receipt and retry rules](#option-c-receipt-and-retry-rules): acknowledgements, retries, conflicts, and invalid input.
+- [Agreements still open](#agreements-still-open): durability, retry windows, capacity, batch responses, freshness, and broker history.
+
+**Status: working draft for option C, updated 9 October 2026.** Event identity is a confirmed design agreement; the delivery rules below remain proposals for the future API and simulator, not implemented HTTP guarantees. Record subsequent agreements and unresolved decisions in this section. The assignment makes the platform a separately owned measurement source and requires billing to handle retries, delays, and platform unavailability; it does not specify recovery from destruction of the platform's only storage copy.
+
+### Event identity
+
+The platform must assign each measurement an `event_id` that is unique within its `source` across all customers, sandboxes, producer instances, and restarts. The identity is `(source, event_id)`; `source` defines a stable namespace, not a namespace local to a customer or sandbox. Allocate the ID before the first send, for example using a UUID, and preserve both identity fields on retries, after restarts, and when regrouping events into batches. Never reuse an identity for a different measurement.
+
+`customer_id` and `sandbox_id` are part of the event content, not the identity. An identical retry succeeds without another insert; the same identity with changed content, including a different customer or sandbox, is a conflict. This comparison will be implemented by the future billing API; the current database primary key only prevents duplicate rows.
 
 ### Responsibility boundary
 
@@ -157,13 +278,5 @@ The highlighted inbox is implemented in this change. The other blocks describe t
 | `GET /customers/{id}/spend-status` | Return the current UTC month, processed gross spend, limit status, and processing lag. |
 
 An accepted event may still await accounting. The worker will claim pending rows through SQL, apply prices and credit under the customer lock, and commit the financial effect with the inbox completion marker in one transaction. Monthly closing must wait for the customer's fixed boundary of accepted input before issuing an immutable invoice. The platform polls spend status independently of sending new usage.
-
-## Verification
-
-```sh
-make test
-```
-
-The SQL tests verify receipt defaults, duplicate identity rejection, preservation of original units, independent source namespaces, large integer totals, interval and identifier constraints, and valid processing state transitions. They run in a transaction and roll back their fixtures.
 
 Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.

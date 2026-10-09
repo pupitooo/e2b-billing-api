@@ -27,6 +27,7 @@
 /AGENTS.md
 /agents.md
 /.vscode/
+/*.code-workspace
 
 # Local documentation generation tools.
 /tools/
