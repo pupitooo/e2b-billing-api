@@ -41,7 +41,7 @@ Start all implemented services:
 make up
 ```
 
-`make up` starts PostgreSQL, the API, and Scalar documentation and waits for readiness. It does not apply database migrations. The API skeleton can also run independently of PostgreSQL.
+`make up` starts PostgreSQL, the API, and Scalar documentation and waits for readiness. It does not apply database migrations. The current HTTP handlers can also run independently of PostgreSQL.
 
 `make up`, `make docs`, `make restart`, and `make ps` print the actual browser addresses of running HTTP services. Use `make links` to show them again.
 
@@ -95,13 +95,35 @@ curl -i http://127.0.0.1:8081/usage/batches \
   }'
 ```
 
-The API returns HTTP `202` with `Content-Type: application/json` and this fixed body:
+For a valid batch, the API returns HTTP `202` with `Content-Type: application/json` and this fixed body:
 
 ```json
 {"status":"accepted"}
 ```
 
-The handler returns this fixed response for every POST request to `/usage/batches`. It ignores the request body and performs no validation, database writes, deduplication, or accounting. HTTP `202` therefore does not confirm storage of the submitted events.
+The handler parses and validates the whole batch before returning this response
+stub. It does not yet persist or deduplicate events, so HTTP `202` does not
+confirm storage or accounting. Durable HTTP acceptance is the final ingestion
+step.
+
+Requests require uncompressed UTF-8 `application/json`, one JSON document,
+case-sensitive field names, and no unknown or duplicate members. The body limit
+is 1 MiB (1048576 bytes), with 1–1000 events and at most 256 UTF-8 bytes per
+identifier or optional `batch_id`. Every required event field must be explicit
+and non-null; zero units are valid. Versions and units use int32/int64 integer
+tokens without decimal or exponent notation. Consumption times require valid
+RFC 3339 calendar values, an explicit offset, and at most six fractional digits.
+Identifiers are preserved and time instants normalize to UTC.
+
+| Status | Behavior |
+| --- | --- |
+| `202` | Validation succeeded; the response is still a stub. |
+| `400` | Invalid or ambiguous JSON, incorrect types, or numeric decoding outside int32/int64 ranges. |
+| `413` | The body exceeds 1048576 bytes. |
+| `415` | Unsupported content type, charset, or compression. |
+| `422` | Missing/null fields, invalid measurement values, or an event-count limit violation. |
+
+Errors use `{"error":{"code":"invalid_batch","message":"...","field":"events[0].units"}}`, with `field` included when a location is available. Correct invalid requests before retrying. Content conflicts and database availability responses remain planned behavior in the [OpenAPI specification](docs/api/openapi.yaml).
 
 ## API documentation
 
@@ -112,7 +134,7 @@ the `modern` layout and an embedded **Test Request** client. It serves the
 with browser requests forwarded through the same-origin `/api` proxy in
 [docs/api/Caddyfile](docs/api/Caddyfile). Refresh the page after editing the
 mounted specification. Every interface change must update this specification;
-the current usage response is a stub and does not confirm storage.
+implemented validation and planned durable behavior are labelled separately.
 
 ## Database
 
@@ -298,9 +320,10 @@ and supported version or metric registries are separate concerns.
 The [event tests](internal/usage/event_test.go) cover required values, integer
 boundaries, Unicode whitespace, timestamp precision, and intervals across time
 zones and UTC month boundaries. Run them with `make go-test RUN=EventValidate`.
-This validator is the first ingestion step and is not yet connected to the HTTP
-handler. Checking JSON field presence, including the distinction between omitted
-units and valid zero units, will be part of HTTP decoding.
+The HTTP parser now invokes this validator after checking JSON field presence,
+including the distinction between omitted units and valid zero units. It reports
+the first invalid value with its event index and field name; no partial batch is
+acknowledged. Inbox persistence remains a separate step.
 
 ## Architecture and HTTP interfaces
 
@@ -313,6 +336,6 @@ The diagram records the selected architecture. The available HTTP endpoints are:
 | Interface | Behavior |
 | --- | --- |
 | `GET /healthz` | Return HTTP `200` when the HTTP server is available, without checking PostgreSQL. |
-| `POST /usage/batches` | Return HTTP `202` and `{"status":"accepted"}` without reading or storing the request body. |
+| `POST /usage/batches` | Parse and validate the whole batch; return the `202` response stub for valid input or a documented JSON validation error. No HTTP inbox write yet. |
 
 Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.

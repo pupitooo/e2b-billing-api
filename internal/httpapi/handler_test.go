@@ -19,18 +19,21 @@ func TestHandlerRoutes(t *testing.T) {
 		path        string
 		status      int
 		allow       string
+		body        string
 	}{
-		{"health", "The health endpoint responds successfully to GET requests.", http.MethodGet, "/healthz", http.StatusOK, ""},
-		{"usage batch", "The usage endpoint acknowledges POST requests with HTTP 202.", http.MethodPost, "/usage/batches", http.StatusAccepted, ""},
-		{"unknown route", "An unregistered path returns HTTP 404.", http.MethodGet, "/missing", http.StatusNotFound, ""},
-		{"usage method", "The usage endpoint rejects GET requests and advertises POST in the Allow header.", http.MethodGet, "/usage/batches", http.StatusMethodNotAllowed, "POST"},
+		{"health", "The health endpoint responds successfully to GET requests.", http.MethodGet, "/healthz", http.StatusOK, "", ""},
+		{"usage batch", "The usage endpoint acknowledges a valid POST request with HTTP 202.", http.MethodPost, "/usage/batches", http.StatusAccepted, "", validUsageBatch},
+		{"unknown route", "An unregistered path returns HTTP 404.", http.MethodGet, "/missing", http.StatusNotFound, "", ""},
+		{"usage method", "The usage endpoint rejects GET requests and advertises POST in the Allow header.", http.MethodGet, "/usage/batches", http.StatusMethodNotAllowed, "POST", ""},
 	}
 	handler := httpapi.NewHandler()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log(tt.description)
 			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, httptest.NewRequest(tt.method, tt.path, nil))
+			request := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			request.Header.Set("Content-Type", "application/json")
+			handler.ServeHTTP(response, request)
 			if response.Code != tt.status {
 				t.Fatalf("Status = %d, want %d", response.Code, tt.status)
 			}
@@ -42,11 +45,11 @@ func TestHandlerRoutes(t *testing.T) {
 }
 
 // TestUsageBatchResponse verifies the current acknowledgement response:
-// HTTP 202, a JSON content type, and an "accepted" status. Validation and
-// persistence of the request body are not implemented yet.
+// a valid request returns HTTP 202, a JSON content type, and an "accepted"
+// status after validation. The response stub does not confirm storage yet.
 func TestUsageBatchResponse(t *testing.T) {
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(`{"batch_id":"test","events":[]}`))
+	request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(validUsageBatch))
 	request.Header.Set("Content-Type", "application/json")
 	httpapi.NewHandler().ServeHTTP(response, request)
 	if response.Code != http.StatusAccepted {
