@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+// TestUsageBatchesHappyPath sends the assignment's Acme measurement to a running
+// API and verifies HTTP 202 with the accepted JSON response. The request and
+// expectations remain valid as ingestion is implemented; the current response
+// stub does not yet prove durable storage or completed accounting.
 func TestUsageBatchesHappyPath(t *testing.T) {
 	apiURL := os.Getenv("E2B_API_URL")
 	if apiURL == "" {

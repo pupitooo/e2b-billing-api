@@ -8,6 +8,8 @@ import (
 	"e2b/billing-api/internal/usage"
 )
 
+// validEvent provides the assignment's first Acme measurement as a valid
+// baseline, allowing each scenario to change only the value under test.
 func validEvent() usage.Event {
 	return usage.Event{
 		Source:        "platform-simulator",
@@ -22,6 +24,10 @@ func validEvent() usage.Event {
 	}
 }
 
+// TestEventValidateValid checks measurements that the standalone value contract
+// must accept, including zero units, integer bounds, Unicode identifiers, and
+// interval instants across offsets and UTC month boundaries. It also verifies
+// that value validation does not assume customer, metric, or version registries.
 func TestEventValidateValid(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -77,6 +83,9 @@ func TestEventValidateValid(t *testing.T) {
 	}
 }
 
+// TestEventValidateIdentifiers checks each identity, ownership, and metric field
+// against empty, whitespace-only, and database-incompatible text. Every failure
+// must identify the offending field so HTTP decoding can report it to producers.
 func TestEventValidateIdentifiers(t *testing.T) {
 	fields := []struct {
 		name string
@@ -112,6 +121,9 @@ func TestEventValidateIdentifiers(t *testing.T) {
 	}
 }
 
+// TestEventValidateInvalidNumbers rejects nonpositive schema versions and
+// negative consumption, including the lowest int32 and int64 values, while
+// returning the field-specific error required for actionable validation feedback.
 func TestEventValidateInvalidNumbers(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -133,6 +145,10 @@ func TestEventValidateInvalidNumbers(t *testing.T) {
 	}
 }
 
+// TestEventValidateInvalidPeriods rejects absent, reversed, or equal interval
+// endpoints and timestamps outside the UTC range or PostgreSQL precision.
+// Offset scenarios verify that ordering uses instants rather than wall clocks,
+// preventing invalid consumption intervals from reaching later storage.
 func TestEventValidateInvalidPeriods(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -173,6 +189,8 @@ func TestEventValidateInvalidPeriods(t *testing.T) {
 	}
 }
 
+// assertInvalidField requires a structured ValidationError for the expected
+// field, so rejection scenarios verify useful diagnostics as well as failure.
 func assertInvalidField(t *testing.T, event usage.Event, field string) {
 	t.Helper()
 	err := event.Validate()
