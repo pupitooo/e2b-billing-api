@@ -6,20 +6,28 @@ The current implementation provides PostgreSQL, versioned schema migrations, and
 
 The [platform and billing contract](#platform-and-billing-contract) records proposed delivery responsibilities, acknowledgement rules, and agreements still to be made.
 
+## Get the source
+
+If you do not already have a local checkout, clone the repository:
+
+```sh
+git clone https://github.com/pupitooo/e2b-billing-api.git
+```
+
 ## Quick start
 
 Requirements: Docker with Docker Compose and Make. The PostgreSQL client runs inside the container.
 
+Run these commands from the repository root:
+
 ```sh
-git clone https://github.com/pupitooo/e2b-billing-api.git
-cd e2b-billing-api
 make up
 make migrate
-make migration-status
-make test
 ```
 
-`make up` starts the services and waits for readiness. `make migrate` applies pending migrations to a fresh or existing database. `make test` checks inbox integrity and rolls back its fixtures.
+`make up` starts the services and waits for readiness. `make migrate` applies pending migrations to a fresh or existing database. PostgreSQL is now ready for connections; the Go API is not implemented yet.
+
+See [Database connection](#database-connection) for connection settings, [Database migrations](#database-migrations) for migration status, and [Verification](#verification) for integrity tests.
 
 ## Local configuration and service commands
 
