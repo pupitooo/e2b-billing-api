@@ -10,12 +10,13 @@ permissions:
 
 jobs:
   tests:
-    name: Database tests
+    name: All tests
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       COMPOSE_PROJECT_NAME: e2b-ci
       E2B_POSTGRES_PORT: '15432'
+      E2B_API_PORT: '18081'
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -23,11 +24,11 @@ jobs:
           persist-credentials: false
       - name: Start PostgreSQL
         run: make up SERVICE=postgres
-      - name: Run all tests
+      - name: Run SQL, Go package, and HTTP integration tests
         run: make test
-      - name: Show PostgreSQL logs on failure
+      - name: Show service logs on failure
         if: failure()
-        run: make logs SERVICE=postgres
+        run: make logs
       - name: Remove containers and test data
         if: always()
         run: docker compose down --volumes --remove-orphans
