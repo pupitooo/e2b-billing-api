@@ -9,7 +9,7 @@ export SERVICE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps migrate migration-status psql test db-test api-test
+.PHONY: help services check-service up stop down restart logs ps migrate migration-status psql test go-test db-test api-test
 
 help:
 	@printf '%s\n' \
@@ -27,6 +27,7 @@ help:
 	  'psql     Open an interactive database session' \
 	  'test     Run all implemented test suites' \
 	  'db-test  Apply migrations and run database integrity tests' \
+	  'go-test  Run Go package tests without external services' \
 	  'api-test Build and start the API; run its HTTP happy-path test' \
 	  '' \
 	  'Service commands apply to all services when SERVICE is omitted.' \
@@ -82,16 +83,20 @@ migration-status:
 psql:
 	@$(COMPOSE) exec postgres sh -c 'exec psql -X --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"'
 
-test: db-test api-test
+test: go-test db-test api-test
+
+go-test:
+	@$(COMPOSE) build api
+	@$(COMPOSE) run --rm --no-deps api go test -count=1 -v ./...
 
 api-test:
 	@$(COMPOSE) up --build -d --wait --wait-timeout 120 api
-	@$(COMPOSE) run --rm --no-deps -e E2B_API_URL=http://api:8080 api go test -count=1 -v ./...
+	@$(COMPOSE) run --rm --no-deps -e E2B_API_URL=http://api:8080 api go test -tags=integration -count=1 -v ./tests/api
 
 db-test: migrate
 	@set -eu; \
 	for test_zone in UTC Asia/Shanghai; do \
 	  printf '[db-test] Running database integrity tests (timezone: %s)\n' "$$test_zone"; \
-	  $(COMPOSE) exec -T postgres sh -c 'exec psql -X --set=ON_ERROR_STOP=on --set=test_timezone="$$1" --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"' sh "$$test_zone" < tests/usage_inbox.sql; \
+	  $(COMPOSE) exec -T postgres sh -c 'exec psql -X --set=ON_ERROR_STOP=on --set=test_timezone="$$1" --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"' sh "$$test_zone" < tests/sql/usage_inbox.sql; \
 	done; \
 	printf '[db-test] Database integrity tests passed in all configured time zones.\n'
