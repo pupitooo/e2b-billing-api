@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"e2b/billing-api/internal/usage"
@@ -37,6 +38,17 @@ type Postgres struct {
 	pool *pgxpool.Pool
 }
 
+// ConflictError identifies a reused measurement key with different content.
+// Receipt time and processing state are not part of measurement identity.
+type ConflictError struct {
+	Source  string
+	EventID string
+}
+
+func (err *ConflictError) Error() string {
+	return fmt.Sprintf("different measurement content for (%q, %q)", err.Source, err.EventID)
+}
+
 // NewPostgres uses the caller's pool without taking ownership of its lifetime.
 func NewPostgres(pool *pgxpool.Pool) *Postgres {
 	return &Postgres{pool: pool}
@@ -44,7 +56,7 @@ func NewPostgres(pool *pgxpool.Pool) *Postgres {
 
 // InsertBatch validates values and commits the entire batch or rolls it back.
 // The caller supplies receipt time explicitly; it is normalized to UTC at
-// PostgreSQL precision. Idempotent duplicate handling is the next ingestion step.
+// PostgreSQL precision. Identical retries leave every stored value unchanged.
 func (store *Postgres) InsertBatch(ctx context.Context, events []usage.Event, receivedAt time.Time) error {
 	if len(events) == 0 {
 		return errors.New("usage batch must contain at least one event")
@@ -56,6 +68,28 @@ func (store *Postgres) InsertBatch(ctx context.Context, events []usage.Event, re
 		if err := event.Validate(); err != nil {
 			return fmt.Errorf("validate inbox event %d: %w", index, err)
 		}
+	}
+	// All writers acquire event keys in the same order, even when clients send
+	// overlapping batches in opposite order. Never reorder the caller's slice.
+	ordered := append([]usage.Event(nil), events...)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].Source != ordered[j].Source {
+			return ordered[i].Source < ordered[j].Source
+		}
+		return ordered[i].EventID < ordered[j].EventID
+	})
+	unique := ordered[:0]
+	for _, event := range ordered {
+		if len(unique) > 0 {
+			previous := unique[len(unique)-1]
+			if previous.Source == event.Source && previous.EventID == event.EventID {
+				if !sameMeasurement(previous, event) {
+					return &ConflictError{event.Source, event.EventID}
+				}
+				continue
+			}
+		}
+		unique = append(unique, event)
 	}
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
@@ -71,22 +105,51 @@ func (store *Postgres) InsertBatch(ctx context.Context, events []usage.Event, re
 		return fmt.Errorf("configure durable inbox commit: %w", err)
 	}
 	receivedAt = receivedAt.UTC().Truncate(time.Microsecond)
-	for index, event := range events {
-		_, err := transaction.Exec(ctx, `
-			INSERT INTO usage_inbox (
-				source, event_id, schema_version, customer_id, sandbox_id, metric,
-				period_start, period_end, units, received_at, processed_at, processing_error
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, NULL)`,
+	for index, event := range unique {
+		arguments := []any{
 			event.Source, event.EventID, event.SchemaVersion, event.CustomerID,
 			event.SandboxID, event.Metric, event.PeriodStart, event.PeriodEnd,
 			event.Units, receivedAt,
-		)
+		}
+		result, err := transaction.Exec(ctx, `
+			INSERT INTO usage_inbox (
+				source, event_id, schema_version, customer_id, sandbox_id, metric,
+				period_start, period_end, units, received_at, processed_at, processing_error
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, NULL)
+			ON CONFLICT (source, event_id) DO NOTHING`, arguments...)
 		if err != nil {
 			return fmt.Errorf("insert inbox event %d: %w", index, err)
+		}
+		if result.RowsAffected() == 0 {
+			// A competing insert may have committed after INSERT's snapshot.
+			// A separate READ COMMITTED statement sees that winning record.
+			// The shared lock preserves checked content through our commit,
+			// without writing receipt or accounting state on an identical retry.
+			var identical bool
+			err := transaction.QueryRow(ctx, `
+				SELECT schema_version = $3 AND customer_id = $4 AND sandbox_id = $5
+					AND metric = $6 AND period_start = $7 AND period_end = $8 AND units = $9
+				FROM usage_inbox WHERE source = $1 AND event_id = $2
+				FOR SHARE`, arguments[:9]...).Scan(&identical)
+			if err != nil {
+				return fmt.Errorf("compare inbox event %d: %w", index, err)
+			}
+			if !identical {
+				return &ConflictError{event.Source, event.EventID}
+			}
 		}
 	}
 	if err := transaction.Commit(ctx); err != nil {
 		return fmt.Errorf("commit inbox batch: %w", err)
 	}
 	return nil
+}
+
+// sameMeasurement compares domain values, including timestamp instants rather
+// than textual offsets. Transport metadata and accounting state are excluded.
+func sameMeasurement(first, second usage.Event) bool {
+	return first.SchemaVersion == second.SchemaVersion &&
+		first.CustomerID == second.CustomerID && first.SandboxID == second.SandboxID &&
+		first.Metric == second.Metric && first.Units == second.Units &&
+		first.PeriodStart.Equal(second.PeriodStart) && first.PeriodEnd.Equal(second.PeriodEnd)
 }
