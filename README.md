@@ -206,6 +206,15 @@ Migration [001_usage_inbox.sql](migrations/001_usage_inbox.sql) creates the inbo
 
 To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged. The initial migration creates the receipt schema; assignment customers, prices, credit, and invoices will be introduced with their own tables and seed data.
 
+## Project layout
+
+- `cmd/billing-api/`: application entry point and server setup.
+- `internal/`: private application packages, with `*_test.go` package tests next to the code.
+- `migrations/`: numbered SQL migrations and the explicit PostgreSQL migration runner.
+- `tests/api/`: HTTP integration tests against a running API, enabled with the `integration` build tag.
+- `tests/sql/`: database integrity tests executed with `psql`.
+- `docs/`: project and interface documentation.
+
 ## Testing
 
 `make test` is the primary test command. Start PostgreSQL with `make up SERVICE=postgres` before running all tests or the database suite; Go test commands build and start the API automatically.
@@ -213,20 +222,25 @@ To extend the schema, add the next numbered SQL file and a corresponding version
 | Command | Purpose |
 | --- | --- |
 | `make test` | Run all test suites. |
+| `make go-test` | Run Go package tests without starting external services. |
+| `make db-test` | Run only the database integrity suite. |
+| `make api-test` | Build and start the API, then run its HTTP happy-path test. |
 | `make test SUITE=go` | Run all Go tests, including the HTTP happy path. PostgreSQL is not required for the skeleton. |
 | `make test SUITE=db` | Run only the database integrity suite in both configured time zones. |
 | `make test RUN='^TestUsageBatchesHappyPath$'` | Run only the named Go test. Supplying `RUN` selects the Go suite by default. |
 
 `SUITE` accepts `all` (the default), `go`, or `db`. `RUN` uses the standard [Go `-run` regular-expression filter](https://go.dev/src/cmd/go/internal/test/test.go): anchors select an exact test name; a pattern such as `Usage` selects matching names. Explicit `SUITE=all RUN=Usage` runs the full SQL suite and matching Go tests. Unknown suites and `SUITE=db` combined with `RUN` fail before starting test work.
 
-Database tests apply pending migrations, check schema integrity in UTC and `Asia/Shanghai`, and roll back their test data. Output identifies the suite and time zone being tested. Any test failure makes the command fail.
+The [handler tests](internal/httpapi/handler_test.go) use `httptest` to check routes, method restrictions, and the current usage response without a running server. With a local Go toolchain, run `go test ./...`; the integration build tag keeps external API tests out of this command. `make go-test` runs the same package tests in a container without starting services.
+
+The [SQL integrity tests](tests/sql/usage_inbox.sql) apply pending migrations, check schema integrity in UTC and `Asia/Shanghai`, and roll back their test data. Output identifies the suite and time zone being tested. Any test failure makes the command fail.
 
 The [API happy-path test](tests/api/usage_batches_test.go) sends a valid Acme measurement to the running service and checks HTTP `202`, JSON content type, and `status: accepted`. It uses HTTP only, without importing the handler or asserting stub internals, so the same test can remain when validation and persistence are implemented. The Go suite runs in a temporary Go container on the Compose network; the API stays running for manual exploration. `-count=1` ensures every invocation actually executes the tests.
 
 With Go 1.27 or later installed locally, the same test can target a running API directly:
 
 ```sh
-E2B_API_URL=http://127.0.0.1:8081 go test -count=1 -v ./tests/api
+E2B_API_URL=http://127.0.0.1:8081 go test -tags=integration -count=1 -v ./tests/api
 ```
 
 [CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `Database tests` check now runs both the database and HTTP suites; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
