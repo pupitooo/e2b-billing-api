@@ -29,7 +29,7 @@ func TestInboxInsertBatch(t *testing.T) {
 	maximum.EventID = "maximum-values"
 	maximum.SchemaVersion, maximum.Units = 1<<31-1, 1<<63-1
 	events = append(events, maximum)
-	receipt := time.Date(2026, 11, 1, 8, 30, 5, 123456789, time.FixedZone("UTC+08", 8*60*60))
+	receipt := time.Date(2_026, 11, 1, 8, 30, 5, 123_456_789, time.FixedZone("UTC+08", 8*60*60))
 	if err := store.InsertBatch(context.Background(), events, receipt); err != nil {
 		t.Fatalf("Insert batch: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestInboxConflictRollback(t *testing.T) {
 	pool := testDatabase(t, nil)
 	store := inbox.NewPostgres(pool, 5*time.Second)
 	events := fixtureEvents()
-	receipt := time.Date(2026, 11, 1, 0, 30, 5, 0, time.UTC)
+	receipt := time.Date(2_026, 11, 1, 0, 30, 5, 0, time.UTC)
 	if err := store.InsertBatch(context.Background(), events[:1], receipt); err != nil {
 		t.Fatalf("Seed existing event: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestInboxInvalidValues(t *testing.T) {
 	}{
 		{"empty batch", nil, time.Now().UTC()},
 		{"missing receipt", events, time.Time{}},
-		{"invalid receipt year", events, time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)},
+		{"invalid receipt year", events, time.Date(10_000, 1, 1, 0, 0, 0, 0, time.UTC)},
 		{"invalid second event", invalid, time.Now().UTC()},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -248,9 +248,9 @@ func testDatabase(t testing.TB, settings map[string]string) *pgxpool.Pool {
 func fixtureEvents() []usage.Event {
 	first := usage.Event{
 		Source: "inbox-test", EventID: "first", SchemaVersion: 1, CustomerID: "acme",
-		SandboxID: "sandbox-001", Metric: "cpu_seconds", Units: 100000000,
-		PeriodStart: time.Date(2026, 10, 31, 23, 30, 0, 123456000, time.UTC),
-		PeriodEnd:   time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
+		SandboxID: "sandbox-001", Metric: "cpu_seconds", Units: 100_000_000,
+		PeriodStart: time.Date(2_026, 10, 31, 23, 30, 0, 123_456_000, time.UTC),
+		PeriodEnd:   time.Date(2_026, 11, 1, 0, 0, 0, 0, time.UTC),
 	}
 	second := first
 	second.EventID, second.CustomerID, second.Units = "second", "cyberdyne", 0

@@ -65,15 +65,15 @@ C adds a second transaction and a gap between receipt and accounting. An inbox p
 
 ## Workload assumptions for further analysis
 
-The assignment asks the design to consider about 50,000 customers and potentially billions of monthly sandbox records. The implementation is not required to demonstrate that capacity. For these calculated examples, assume one metric, one record per active sandbox per minute, a constant average active-sandbox count, and a 30-day comparison period. Billing itself continues to use actual UTC calendar months.
+The assignment asks the design to consider about 50_000 customers and potentially billions of monthly sandbox records. The implementation is not required to demonstrate that capacity. For these calculated examples, assume one metric, one record per active sandbox per minute, a constant average active-sandbox count, and a 30-day comparison period. Billing itself continues to use actual UTC calendar months.
 
 | Illustrative profile | Average active sandboxes per customer | Records per second | Records per 30 days |
 | --- | ---: | ---: | ---: |
-| 1,000 customers | 10 | 166.7 | 432 million |
-| 50,000 customers | 10 | 8,333.3 | 21.6 billion |
-| 50,000 customers | 100 | 83,333.3 | 216 billion |
+| 1_000 customers | 10 | 166.7 | 432 million |
+| 50_000 customers | 10 | 8_333.3 | 21.6 billion |
+| 50_000 customers | 100 | 83_333.3 | 216 billion |
 
-Calculated rate = customers × average active sandboxes × metrics ÷ 60. Monthly records = customers × average active sandboxes × metrics × 43,200. These counts are scenarios, not measured capacity; batching HTTP requests does not remove event identities or financial work.
+Calculated rate = customers × average active sandboxes × metrics ÷ 60. Monthly records = customers × average active sandboxes × metrics × 43_200. These counts are scenarios, not measured capacity; batching HTTP requests does not remove event identities or financial work.
 
 ## TODO: receipt and financial correctness
 

@@ -12,9 +12,9 @@ import (
 // sandbox splits. Rebuilding the plan must preserve identities and content.
 func TestSimulatorAssignmentTotalsAndSplitting(t *testing.T) {
 	want := map[string]int64{
-		"acme/2026-10-10": 100000000, "cyberdyne/2026-10-10": 123456789,
-		"acme/2026-10-20": 200000000, "cyberdyne/2026-10-20": 200000000,
-		"acme/2026-10-30": 50000000, "acme/2026-11-03": 100000000,
+		"acme/2026-10-10": 100_000_000, "cyberdyne/2026-10-10": 123_456_789,
+		"acme/2026-10-20": 200_000_000, "cyberdyne/2026-10-20": 200_000_000,
+		"acme/2026-10-30": 50_000_000, "acme/2026-11-03": 100_000_000,
 	}
 	for _, interval := range []time.Duration{time.Hour, time.Minute} {
 		t.Run(interval.String(), func(t *testing.T) {
@@ -61,7 +61,7 @@ func TestSimulatorAssignmentBounds(t *testing.T) {
 	for _, configuration := range []struct {
 		sandboxes int
 		interval  time.Duration
-	}{{0, time.Hour}, {1001, time.Hour}, {1, 59 * time.Second}, {1, 7 * time.Minute}, {1000, time.Minute}} {
+	}{{0, time.Hour}, {1_001, time.Hour}, {1, 59 * time.Second}, {1, 7 * time.Minute}, {1_000, time.Minute}} {
 		if _, err := Assignment("test", configuration.sandboxes, configuration.interval); err == nil {
 			t.Errorf("Accepted unsupported split %+v", configuration)
 		}

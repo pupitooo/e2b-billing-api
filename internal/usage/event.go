@@ -81,7 +81,7 @@ func validateTimestamp(field string, value time.Time) error {
 		return &ValidationError{field, "is required"}
 	}
 	// Keep UTC instants representable by the RFC 3339 transport contract.
-	if year := value.UTC().Year(); year < 1 || year > 9999 {
+	if year := value.UTC().Year(); year < 1 || year > 9_999 {
 		return &ValidationError{field, "must have a UTC year between 1 and 9999"}
 	}
 	// PostgreSQL stores microseconds. Reject finer values so a later retry can

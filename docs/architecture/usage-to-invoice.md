@@ -14,19 +14,19 @@ Graf zachovává požadované pořadí `Credits → Rounding`. Uživatel 9. ří
 
 ## 1. Proč nestačí ukládat všechno v centech
 
-Představme si cenu ze zadání: **0,05 USD za 1 000 000 jednotek** `cpu_seconds`. V tomto příkladu jedna CPU sekunda znamená jednu jednotku. Cena za milion je tedy 5 centů.
+Představme si cenu ze zadání: **0,05 USD za 1_000_000 jednotek** `cpu_seconds`. V tomto příkladu jedna CPU sekunda znamená jednu jednotku. Cena za milion je tedy 5 centů.
 
-Platforma neposílá jedno velké měření. Pošle tisíc samostatných událostí, každou po 1 000 jednotkách:
+Platforma neposílá jedno velké měření. Pošle tisíc samostatných událostí, každou po 1_000 jednotkách:
 
 ```text
-1 000 events × 1 000 units = 1 000 000 units
+1_000 events × 1_000 units = 1_000_000 units
 ```
 
 Cena jednoho měření je:
 
 ```text
-1 000 000 units -> 5 cents
-    1 000 units -> 0.005 cent -> USD 0.00005
+1_000_000 units -> 5 cents
+    1_000 units -> 0.005 cent -> USD 0.000_05
 ```
 
 Pokud každé měření hned zaokrouhlíme na celé centy, dostaneme nulu. Tisíckrát nula je stále nula, přestože milion jednotek má stát 5 centů. Výsledek by závisel na tom, zda platforma pošle jedno měření, nebo tisíc menších.
@@ -34,26 +34,26 @@ Pokud každé měření hned zaokrouhlíme na celé centy, dostaneme nulu. Tisí
 Proto používáme menší přesnou jednotku peněz:
 
 ```text
-1 cent = 1 000 000 ticks
-1 USD  = 100 000 000 ticks
-1 tick = USD 0.00000001
+1 cent = 1_000_000 ticks
+1 USD  = 100_000_000 ticks
+1 tick = USD 0.000_000_01
 ```
 
 Jedna malá událost nyní neztratí svou cenu:
 
 ```text
-1 000 units -> 0.005 cent -> 5 000 ticks
+1_000 units -> 0.005 cent -> 5_000 ticks
 ```
 
 Skupina sečte přesné hodnoty:
 
 ```text
-event #1          5 000 ticks
-event #2          5 000 ticks
+event #1          5_000 ticks
+event #2          5_000 ticks
 ...
-event #1000       5 000 ticks
+event #1_000       5_000 ticks
 ----------------------------
-total         5 000 000 ticks
+total         5_000_000 ticks
               = 5 cents
               = USD 0.05
 ```
@@ -68,9 +68,9 @@ Zákazník Cyberdyne spotřebuje před 15. říjnem celkem milion jednotek. Plat
 
 | Úroveň | Co v příkladu znamená | Kde se hodnota nachází |
 | --- | --- | --- |
-| Usage events | Tisíc měření po 1 000 jednotkách, s identitou, sandboxem a intervalem. | Tisíc řádků `usage_inbox`, každý s `units = 1000`. |
-| Rating | Každému měření přiřadit historickou cenu 5 centů za milion; přesná cena jednoho je 5 000 ticks. | Cena v `price_versions`; čistý Go výpočet `accounting.Rate`; budoucí writer uloží vazby v `usage_ratings`. |
-| RatedUsageGroup | Jedna skupina s milionem jednotek a přesnou hrubou cenou 5 milionů ticks. | `rated_usage_groups.total_units = 1000000`, `exact_charge_ticks = 5000000`. |
+| Usage events | Tisíc měření po 1_000 jednotkách, s identitou, sandboxem a intervalem. | Tisíc řádků `usage_inbox`, každý s `units = 1_000`. |
+| Rating | Každému měření přiřadit historickou cenu 5 centů za milion; přesná cena jednoho je 5_000 ticks. | Cena v `price_versions`; čistý Go výpočet `accounting.Rate`; budoucí writer uloží vazby v `usage_ratings`. |
+| RatedUsageGroup | Jedna skupina s milionem jednotek a přesnou hrubou cenou 5 milionů ticks. | `rated_usage_groups.total_units = 1_000_000`, `exact_charge_ticks = 5_000_000`. |
 | Credits | Žádný dostupný kredit, žádný debet. Hrubá a splatná spotřeba jsou stejné. | Zůstatek v `customer_billing_state`; alokace skupiny je nula. |
 | Rounding | Za celou skupinu získáme 5 centů. | Výpočet; současné schéma má centovou projekci `booked_charge_cents`. |
 | InvoiceLine | Neměnná položka „CPU usage for October 2026“, částka 5 centů. | Navrhovaná tabulka `invoice_lines`, zatím neexistuje. |
@@ -80,7 +80,7 @@ Výpočet faktury tak nemusí znovu načíst a ocenit každou malou událost. Pr
 
 ## 3. Usage events: co se skutečně spotřebovalo
 
-Jedna událost říká například: „Sandbox zákazníka Cyberdyne spotřeboval v tomto intervalu 1 000 `cpu_seconds`.“ Je to přírůstek k započtení právě jednou, nikoli opakovaně zasílaný celoživotní stav čítače.
+Jedna událost říká například: „Sandbox zákazníka Cyberdyne spotřeboval v tomto intervalu 1_000 `cpu_seconds`.“ Je to přírůstek k započtení právě jednou, nikoli opakovaně zasílaný celoživotní stav čítače.
 
 V DB je to jeden řádek `usage_inbox`:
 
@@ -112,7 +112,7 @@ Pro současný cenový kontrakt platí:
 exact_charge_ticks = units × price_per_million_cents
 ```
 
-Dělení milionem se v tomto násobení neobjeví, protože jeden cent už představuje milion ticks. Pro cenu 5 centů za milion je výsledek `1000 × 5 = 5000 ticks`.
+Dělení milionem se v tomto násobení neobjeví, protože jeden cent už představuje milion ticks. Pro cenu 5 centů za milion je výsledek `1_000 × 5 = 5_000 ticks`.
 
 Sloupec s ticks používá doménu `billing_ticks` nad přesným PostgreSQL `numeric`. Přijímá pouze nezáporná konečná celá čísla. Agregované `total_units` také používají celočíselné `numeric`; celkový součet tedy nemusí být omezen rozsahem jednoho eventu typu `bigint`. Go musí použít kontrolovanou celočíselnou aritmetiku nebo libovolně velká celá čísla. Přetečení nesmí potichu změnit cenu. `float64` se pro tyto přesné peněžní výpočty nepoužije.
 
@@ -124,9 +124,9 @@ Použijeme skutečné změny cen ze zadání: 5 a 6 centů za milion. Dřívěj�
 
 | Spotřeba Cyberdyne | Historická cena | Přesný výsledek |
 | --- | --- | --- |
-| 1 000 000 jednotek 10. října | 5 centů za milion | 5 000 000 ticks = 5 centů |
-| 1 000 000 jednotek 20. října | 6 centů za milion, platí od 15. října | 6 000 000 ticks = 6 centů |
-| Celkem | Dvě různé cenové verze | 11 000 000 ticks = 11 centů |
+| 1_000_000 jednotek 10. října | 5 centů za milion | 5_000_000 ticks = 5 centů |
+| 1_000_000 jednotek 20. října | 6 centů za milion, platí od 15. října | 6_000_000 ticks = 6 centů |
+| Celkem | Dvě různé cenové verze | 11_000_000 ticks = 11 centů |
 
 Ocenit celé dva miliony pozdější cenou 6 centů by vyrobilo 12 centů. Ocenit je starou cenou 5 centů by vyrobilo 10 centů. Samotný měsíční součet units neuchovává informaci, kterou sazbou se má která část ocenit.
 
@@ -169,8 +169,8 @@ metric                  cpu_seconds
 price_version_id        cpu-default-2026-10-01
 usage_month             2026-10-01
 billing_month           2026-10-01
-total_units             1 000 000
-exact_charge_ticks      5 000 000
+total_units             1_000_000
+exact_charge_ticks      5_000_000
 booked_charge_cents     5
 allocated_credit_ticks  0
 ```
@@ -186,13 +186,13 @@ Identita skupiny se nesmí měnit; její součty jsou zatím proměnlivé. DB je
 Hrubá cena popisuje hodnotu spotřeby. Kredit je jiná operace: říká, jaká část této ceny už bude pokryta prostředky zákazníka.
 
 ```text
-gross usage charge       USD 10.00 = 1 000 cents = 1 000 000 000 ticks
-applied credit          -USD  7.00 =  -700 cents =  -700 000 000 ticks
+gross usage charge       USD 10.00 = 1_000 cents = 1_000_000_000 ticks
+applied credit          -USD  7.00 =  -700 cents =  -700_000_000 ticks
 ----------------------------------------------------------------------
-payable usage            USD  3.00 =   300 cents =   300 000 000 ticks
+payable usage            USD  3.00 =   300 cents =   300_000_000 ticks
 ```
 
-`exact_charge_ticks` zůstane 1 000 000 000. Nenahradíme ho 300 000 000, protože by se ztratila původní cena spotřeby. Stejně tak kredit nezmění `total_units` ani historickou cenu.
+`exact_charge_ticks` zůstane 1_000_000_000. Nenahradíme ho 300_000_000, protože by se ztratila původní cena spotřeby. Stejně tak kredit nezmění `total_units` ani historickou cenu.
 
 V současném schématu odpovídají kreditům tři místa:
 
@@ -213,7 +213,7 @@ Ve výše uvedeném příkladu se pro měsíční limit započte 10 USD, i když
 Limit z `customer_billing_state.spend_limit_cents` se převede na stejnou přesnost. Pro nastavený limit platí:
 
 ```text
-reached = gross_charge_ticks >= spend_limit_cents × 1 000 000
+reached = gross_charge_ticks >= spend_limit_cents × 1_000_000
 ```
 
 Limit 8 USD je tedy při hrubé spotřebě 10 USD dosažený, i když splatná spotřeba je jen 3 USD. Nenastavený limit (`NULL`) znamená bez limitu; nula je dosažená už při nulové spotřebě. Billing dál přijme a zaúčtuje všechna naměřená data. Kredit hradí pouze spotřebu; měsíční `concurrency_pack` za 20 USD jím pokrýt nelze.
@@ -223,14 +223,14 @@ Limit 8 USD je tedy při hrubé spotřebě 10 USD dosažený, i když splatná s
 Celý cent kreditu lze přesně převést na ticks. Přesná spotřeba ale může z kreditu odebrat méně než cent:
 
 ```text
-available credit = 1 cent = 1 000 000 ticks
-gross usage = 5 000 ticks
-applied credit = min(1 000 000, 5 000) = 5 000 ticks
-remaining credit = 995 000 ticks = 0.995 cent
+available credit = 1 cent = 1_000_000 ticks
+gross usage = 5_000 ticks
+applied credit = min(1_000_000, 5_000) = 5_000 ticks
+remaining credit = 995_000 ticks = 0.995 cent
 net usage = 0 ticks
 ```
 
-Původní `credit_balance_cents`, `credit_entries.amount_cents` a `allocated_credit_cents` před migrací 004 byly `bigint`. Nemohly uložit ani tento debet, ani zbývajících 0,995 centu. Debet 5 000 ticks není totéž co jeden cent.
+Původní `credit_balance_cents`, `credit_entries.amount_cents` a `allocated_credit_cents` před migrací 004 byly `bigint`. Nemohly uložit ani tento debet, ani zbývajících 0,995 centu. Debet 5_000 ticks není totéž co jeden cent.
 
 Migrace 004 zavádí nezáporné `credit_balance_ticks` a `allocated_credit_ticks` a znaménkové celočíselné `credit_entries.amount_ticks`. Původní centy násobí milionem a zachovává historii; nekompatibilní starou alokaci převyšující přesnou cenu odmítne atomicky. `accounting.AllocateCredit` čerpá přesný kredit z nové spotřeby. Alokace sledují pořadí transakcí pod zákaznickým zámkem; pozdější grant neopravuje dřívější čerpání. Zlomky kreditu zůstávají na účtu v ticks.
 
@@ -243,18 +243,18 @@ Zaokrouhluje se kumulativní částka kompatibilní skupiny. Raw units ani přes
 Sdílený výpočet `RoundCents` používá pro nezáporné částky `half-up`, tedy polovinu centu zaokrouhlí nahoru:
 
 ```text
-round_half_up_cents(ticks) = floor((ticks + 500 000) / 1 000 000)
+round_half_up_cents(ticks) = floor((ticks + 500_000) / 1_000_000)
 ```
 
 | Přesná částka | Výsledek |
 | --- | --- |
-| 5 000 ticks = 0,005 centu | 0 centů |
-| 499 999 ticks = 0,499999 centu | 0 centů |
-| 500 000 ticks = 0,5 centu | 1 cent |
-| 1 000 000 ticks = 1 cent | 1 cent |
-| 617 283 945 ticks = 617,283945 centu | 617 centů = 6,17 USD |
+| 5_000 ticks = 0,005 centu | 0 centů |
+| 499_999 ticks = 0,499_999 centu | 0 centů |
+| 500_000 ticks = 0,5 centu | 1 cent |
+| 1_000_000 ticks = 1 cent | 1 cent |
+| 617_283_945 ticks = 617,283_945 centu | 617 centů = 6,17 USD |
 
-Aktuální `InvoiceAmounts` zaokrouhlí kumulativní gross a net skupiny. Kreditový řádek je záporný rozdíl těchto centových hodnot, nikoli nezávisle zaokrouhlený přesný debet. Součet položek tak odpovídá zaokrouhlenému net. Při gross 1 cent a přesném kreditu 0,5 centu se net 0,5 centu zaokrouhlí na 1 cent; zobrazený kredit je 0 centů, zatímco ledger uchovává přesný debet 500 000 ticks. Budoucí snapshot faktury musí zachovat i tyto přesné částky pro audit.
+Aktuální `InvoiceAmounts` zaokrouhlí kumulativní gross a net skupiny. Kreditový řádek je záporný rozdíl těchto centových hodnot, nikoli nezávisle zaokrouhlený přesný debet. Součet položek tak odpovídá zaokrouhlenému net. Při gross 1 cent a přesném kreditu 0,5 centu se net 0,5 centu zaokrouhlí na 1 cent; zobrazený kredit je 0 centů, zatímco ledger uchovává přesný debet 500_000 ticks. Budoucí snapshot faktury musí zachovat i tyto přesné částky pro audit.
 
 ### Historický návrh před migrací 004: průběžně zaúčtovat jen nový centový přírůstek
 
@@ -271,14 +271,14 @@ credit_balance_cents -= credit_debit_cents
 credit_entries.amount_cents = -credit_debit_cents  // only when positive
 ```
 
-Takto roste naše skupina s měřeními po 1 000 jednotkách a cenou 5 centů za milion:
+Takto roste naše skupina s měřeními po 1_000 jednotkách a cenou 5 centů za milion:
 
 | Počet událostí | `total_units` | `exact_charge_ticks` | Kumulativní `booked_charge_cents` |
 | --- | --- | --- | --- |
-| 1 | 1 000 | 5 000 | 0 |
-| 100 | 100 000 | 500 000 | 1 |
-| 200 | 200 000 | 1 000 000 | 1 |
-| 1 000 | 1 000 000 | 5 000 000 | 5 |
+| 1 | 1_000 | 5_000 | 0 |
+| 100 | 100_000 | 500_000 | 1 |
+| 200 | 200_000 | 1_000_000 | 1 |
+| 1_000 | 1_000_000 | 5_000_000 | 5 |
 
 Přesná hodnota zůstává zachovaná i tehdy, když se průběžná centová projekce změní. Při přechodu od 100. k 200. události už je jeden cent zaúčtovaný; nepřidáme ho znovu. Součet všech centových přírůstků se rovná zaokrouhlenému výsledku celé skupiny.
 
@@ -336,18 +336,18 @@ Následující výsledky ověřují testy čistých Go výpočtů; budoucí runt
 | Použitý kredit | −12,00 USD | −6,00 USD | 0,00 USD |
 | **Celkem** | **20,00 USD** | **20,00 USD** | **18,17 USD** |
 
-Acme dostane grant 25 USD (`amount_ticks = 2500000000`). Říjnových 300 milionů units při ceně 4 centy za milion má hodnotu `1 200 000 000 ticks`, tedy 1 200 centů. Použití 12 USD kreditu ponechá 13 USD. Faktura má spotřebu `1200`, kredit `-1200` a doplněk `2000`, celkem `2000` centů.
+Acme dostane grant 25 USD (`amount_ticks = 2_500_000_000`). Říjnových 300 milionů units při ceně 4 centy za milion má hodnotu `1_200_000_000 ticks`, tedy 1_200 centů. Použití 12 USD kreditu ponechá 13 USD. Faktura má spotřebu `1_200`, kredit `-1_200` a doplněk `2_000`, celkem `2_000` centů.
 
 V listopadovém dokladu je pozdní říjen za 2 USD a listopad za 4 USD. Jejich skupiny mají oddělené původní měsíce; dohromady spotřebují 6 USD kreditu. Zůstatek klesne ze 13 na 7 USD. Doplněk má dalších 20 USD a kredit ho nehradí. Faktura opět vyjde na 20 USD. Vystavení ani opakovaný požadavek nesmí kredit odečíst ještě jednou.
 
-Cyberdyne má v první sazbě `123 456 789 × 5 = 617 283 945 ticks`, po zaokrouhlení 617 centů. Druhá sazba vytvoří jinou skupinu s `200 000 000 × 6 = 1 200 000 000 ticks`, tedy 1 200 centů. Součet faktury je 1 817 centů. Hrubá přesná říjnová spotřeba je `1 817 283 945 ticks`, nad limitem 15 USD (`1 500 000 000 ticks`). Za listopad se limit vyhodnocuje proti listopadovému gross stavu; není potřeba měnit říjnovou fakturu.
+Cyberdyne má v první sazbě `123_456_789 × 5 = 617_283_945 ticks`, po zaokrouhlení 617 centů. Druhá sazba vytvoří jinou skupinu s `200_000_000 × 6 = 1_200_000_000 ticks`, tedy 1_200 centů. Součet faktury je 1_817 centů. Hrubá přesná říjnová spotřeba je `1_817_283_945 ticks`, nad limitem 15 USD (`1_500_000_000 ticks`). Za listopad se limit vyhodnocuje proti listopadovému gross stavu; není potřeba měnit říjnovou fakturu.
 
 ## 10. Pozdní spotřeba: dvě různá období jsou záměr
 
 Acme spotřebuje 50 milionů units 30. října, ale platforma je doručí až po vystavení říjnové faktury. Ocenění stále použije říjnovou zákaznickou cenu 4 centy za milion:
 
 ```text
-50 000 000 × 4 = 200 000 000 ticks = USD 2.00
+50_000_000 × 4 = 200_000_000 ticks = USD 2.00
 ```
 
 Nová skupina ponese:
@@ -362,7 +362,7 @@ Listopadových 100 milionů units bude jiná skupina:
 ```text
 usage_month    2026-11-01
 billing_month  2026-11-01
-exact_charge_ticks  400 000 000
+exact_charge_ticks  400_000_000
 ```
 
 Listopadová faktura tak zahrne 2 USD za říjen a 4 USD za listopad, ale gross projekce pro limity přiřadí 2 USD zpět říjnu. Acme bude mít po doúčtování gross říjen 14 USD a gross listopad 4 USD. Vydaná říjnová faktura zůstane stejná.

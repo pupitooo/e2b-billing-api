@@ -31,7 +31,7 @@ func TestHistoricalPriceSelection(t *testing.T) {
 // its end is outside the half-open interval. Masked default changes are harmless.
 func TestPriceBoundarySegments(t *testing.T) {
 	prices := assignmentPrices(t)
-	event := metering(t, "cyberdyne", "2026-10-14T23:30:00Z", 1000)
+	event := metering(t, "cyberdyne", "2026-10-14T23:30:00Z", 1_000)
 	if _, err := accounting.Rate(event, prices); err == nil {
 		t.Fatal("A receipt crossing the default price change must fail")
 	}
@@ -116,8 +116,8 @@ func TestAssignmentFinancialResults(t *testing.T) {
 		octoberCredit = octoberCredit.Add(allocation.Used)
 	}
 	october, err := accounting.InvoiceAmounts(octoberGross, octoberCredit)
-	if err != nil || october.GrossCents != 1200 || october.CreditCents != 1200 ||
-		october.NetCents+2000 != 2000 || credit.Ticks().String() != "1300000000" {
+	if err != nil || october.GrossCents != 1_200 || october.CreditCents != 1_200 ||
+		october.NetCents+2_000 != 2_000 || credit.Ticks().String() != "1300000000" {
 		t.Fatalf("Acme October must total 20 USD with 13 USD credit left: %+v, %s, %v", october, credit.Ticks(), err)
 	}
 	var novemberGross, novemberCredit accounting.Amount
@@ -136,7 +136,7 @@ func TestAssignmentFinancialResults(t *testing.T) {
 	}
 	november, err := accounting.InvoiceAmounts(novemberGross, novemberCredit)
 	if err != nil || november.GrossCents != 600 || november.CreditCents != 600 ||
-		november.NetCents+2000 != 2000 || credit.Ticks().String() != "700000000" {
+		november.NetCents+2_000 != 2_000 || credit.Ticks().String() != "700000000" {
 		t.Fatalf("Acme November must total 20 USD with 7 USD credit left: %+v, %s, %v", november, credit.Ticks(), err)
 	}
 	var cyberdyneCents int64
@@ -156,8 +156,8 @@ func TestAssignmentFinancialResults(t *testing.T) {
 		cyberdyneCents += line.NetCents
 		cyberdyneGross = cyberdyneGross.Add(rating.Charge)
 	}
-	limit, err := accounting.FromCents(1500)
-	if err != nil || cyberdyneCents != 1817 || cyberdyneGross.Compare(limit) < 0 {
+	limit, err := accounting.FromCents(1_500)
+	if err != nil || cyberdyneCents != 1_817 || cyberdyneGross.Compare(limit) < 0 {
 		t.Fatalf("Cyberdyne must owe 18.17 USD and reach the 15 USD gross limit: %d, %v", cyberdyneCents, err)
 	}
 }

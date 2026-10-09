@@ -84,7 +84,7 @@ func (store *Postgres) InsertBatch(ctx context.Context, events []usage.Event, re
 	if len(events) == 0 {
 		return errors.New("usage batch must contain at least one event")
 	}
-	if receivedAt.IsZero() || receivedAt.UTC().Year() < 1 || receivedAt.UTC().Year() > 9999 {
+	if receivedAt.IsZero() || receivedAt.UTC().Year() < 1 || receivedAt.UTC().Year() > 9_999 {
 		return errors.New("received_at must be supplied with a UTC year between 1 and 9999")
 	}
 	for index, event := range events {

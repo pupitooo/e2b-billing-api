@@ -12,7 +12,7 @@ This diagram shows all 12 tables and their SQL columns, primary keys, foreign ke
 
 [Editable Mermaid source](../diagrams/implemented-data-model/implemented-data-model.mmd).
 
-All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns belonging to primary and foreign keys, including composite keys. Solid relationships include the referenced identity in the child's primary key; dashed relationships are other declared foreign keys. The Mermaid source records the composite unique constraints. `billing_ticks` is an exact `numeric` domain for non-negative finite integers; one cent is 1,000,000 ticks.
+All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns belonging to primary and foreign keys, including composite keys. Solid relationships include the referenced identity in the child's primary key; dashed relationships are other declared foreign keys. The Mermaid source records the composite unique constraints. `billing_ticks` is an exact `numeric` domain for non-negative finite integers; one cent is 1_000_000 ticks.
 
 `usage_inbox` has no customer or metric foreign keys. Its optional one-to-one relationship with `usage_ratings` records whether an event has been assigned to a group; each rating references one `rated_usage_groups` row. The diagram shows database cardinalities, so a customer may have zero or one account-state row even though the seed creates one for each initial customer. Receipt matching and price ownership checks are enforced by triggers, as described below. Invoice tables, invoice numbering, and frozen groups remain planned and are absent from this implemented schema.
 
@@ -51,16 +51,16 @@ Prices, credit entries, and rating links reject row updates and deletes. Price c
 
 All amounts are USD. Credit balances, allocations, and ledger entries use exact integer ticks. Limits, add-on prices, and the booked gross projection use integer cents. The initial price contract supports whole cents per million units: `price_per_million_cents` is `5`, `6`, or `4` for the assignment prices of USD 0.05, 0.06, and 0.04 per million. Finer price precision would require a new explicit contract and migration.
 
-One tick is one millionth of a cent, or USD 0.00000001. For this price contract:
+One tick is one millionth of a cent, or USD 0.000_000_01. For this price contract:
 
 ```text
 exact_charge_ticks = units × price_per_million_cents
-1 cent = 1,000,000 ticks
+1 cent = 1_000_000 ticks
 ```
 
 Integer-valued PostgreSQL `numeric` stores exact tick totals and aggregate units beyond the `bigint` range. Negative, fractional, infinite, and NaN values are rejected. The future Go rater must use checked integer arithmetic or arbitrary-precision integers. PostgreSQL documents the distinction between [exact numeric and floating-point types](https://www.postgresql.org/docs/18/datatype-numeric.html).
 
-Cyberdyne's first 123,456,789 units produce 617,283,945 ticks, or USD 6.17283945. The group can store that exact amount alongside its booked 617 gross cents. Credit is allocated against new exact ticks before rounding. The shared Go helpers round cumulative gross and net groups and derive a balancing credit line; migrations do not perform accounting. `allocated_credit_ticks` cannot exceed `exact_charge_ticks`, even when rounded gross cents are higher.
+Cyberdyne's first 123_456_789 units produce 617_283_945 ticks, or USD 6.172_839_45. The group can store that exact amount alongside its booked 617 gross cents. Credit is allocated against new exact ticks before rounding. The shared Go helpers round cumulative gross and net groups and derive a balancing credit line; migrations do not perform accounting. `allocated_credit_ticks` cannot exceed `exact_charge_ticks`, even when rounded gross cents are higher.
 
 `usage_month` and `billing_month` are finite first-of-month `date` values. Application code derives them in UTC. Late October usage billed in November retains `usage_month = 2026-10-01` and `billing_month = 2026-11-01`; its gross spend belongs to October. Billing months cannot precede usage months. Timestamps are finite `timestamptz` values. Subscription start months are checked against the purchase timestamp in UTC, independently of the SQL session's time zone.
 
@@ -86,7 +86,7 @@ Migration `002_billing_model.sql` creates the model. Migration `003_assignment_s
 | Default price | 5 cents per million from `2026-10-01T00:00:00Z` |
 | Default price | 6 cents per million from `2026-10-15T00:00:00Z` |
 | Acme override | 4 cents per million from `2026-10-01T00:00:00Z` |
-| Add-on | `concurrency_pack`, 2,000 cents per month |
+| Add-on | `concurrency_pack`, 2_000 cents per month |
 
 Both accounts start with zero credit, no spend limit, and state version zero. The example's USD 25 grant, purchase, USD 15 limit, metering events, and invoices are business actions for subsequent API/simulator work, not initial catalog data. No financial history or usage is seeded.
 

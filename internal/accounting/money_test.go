@@ -99,8 +99,8 @@ func TestCreditBeforeRoundingAndEventSplitting(t *testing.T) {
 	}
 	remaining := initial
 	var gross, used, net accounting.Amount
-	for i := 0; i < 1000; i++ {
-		charge, err := accounting.UsageCharge(1000, 5)
+	for i := 0; i < 1_000; i++ {
+		charge, err := accounting.UsageCharge(1_000, 5)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -147,7 +147,7 @@ func TestInvoiceCreditPresentation(t *testing.T) {
 		{"1000000", "500000", accounting.InvoiceCharge{GrossCents: 1, CreditCents: 0, NetCents: 1}},
 		{"1500000", "500000", accounting.InvoiceCharge{GrossCents: 2, CreditCents: 1, NetCents: 1}},
 		{"5000", "5000", accounting.InvoiceCharge{}},
-		{"1000000000", "700000000", accounting.InvoiceCharge{GrossCents: 1000, CreditCents: 700, NetCents: 300}},
+		{"1000000000", "700000000", accounting.InvoiceCharge{GrossCents: 1_000, CreditCents: 700, NetCents: 300}},
 	} {
 		got, err := accounting.InvoiceAmounts(ticks(t, fixture.gross), ticks(t, fixture.credit))
 		if err != nil || got != fixture.want || got.GrossCents-got.CreditCents != got.NetCents {
@@ -171,7 +171,7 @@ func TestExactSpendLimit(t *testing.T) {
 		want  bool
 	}{
 		{"0", 0, true}, {"999999", 1, false}, {"1000000", 1, true},
-		{"617283945", 1500, false}, {"1817283945", 1500, true},
+		{"617283945", 1_500, false}, {"1817283945", 1_500, true},
 	} {
 		got, err := accounting.LimitReached(ticks(t, fixture.gross), &fixture.limit)
 		if err != nil || got != fixture.want {

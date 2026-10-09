@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const maxScenarioEvents = 10000
+const maxScenarioEvents = 10_000
 
 // Step releases a group of measurements. A barrier requires operator consent
 // before release; the simulator does not itself issue or inspect invoices.
@@ -26,7 +26,7 @@ type Plan struct {
 // Assignment splits the assignment's six hourly totals into exact integer
 // increments while retaining consumption times and deterministic identities.
 func Assignment(source string, sandboxes int, interval time.Duration) (Plan, error) {
-	if sandboxes < 1 || sandboxes > 1000 {
+	if sandboxes < 1 || sandboxes > 1_000 {
 		return Plan{}, fmt.Errorf("sandboxes must be between 1 and 1000")
 	}
 	if interval < time.Minute || interval > time.Hour || time.Hour%interval != 0 {
@@ -47,12 +47,12 @@ func Assignment(source string, sandboxes int, interval time.Duration) (Plan, err
 		day      string
 		units    int64
 	}{
-		{0, "acme", "2026-10-10", 100000000},
-		{0, "cyberdyne", "2026-10-10", 123456789},
-		{1, "acme", "2026-10-20", 200000000},
-		{1, "cyberdyne", "2026-10-20", 200000000},
-		{2, "acme", "2026-10-30", 50000000},
-		{3, "acme", "2026-11-03", 100000000},
+		{0, "acme", "2026-10-10", 100_000_000},
+		{0, "cyberdyne", "2026-10-10", 123_456_789},
+		{1, "acme", "2026-10-20", 200_000_000},
+		{1, "cyberdyne", "2026-10-20", 200_000_000},
+		{2, "acme", "2026-10-30", 50_000_000},
+		{3, "acme", "2026-11-03", 100_000_000},
 	}
 	for _, fixture := range fixtures {
 		start, err := time.Parse(time.RFC3339, fixture.day+"T12:00:00Z")

@@ -273,7 +273,7 @@ func TestWorkerHeartbeatWriteFailureStopsStartup(t *testing.T) {
 // TestCheckHealth verifies timestamp freshness, the inclusive maximum-age
 // boundary, supported offsets, malformed data, missing files, and invalid ages.
 func TestCheckHealth(t *testing.T) {
-	now := time.Date(2026, time.October, 9, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2_026, time.October, 9, 12, 0, 0, 0, time.UTC)
 	const maxAge = 5 * time.Second
 	tests := []struct {
 		name    string
@@ -312,7 +312,7 @@ func TestCheckHealth(t *testing.T) {
 // TestCheckHealthConcurrentUpdate verifies that a heartbeat published while the
 // probe samples its clock cannot invalidate the already-read healthy snapshot.
 func TestCheckHealthConcurrentUpdate(t *testing.T) {
-	now := time.Date(2026, time.October, 9, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2_026, time.October, 9, 12, 0, 0, 0, time.UTC)
 	filename := filepath.Join(t.TempDir(), "heartbeat")
 	if err := os.WriteFile(filename, []byte(now.Add(-time.Second).Format(time.RFC3339Nano)), 0600); err != nil {
 		t.Fatalf("Write initial heartbeat: %v", err)

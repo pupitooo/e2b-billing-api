@@ -259,13 +259,13 @@ func TestSimulatorReceiptWriteFailureRecovers(t *testing.T) {
 }
 
 // TestSimulatorBothBatchLimits sends wide identifiers that exceed 1 MiB at
-// 1000 events. Transport must split by bytes as well as count without omission.
+// 1_000 events. Transport must split by bytes as well as count without omission.
 func TestSimulatorBothBatchLimits(t *testing.T) {
 	plan := simulatorPlan(t)
 	base := plan.events()[0]
 	base.Source, base.CustomerID, base.SandboxID, base.Metric = strings.Repeat("s", 256), strings.Repeat("c", 256), strings.Repeat("b", 256), strings.Repeat("m", 256)
 	plan = Plan{Name: "wide", Steps: []Step{{Name: "wide"}}}
-	for index := range 1000 {
+	for index := range 1_000 {
 		event := base
 		event.EventID = strings.Repeat("e", 240) + fmt.Sprintf("%016d", index)
 		plan.Steps[0].Events = append(plan.Steps[0].Events, event)
@@ -275,7 +275,7 @@ func TestSimulatorBothBatchLimits(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		data, _ := io.ReadAll(r.Body)
 		var body struct{ Events []Event }
-		if len(data) > maxBatchBytes || json.Unmarshal(data, &body) != nil || len(body.Events) > 1000 {
+		if len(data) > maxBatchBytes || json.Unmarshal(data, &body) != nil || len(body.Events) > 1_000 {
 			t.Error("Request violated an API batch limit")
 		}
 		mutex.Lock()
@@ -288,14 +288,14 @@ func TestSimulatorBothBatchLimits(t *testing.T) {
 	}))
 	defer server.Close()
 	sender := simulatorSender(server.URL)
-	sender.BatchSize = 1000
+	sender.BatchSize = 1_000
 	path := filepath.Join(t.TempDir(), "run.json")
 	if err := Run(context.Background(), Options{StatePath: path, Action: "run", Mode: "fast", Plan: &plan, Sender: sender}); err != nil {
 		t.Fatal(err)
 	}
 	mutex.Lock()
 	defer mutex.Unlock()
-	if count != 1000 || requests < 2 || len(readSimulatorState(t, path).pending(false)) != 0 {
+	if count != 1_000 || requests < 2 || len(readSimulatorState(t, path).pending(false)) != 0 {
 		t.Errorf("Byte-limited delivery = %d events, %d requests", count, requests)
 	}
 }

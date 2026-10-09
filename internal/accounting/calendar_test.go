@@ -21,7 +21,7 @@ func TestUsageMonthUTC(t *testing.T) {
 			t.Fatalf("Invalid or crossing interval ending %s must fail", badEnd)
 		}
 	}
-	if _, err := accounting.UTCMonth(time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)); err == nil {
+	if _, err := accounting.UTCMonth(time.Date(10_000, 1, 1, 0, 0, 0, 0, time.UTC)); err == nil {
 		t.Fatal("An unrepresentable transport year must fail")
 	}
 }
@@ -70,14 +70,14 @@ func TestAddonFullMonthlyCharge(t *testing.T) {
 		month string
 		want  int64
 	}{
-		{"2026-09-01T00:00:00Z", 0}, {"2026-10-01T00:00:00Z", 2000}, {"2026-11-01T00:00:00Z", 2000},
+		{"2026-09-01T00:00:00Z", 0}, {"2026-10-01T00:00:00Z", 2_000}, {"2026-11-01T00:00:00Z", 2_000},
 	} {
-		got, err := accounting.AddonCharge(purchase, instant(t, fixture.month), 2000)
+		got, err := accounting.AddonCharge(purchase, instant(t, fixture.month), 2_000)
 		if err != nil || got != fixture.want {
 			t.Fatalf("Add-on month %s: got %d, %v; want %d", fixture.month, got, err, fixture.want)
 		}
 	}
-	if _, err := accounting.AddonCharge(purchase, instant(t, "2026-10-02T00:00:00Z"), 2000); err == nil {
+	if _, err := accounting.AddonCharge(purchase, instant(t, "2026-10-02T00:00:00Z"), 2_000); err == nil {
 		t.Fatal("A billing date that is not a month boundary must fail")
 	}
 	if _, err := accounting.AddonCharge(purchase, instant(t, "2026-10-01T00:00:00Z"), -1); err == nil {
@@ -97,7 +97,7 @@ func TestFirstRepresentableMonth(t *testing.T) {
 	if err != nil || !billingMonth.Equal(instant(t, "0001-02-01T00:00:00Z")) {
 		t.Fatalf("Closed first-year January must route to February: %s, %v", billingMonth, err)
 	}
-	if cents, err := accounting.AddonCharge(start, month, 2000); err != nil || cents != 2000 {
+	if cents, err := accounting.AddonCharge(start, month, 2_000); err != nil || cents != 2_000 {
 		t.Fatalf("A first-year January purchase must charge its month: %d, %v", cents, err)
 	}
 }

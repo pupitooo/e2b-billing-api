@@ -8,7 +8,7 @@ import (
 // UTCMonth returns the first instant of the timestamp's original UTC month.
 func UTCMonth(timestamp time.Time) (time.Time, error) {
 	utc := timestamp.UTC()
-	if timestamp.IsZero() || utc.Year() < 1 || utc.Year() > 9999 {
+	if timestamp.IsZero() || utc.Year() < 1 || utc.Year() > 9_999 {
 		return time.Time{}, fmt.Errorf("timestamp must have a UTC year between 1 and 9999")
 	}
 	return time.Date(utc.Year(), utc.Month(), 1, 0, 0, 0, 0, time.UTC), nil
@@ -59,7 +59,7 @@ func BillingMonth(usageMonth, receivedAt time.Time, closedMonths []time.Time) (t
 	}
 	for closed[candidate] {
 		candidate = candidate.AddDate(0, 1, 0)
-		if candidate.Year() > 9999 {
+		if candidate.Year() > 9_999 {
 			return time.Time{}, fmt.Errorf("no representable open billing month")
 		}
 	}
@@ -88,7 +88,7 @@ func AddonCharge(purchasedAt, billingMonth time.Time, priceCents int64) (int64, 
 func canonicalMonth(month time.Time) (time.Time, error) {
 	utc := month.UTC()
 	canonical := time.Date(utc.Year(), utc.Month(), 1, 0, 0, 0, 0, time.UTC)
-	if utc.Year() < 1 || utc.Year() > 9999 || !canonical.Equal(month) {
+	if utc.Year() < 1 || utc.Year() > 9_999 || !canonical.Equal(month) {
 		return time.Time{}, fmt.Errorf("month must be a UTC month boundary")
 	}
 	return canonical, nil

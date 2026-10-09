@@ -13,7 +13,7 @@ below are implementation assumptions for this reference implementation.
 
 ## Exact money and credit
 
-All amounts are USD. One cent is 1,000,000 ticks; one tick is USD 0.00000001.
+All amounts are USD. One cent is 1_000_000 ticks; one tick is USD 0.000_000_01.
 Prices remain whole cents per million resource units:
 
 ```text
@@ -28,7 +28,7 @@ integer `numeric` values. Negative amounts, fractional ticks, and overflow when
 converting to `bigint` cents are errors. The signed ledger stores positive grants
 and negative usage debits; zero entries are invalid.
 
-A 5,000-tick charge with one cent available uses 5,000 ticks and retains 995,000.
+A 5_000-tick charge with one cent available uses 5_000 ticks and retains 995_000.
 Never round a debit or balance to cents. Credit pays usage only, never add-ons.
 Allocate credit in the order transactions serialize on the customer's account
 lock, which need not be historical measurement order across delayed events.
@@ -60,7 +60,7 @@ not a credit debit or a net invoice amount.
 Use half-up on each cumulative frozen group, never on individual events:
 
 ```text
-round_cents(ticks) = floor((ticks + 500000) / 1000000)
+round_cents(ticks) = floor((ticks + 500_000) / 1_000_000)
 gross_cents = round_cents(group_gross_ticks)
 net_cents = round_cents(group_gross_ticks - group_credit_ticks)
 credit_line_cents = -(gross_cents - net_cents)
@@ -129,9 +129,9 @@ Run the existing `make migrate`. Migration `004_exact_credit.sql` converts:
 
 | Previous column | Current column | Conversion |
 | --- | --- | --- |
-| `customer_billing_state.credit_balance_cents` | `credit_balance_ticks` | cents × 1,000,000 |
-| `rated_usage_groups.allocated_credit_cents` | `allocated_credit_ticks` | cents × 1,000,000 |
-| `credit_entries.amount_cents` | `amount_ticks` | signed cents × 1,000,000 |
+| `customer_billing_state.credit_balance_cents` | `credit_balance_ticks` | cents × 1_000_000 |
+| `rated_usage_groups.allocated_credit_cents` | `allocated_credit_ticks` | cents × 1_000_000 |
+| `credit_entries.amount_cents` | `amount_ticks` | signed cents × 1_000_000 |
 
 Identities, signs, timestamps, operation keys, row counts, limits, and state
 versions survive. The runner commits schema changes and the version together
@@ -145,7 +145,7 @@ old schema, inspect affected groups with:
 ```sql
 SELECT group_id, exact_charge_ticks, allocated_credit_cents
 FROM rated_usage_groups
-WHERE allocated_credit_cents::numeric * 1000000 > exact_charge_ticks;
+WHERE allocated_credit_cents::numeric * 1_000_000 > exact_charge_ticks;
 ```
 
 Go tests cover arbitrary precision, half-cent boundaries, exact credit, split

@@ -161,7 +161,7 @@ func TestUsageBatchLimits(t *testing.T) {
 		t.Fatalf("Body at byte limit: status = %d, want 202", response.Code)
 	}
 	assertRequestError(t, postBatch(atLimit+" ", "application/json"), 413, "request_too_large", "")
-	for _, count := range []int{1000, 1001} {
+	for _, count := range []int{1_000, 1_001} {
 		body := changeBatch(t, func(b map[string]any) {
 			event := b["events"].([]any)[0]
 			events := make([]any, count)
@@ -171,7 +171,7 @@ func TestUsageBatchLimits(t *testing.T) {
 			b["events"] = events
 		})
 		response := postBatch(body, "application/json")
-		if count == 1000 {
+		if count == 1_000 {
 			if response.Code != 202 {
 				t.Fatalf("Event count at limit: status = %d, want 202", response.Code)
 			}
