@@ -37,7 +37,7 @@ paths:
         exponent notation; decoding outside int32/int64 ranges returns 400.
 
         Timestamps use RFC 3339 with an explicit offset, valid calendar values,
-        UTC years 1–9999, and at most six fractional digits. Interval ordering
+        UTC years 1000–9999, and at most six fractional digits. Interval ordering
         compares instants. Identifiers are preserved; instants normalize to UTC.
         Positive schema versions and nonblank metrics are structurally accepted;
         customer existence and supported accounting registries are future work.
@@ -142,15 +142,24 @@ paths:
             A required field is absent/null or a value violates the batch or
             measurement contract. No partial batch is accepted. Correct the
             reported value before retrying; zero units must be explicit.
+            An instant whose UTC year is outside 1000–9999 is invalid.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: invalid_batch
-                  message: must be later than period_start
-                  field: events[0].period_end
+              examples:
+                invalidInterval:
+                  value:
+                    error:
+                      code: invalid_batch
+                      message: must be later than period_start
+                      field: events[0].period_end
+                unsupportedUTCYear:
+                  value:
+                    error:
+                      code: invalid_batch
+                      message: must have a UTC year between 1000 and 9999
+                      field: events[0].period_start
         '409':
           description: |
             Different measurement content for one (source, event_id), either
@@ -234,8 +243,11 @@ components:
       pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$'
       description: |
         Valid RFC 3339 instant with an explicit offset and at most six
-        fractional digits. The corresponding UTC year must be 1–9999.
-        The zero instant 0001-01-01T00:00:00Z is reserved for a missing value.
+        fractional digits. The corresponding UTC year must be 1000–9999.
+        The minimum instant is 1000-01-01T00:00:00Z. Bounds apply after UTC
+        conversion: a local year of 1000 can be invalid if its offset moves
+        the instant into 0999, while a local year of 0999 can be valid if
+        its offset moves the instant into 1000.
     UsageEvent:
       type: object
       additionalProperties: false

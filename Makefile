@@ -61,8 +61,8 @@ help:
 	  'docs     Start Scalar documentation and the API for browser requests' \
 	  'simulate Run or resume platform usage; MODE=step releases one step' \
 	  'simulate-help Show all simulator options' \
-	  'fmt      Format project Go source with gofmt' \
-	  'fmt-check Reject Go source that differs from gofmt' \
+	  'fmt      Format Go source and decimal numeric literals' \
+	  'fmt-check Check gofmt and decimal numeric-literal grouping' \
 	  'vet      Run go vet with default and integration build tags' \
 	  'check    Run formatting and static checks together' \
 	  'install-hooks Enable staged Go checks before every commit in this clone' \

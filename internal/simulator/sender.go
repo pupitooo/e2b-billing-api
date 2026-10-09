@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const maxBatchBytes = 1048576
+const maxBatchBytes = 1_048_576
 
 // Sender controls transport independently of the saved measurements.
 type Sender struct {
@@ -43,7 +43,7 @@ func (s *Sender) validate() error {
 	if s.Client == nil || s.Client.Timeout <= 0 {
 		return fmt.Errorf("an HTTP client with a positive timeout is required")
 	}
-	if s.BatchSize < 1 || s.BatchSize > 1000 {
+	if s.BatchSize < 1 || s.BatchSize > 1_000 {
 		return fmt.Errorf("batch-size must be between 1 and 1000")
 	}
 	if s.BatchDelay < 0 || s.RetryMin <= 0 || s.RetryMax < s.RetryMin || s.RetryMax > time.Hour {
@@ -200,12 +200,12 @@ func (s *Sender) request(ctx context.Context, body []byte) (bool, time.Duration,
 		return true, 0, fmt.Errorf("HTTP outcome unknown: %w", err)
 	}
 	defer response.Body.Close()
-	data, readErr := io.ReadAll(io.LimitReader(response.Body, 65537))
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, 65_537))
 	if response.StatusCode == 429 || response.StatusCode >= 500 {
-		return true, retryAfter(response.Header.Get("Retry-After")), fmt.Errorf("HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(data[:min(len(data), 4096)])))
+		return true, retryAfter(response.Header.Get("Retry-After")), fmt.Errorf("HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(data[:min(len(data), 4_096)])))
 	}
 	if response.StatusCode != http.StatusAccepted {
-		return false, 0, fmt.Errorf("HTTP %d requires investigation; measurements retained: %s", response.StatusCode, strings.TrimSpace(string(data[:min(len(data), 4096)])))
+		return false, 0, fmt.Errorf("HTTP %d requires investigation; measurements retained: %s", response.StatusCode, strings.TrimSpace(string(data[:min(len(data), 4_096)])))
 	}
 	if readErr != nil {
 		return true, 0, fmt.Errorf("HTTP 202 body outcome unknown: %w", readErr)
@@ -214,7 +214,7 @@ func (s *Sender) request(ctx context.Context, body []byte) (bool, time.Duration,
 		Status string `json:"status"`
 	}
 	mediaType, _, mediaErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if mediaErr != nil || mediaType != "application/json" || len(data) > 65536 ||
+	if mediaErr != nil || mediaType != "application/json" || len(data) > 65_536 ||
 		decodeStrict(bytes.NewReader(data), &result) != nil || result.Status != "accepted" {
 		return false, 0, fmt.Errorf("HTTP 202 has an invalid acknowledgement; measurements retained")
 	}

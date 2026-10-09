@@ -41,4 +41,14 @@ SELECT NOT EXISTS (
     VALUES (3, 'assignment_seed');
 \endif
 
+SELECT NOT EXISTS (
+    SELECT 1 FROM schema_migrations WHERE version = 4
+) AS apply_004 \gset
+
+\if :apply_004
+    \ir 004_exact_credit.sql
+    INSERT INTO schema_migrations (version, name)
+    VALUES (4, 'exact_credit');
+\endif
+
 COMMIT;

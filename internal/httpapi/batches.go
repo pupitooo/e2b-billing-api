@@ -17,7 +17,7 @@ import (
 
 const (
 	maxBatchBytes      = 1 << 20
-	maxBatchEvents     = 1000
+	maxBatchEvents     = 1_000
 	maxIdentifierBytes = 256
 )
 

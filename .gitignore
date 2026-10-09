@@ -9,6 +9,7 @@
 /docs/architecture/*
 !/docs/architecture/billing-model.md
 !/docs/architecture/usage-to-invoice.md
+!/docs/architecture/accounting-rules.md
 !/docs/simulator/
 /docs/simulator/*
 !/docs/simulator/custom-scenario.json

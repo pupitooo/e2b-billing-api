@@ -21,7 +21,7 @@ import (
 // accounting, sustained retention, retries, and production capacity are excluded.
 func BenchmarkInboxInsertBatch(b *testing.B) {
 	for _, connections := range []int32{4, 8, 16} {
-		for _, size := range []int{100, 1000} {
+		for _, size := range []int{100, 1_000} {
 			b.Run(fmt.Sprintf("connections=%d/events=%d", connections, size), func(b *testing.B) {
 				admin := testDatabase(b, nil)
 				config := admin.Config()

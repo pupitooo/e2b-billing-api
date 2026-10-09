@@ -44,8 +44,8 @@ vet_go() {
 }
 
 case "$mode" in
-  fmt) format_go -w ;;
-  fmt-check) check_format ;;
+  fmt) go run ./cmd/number-format -fix .; format_go -w ;;
+  fmt-check) check_format; go run ./cmd/number-format . ;;
   vet) vet_go ;;
-  check) check_format; vet_go ;;
+  check) check_format; go run ./cmd/number-format .; vet_go ;;
 esac

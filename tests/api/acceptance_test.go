@@ -53,7 +53,7 @@ func TestUsageBatchesDurableAcceptance(t *testing.T) {
 			!stored.PeriodStart.Equal(event.PeriodStart) || !stored.PeriodEnd.Equal(event.PeriodEnd) {
 			t.Errorf("HTTP measurement differs: got %+v, want %+v", stored, event)
 		}
-		if receipt.Before(before) || receipt.After(after) || receipt.Nanosecond()%1000 != 0 || !pending || !errorFree {
+		if receipt.Before(before) || receipt.After(after) || receipt.Nanosecond()%1_000 != 0 || !pending || !errorFree {
 			t.Errorf("Receipt/state = %s, pending %v, error-free %v", receipt, pending, errorFree)
 		}
 		if firstReceipt.IsZero() {
@@ -64,6 +64,38 @@ func TestUsageBatchesDurableAcceptance(t *testing.T) {
 	}
 	if count := apiEventCount(t, pool, source); count != 2 {
 		t.Errorf("Committed event count = %d, want 2", count)
+	}
+}
+
+// TestUsageBatchesMinimumUTCYear accepts year 1000 and an offset-normalized local
+// year of 0999. A later invalid event below that UTC boundary must reject the
+// entire batch, preserve earlier rows, and report its period_start field.
+func TestUsageBatchesMinimumUTCYear(t *testing.T) {
+	pool, source := apiFixture(t)
+	events := apiEvents(source)
+	events[0].PeriodStart = time.Date(1000, 1, 1, 0, 0, 0, 0, time.UTC)
+	events[0].PeriodEnd = events[0].PeriodStart.Add(time.Hour)
+	events[1].PeriodStart = time.Date(999, 12, 31, 23, 30, 0, 0, time.FixedZone("UTC-01", -60*60))
+	events[1].PeriodEnd = events[1].PeriodStart.Add(time.Hour)
+	requireAccepted(t, postUsage(t, batchJSON(t, "minimum-year", events)))
+	for _, event := range events {
+		var start, end time.Time
+		if err := pool.QueryRow(context.Background(), "SELECT period_start, period_end FROM usage_inbox WHERE source = $1 AND event_id = $2", source, event.EventID).Scan(&start, &end); err != nil {
+			t.Fatalf("Read minimum-year HTTP event: %v", err)
+		}
+		if !start.Equal(event.PeriodStart) || !end.Equal(event.PeriodEnd) {
+			t.Errorf("Stored minimum-year interval = %s to %s, want %s to %s", start, end, event.PeriodStart.UTC(), event.PeriodEnd.UTC())
+		}
+	}
+	before := apiSnapshot(t, pool, source)
+	newEvent := events[0]
+	newEvent.EventID = "new-before-invalid-year"
+	invalid := events[1]
+	invalid.EventID = "invalid-year"
+	invalid.PeriodStart = time.Date(1000, 1, 1, 0, 0, 0, 0, time.FixedZone("UTC+01", 60*60))
+	requireHTTPError(t, postUsage(t, batchJSON(t, "invalid-year", []usage.Event{newEvent, invalid})), 422, "invalid_batch", "events[1].period_start", "", "")
+	if after := apiSnapshot(t, pool, source); after != before {
+		t.Errorf("Invalid-year batch changed stored rows: before %s, after %s", before, after)
 	}
 }
 
@@ -164,13 +196,13 @@ func TestUsageBatchesConcurrentRetries(t *testing.T) {
 	}
 }
 
-// TestUsageBatchesMaximumBatch sends 1000 independently keyed measurements
+// TestUsageBatchesMaximumBatch sends 1_000 independently keyed measurements
 // through the actual HTTP/database path. The inclusive event limit must commit
 // all rows with one receipt time, rather than merely passing parser validation.
 func TestUsageBatchesMaximumBatch(t *testing.T) {
 	pool, source := apiFixture(t)
 	base := apiEvents(source)[0]
-	events := make([]usage.Event, 1000)
+	events := make([]usage.Event, 1_000)
 	for index := range events {
 		events[index] = base
 		events[index].EventID = fmt.Sprintf("event-%04d", index)
@@ -184,7 +216,7 @@ func TestUsageBatchesMaximumBatch(t *testing.T) {
 		FROM usage_inbox WHERE source = $1`, source).Scan(&count, &receipts, &units); err != nil {
 		t.Fatalf("Verify maximum committed batch: %v", err)
 	}
-	if count != 1000 || receipts != 1 || units != 999*1000/2 {
+	if count != 1_000 || receipts != 1 || units != 999*1_000/2 {
 		t.Errorf("Maximum batch = %d rows, %d receipt times, %d units", count, receipts, units)
 	}
 }
@@ -261,8 +293,8 @@ func preserveHappyPathFixture(t *testing.T) {
 func apiEvents(source string) []usage.Event {
 	first := usage.Event{
 		Source: source, EventID: "first", SchemaVersion: 1, CustomerID: "acme",
-		SandboxID: "sandbox-001", Metric: "cpu_seconds", Units: 100000000,
-		PeriodStart: time.Date(2026, 10, 31, 23, 59, 59, 999999000, time.UTC).In(time.FixedZone("UTC+08", 8*60*60)),
+		SandboxID: "sandbox-001", Metric: "cpu_seconds", Units: 100_000_000,
+		PeriodStart: time.Date(2026, 10, 31, 23, 59, 59, 999_999_000, time.UTC).In(time.FixedZone("UTC+08", 8*60*60)),
 		PeriodEnd:   time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
 	}
 	second := first

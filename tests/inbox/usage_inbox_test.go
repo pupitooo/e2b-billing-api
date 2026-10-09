@@ -29,7 +29,7 @@ func TestInboxInsertBatch(t *testing.T) {
 	maximum.EventID = "maximum-values"
 	maximum.SchemaVersion, maximum.Units = 1<<31-1, 1<<63-1
 	events = append(events, maximum)
-	receipt := time.Date(2026, 11, 1, 8, 30, 5, 123456789, time.FixedZone("UTC+08", 8*60*60))
+	receipt := time.Date(2026, 11, 1, 8, 30, 5, 123_456_789, time.FixedZone("UTC+08", 8*60*60))
 	if err := store.InsertBatch(context.Background(), events, receipt); err != nil {
 		t.Fatalf("Insert batch: %v", err)
 	}
@@ -121,8 +121,8 @@ func TestInboxDatabaseFailureRollback(t *testing.T) {
 }
 
 // TestInboxInvalidValues requires explicit receipt time and validates all input
-// before committing anything. Empty batches, invalid receipts, and an invalid
-// second event must leave the private inbox empty.
+// before committing anything. Empty batches, receipts outside UTC years
+// 1000–9999, and an invalid second event must leave the private inbox empty.
 func TestInboxInvalidValues(t *testing.T) {
 	pool := testDatabase(t, nil)
 	store := inbox.NewPostgres(pool, 5*time.Second)
@@ -137,6 +137,8 @@ func TestInboxInvalidValues(t *testing.T) {
 		{"empty batch", nil, time.Now().UTC()},
 		{"missing receipt", events, time.Time{}},
 		{"invalid receipt year", events, time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)},
+		{"receipt before minimum UTC year", events, time.Date(999, 12, 31, 23, 59, 59, 0, time.UTC)},
+		{"offset moves receipt before minimum UTC year", events, time.Date(1000, 1, 1, 0, 0, 0, 0, time.FixedZone("UTC+01", 60*60))},
 		{"invalid second event", invalid, time.Now().UTC()},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -147,6 +149,27 @@ func TestInboxInvalidValues(t *testing.T) {
 				t.Errorf("Invalid batch persisted %d events", count)
 			}
 		})
+	}
+}
+
+// TestInboxMinimumUTCYear persists the first supported UTC instant expressed
+// with a local year of 0999, plus a year-1000 receipt, without shifting or losing
+// microseconds during PostgreSQL round trips.
+func TestInboxMinimumUTCYear(t *testing.T) {
+	pool := testDatabase(t, nil)
+	event := fixtureEvents()[0]
+	event.PeriodStart = time.Date(999, 12, 31, 23, 0, 0, 0, time.FixedZone("UTC-01", -60*60))
+	event.PeriodEnd = event.PeriodStart.Add(time.Microsecond)
+	receipt := event.PeriodEnd.UTC()
+	if err := inbox.NewPostgres(pool, 5*time.Second).InsertBatch(context.Background(), []usage.Event{event}, receipt); err != nil {
+		t.Fatalf("Persist minimum-year event: %v", err)
+	}
+	var start, end, received time.Time
+	if err := pool.QueryRow(context.Background(), "SELECT period_start, period_end, received_at FROM usage_inbox").Scan(&start, &end, &received); err != nil {
+		t.Fatalf("Read minimum-year event: %v", err)
+	}
+	if !start.Equal(event.PeriodStart) || !end.Equal(event.PeriodEnd) || !received.Equal(receipt) {
+		t.Errorf("Stored minimum-year timestamps = %s, %s, %s; want %s, %s, %s", start, end, received, event.PeriodStart.UTC(), event.PeriodEnd.UTC(), receipt)
 	}
 }
 
@@ -248,8 +271,8 @@ func testDatabase(t testing.TB, settings map[string]string) *pgxpool.Pool {
 func fixtureEvents() []usage.Event {
 	first := usage.Event{
 		Source: "inbox-test", EventID: "first", SchemaVersion: 1, CustomerID: "acme",
-		SandboxID: "sandbox-001", Metric: "cpu_seconds", Units: 100000000,
-		PeriodStart: time.Date(2026, 10, 31, 23, 30, 0, 123456000, time.UTC),
+		SandboxID: "sandbox-001", Metric: "cpu_seconds", Units: 100_000_000,
+		PeriodStart: time.Date(2026, 10, 31, 23, 30, 0, 123_456_000, time.UTC),
 		PeriodEnd:   time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
 	}
 	second := first

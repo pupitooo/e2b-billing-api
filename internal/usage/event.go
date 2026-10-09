@@ -2,9 +2,16 @@
 package usage
 
 import (
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
+)
+
+// MinUTCYear and MaxUTCYear bound supported calendar years after UTC conversion.
+const (
+	MinUTCYear = 1000
+	MaxUTCYear = 9999
 )
 
 // Event is a measured increment over the half-open consumption interval
@@ -80,9 +87,9 @@ func validateTimestamp(field string, value time.Time) error {
 	if value.IsZero() {
 		return &ValidationError{field, "is required"}
 	}
-	// Keep UTC instants representable by the RFC 3339 transport contract.
-	if year := value.UTC().Year(); year < 1 || year > 9999 {
-		return &ValidationError{field, "must have a UTC year between 1 and 9999"}
+	// Apply the supported year range to the instant after UTC conversion.
+	if year := value.UTC().Year(); year < MinUTCYear || year > MaxUTCYear {
+		return &ValidationError{field, fmt.Sprintf("must have a UTC year between %d and %d", MinUTCYear, MaxUTCYear)}
 	}
 	// PostgreSQL stores microseconds. Reject finer values so a later retry can
 	// compare the original measurement without losing timestamp precision.

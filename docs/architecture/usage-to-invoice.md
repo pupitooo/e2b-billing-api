@@ -1,167 +1,169 @@
-# Od spotřeby k faktuře: ticks, ocenění, kredit a databázový model
+# From usage to invoice: ticks, rating, credit, and the database model
 
-Billing postupně odpovídá na několik různých otázek: co zákazník spotřeboval, kolik tato spotřeba stojí, kolik pokryje kredit a co se objeví na konkrétní faktuře. `RatedUsageGroup` propojuje naměřenou spotřebu s účetním výsledkem. Uchovává společný cenový význam mnoha měření a jejich přesnou finanční hodnotu, takže malé částky nezmizí při zaokrouhlování.
+Billing answers several different questions in sequence: what the customer consumed, how much that consumption costs, how much credit covers, and what appears on a particular invoice. `RatedUsageGroup` connects measured usage to its accounting result. It retains the shared pricing meaning of many measurements and their exact financial value, so small charges survive rounding.
 
-Tento dokument spojuje vysvětlení z konverzace „Výpočet v ticks“ s konkrétním databázovým modelem projektu. Vede jeden malý příklad celým tokem a pak ukazuje změny cen, čerpání kreditu, zaokrouhlování, pozdní spotřebu a faktury ze zadání.
+This document connects the explanation from the "Calculating in ticks" discussion to the project's database model. It follows one small example through the entire flow, then explains price changes, credit allocation, rounding, late usage, and the assignment's invoices.
 
 ![Usage events to invoice](../diagrams/usage-to-invoice/usage-to-invoice.png)
 
-[Editovatelný Mermaid zdroj](../diagrams/usage-to-invoice/usage-to-invoice.mmd).
+[Editable Mermaid source](../diagrams/usage-to-invoice/usage-to-invoice.mmd).
 
-Schéma níže vychází z [inbox migrace 001](../../migrations/001_usage_inbox.sql) a [účetní migrace 002](../../migrations/002_billing_model.sql), připravené v [PR #8](https://github.com/pupitooo/e2b-billing-api/pull/8). [Migrace 003](../../migrations/003_assignment_seed.sql) obsahuje počáteční katalog. Tabulky připravují prostor pro účetní záznamy; vlastní rating, čerpání kreditu, zaokrouhlování a vystavování faktur zatím nejsou implementované. Fakturační tabulky jsou návrh.
+The schema below builds on [inbox migration 001](../../migrations/001_usage_inbox.sql) and [accounting migration 002](../../migrations/002_billing_model.sql), introduced in [PR #8](https://github.com/pupitooo/e2b-billing-api/pull/8). [Migration 003](../../migrations/003_assignment_seed.sql) contains the initial catalog. Migration 004 converts credit to exact ticks. Shared Go calculations for rating, credit, rounding, and UTC months are implemented in `internal/accounting`; the worker does not yet persist their results, and invoice tables remain proposed. The [financial rules](accounting-rules.md) describe the current contract.
 
-Graf zachovává požadované pořadí `Credits → Rounding`. Současný model ovšem ukládá kredit v celých centech. Doslovné odečítání kreditu v ticks před prvním zaokrouhlením proto potřebuje doplnit pravidla a schéma. V části o kreditu je tento rozdíl vysvětlen na konkrétním příkladu; dřívější návrh průběžného centového zaúčtování je popsán odděleně.
+The diagram follows the required `Credits → Rounding` order. On 9 October 2026 the user confirmed credit allocation in ticks before rounding. [Migration 004](../../migrations/004_exact_credit.sql) therefore converts balances, allocations, and the ledger to exact ticks. The earlier cent-based design is retained below as a historical alternative; the current policy uses exact ticks.
 
-## 1. Proč nestačí ukládat všechno v centech
+## 1. Why storing everything in cents is insufficient
 
-Představme si cenu ze zadání: **0,05 USD za 1 000 000 jednotek** `cpu_seconds`. V tomto příkladu jedna CPU sekunda znamená jednu jednotku. Cena za milion je tedy 5 centů.
+Consider the assignment's price: **USD 0.05 per 1_000_000 units** of `cpu_seconds`. In this example one CPU second is one resource unit. The price per million is therefore 5 cents.
 
-Platforma neposílá jedno velké měření. Pošle tisíc samostatných událostí, každou po 1 000 jednotkách:
+The platform sends 1_000 separate events, each containing 1_000 units:
 
 ```text
-1 000 events × 1 000 units = 1 000 000 units
+1_000 events × 1_000 units = 1_000_000 units
 ```
 
-Cena jednoho měření je:
+One measurement costs:
 
 ```text
-1 000 000 units -> 5 cents
-    1 000 units -> 0.005 cent -> USD 0.00005
+1_000_000 units -> 5 cents
+    1_000 units -> 0.005 cent -> USD 0.000_05
 ```
 
-Pokud každé měření hned zaokrouhlíme na celé centy, dostaneme nulu. Tisíckrát nula je stále nula, přestože milion jednotek má stát 5 centů. Výsledek by závisel na tom, zda platforma pošle jedno měření, nebo tisíc menších.
+Rounding each measurement immediately to whole cents produces zero. Multiplying zero by 1_000 still produces zero, although a million units should cost 5 cents. The result would depend on whether the platform sent one measurement or 1_000 smaller ones.
 
-Proto používáme menší přesnou jednotku peněz:
+We therefore use a smaller exact unit of money:
 
 ```text
-1 cent = 1 000 000 ticks
-1 USD  = 100 000 000 ticks
-1 tick = USD 0.00000001
+1 cent = 1_000_000 ticks
+1 USD  = 100_000_000 ticks
+1 tick = USD 0.000_000_01
 ```
 
-Jedna malá událost nyní neztratí svou cenu:
+A small event retains its value:
 
 ```text
-1 000 units -> 0.005 cent -> 5 000 ticks
+1_000 units -> 0.005 cent -> 5_000 ticks
 ```
 
-Skupina sečte přesné hodnoty:
+The group adds the exact values:
 
 ```text
-event #1          5 000 ticks
-event #2          5 000 ticks
+event #1          5_000 ticks
+event #2          5_000 ticks
 ...
-event #1000       5 000 ticks
+event #1_000      5_000 ticks
 ----------------------------
-total         5 000 000 ticks
+total         5_000_000 ticks
               = 5 cents
               = USD 0.05
 ```
 
-Je to podobné jako sčítat malé délky v milimetrech a až výsledek zobrazit v metrech. Kdybychom každý malý úsek nejprve zaokrouhlili na celé metry, část skutečné délky by zmizela.
+This resembles adding small lengths in millimeters and displaying the result in meters. Rounding every small segment to whole meters first would lose part of the actual length.
 
-**Nezaokrouhluj jednotlivá měření. Uchovej jejich přesnou hodnotu a zaokrouhluj kumulativní součet příslušné skupiny.** Ticks samy neurčují způsob zaokrouhlení; pouze zabrání předčasné ztrátě přesnosti.
+**Keep each measurement's exact value and round the cumulative total of its group.** Ticks prevent premature loss of precision; the rounding rule is a separate decision.
 
-## 2. Jeden příklad celým tokem
+## 2. One example through the entire flow
 
-Zákazník Cyberdyne spotřebuje před 15. říjnem celkem milion jednotek. Platforma je doručí jako uvedených tisíc malých událostí. V tomto prvním průchodu zákazník nemá kredit ani doplněk.
+Cyberdyne consumes a million units before 15 October. The platform delivers them as the 1_000 small events above. In this first walkthrough, the customer has no credit or add-on.
 
-| Úroveň | Co v příkladu znamená | Kde se hodnota nachází |
+| Stage | Meaning in this example | Where the value is stored |
 | --- | --- | --- |
-| Usage events | Tisíc měření po 1 000 jednotkách, s identitou, sandboxem a intervalem. | Tisíc řádků `usage_inbox`, každý s `units = 1000`. |
-| Rating | Každému měření přiřadit historickou cenu 5 centů za milion; přesná cena jednoho je 5 000 ticks. | Cena v `price_versions`; výpočet v budoucím Go workeru; vazby v `usage_ratings`. |
-| RatedUsageGroup | Jedna skupina s milionem jednotek a přesnou hrubou cenou 5 milionů ticks. | `rated_usage_groups.total_units = 1000000`, `exact_charge_ticks = 5000000`. |
-| Credits | Žádný dostupný kredit, žádný debet. Hrubá a splatná spotřeba jsou stejné. | Zůstatek v `customer_billing_state`; alokace skupiny je nula. |
-| Rounding | Za celou skupinu získáme 5 centů. | Výpočet; současné schéma má centovou projekci `booked_charge_cents`. |
-| InvoiceLine | Neměnná položka „CPU usage for October 2026“, částka 5 centů. | Navrhovaná tabulka `invoice_lines`, zatím neexistuje. |
-| Invoice | Říjnový doklad Cyberdyne, součet položek 5 centů. | Navrhovaná tabulka `invoices`, zatím neexistuje. |
+| Usage events | 1_000 measurements of 1_000 units, each with an identity, sandbox, and interval. | 1_000 `usage_inbox` rows, each with `units = 1_000`. |
+| Rating | Assign the historical price of 5 cents per million to each measurement; one costs exactly 5_000 ticks. | The price is in `price_versions`; `accounting.Rate` performs the pure Go calculation; a future writer stores links in `usage_ratings`. |
+| RatedUsageGroup | One group containing a million units and an exact gross charge of 5 million ticks. | `rated_usage_groups.total_units = 1_000_000`, `exact_charge_ticks = 5_000_000`. |
+| Credits | No available credit and no debit. Gross and payable usage are equal. | The balance is in `customer_billing_state`; the group's allocation is zero. |
+| Rounding | The whole group produces 5 cents. | A calculation; the current schema contains the cent projection `booked_charge_cents`. |
+| InvoiceLine | An immutable "CPU usage for October 2026" line for 5 cents. | The proposed `invoice_lines` table does not exist yet. |
+| Invoice | Cyberdyne's October invoice, with lines totaling 5 cents. | The proposed `invoices` table does not exist yet. |
 
-Výpočet faktury tak nemusí znovu načíst a ocenit každou malou událost. Pracuje s několika již oceněnými skupinami. Jednotlivé události přitom zůstávají dohledatelné přes vazby, takže agregace neznamená ztrátu původu účtované částky.
+Invoice calculation can work with a few already rated groups instead of loading and pricing every small event again. Individual events remain traceable through their rating links, so aggregation preserves the origin of the charge.
 
-## 3. Usage events: co se skutečně spotřebovalo
+## 3. Usage events: what was consumed
 
-Jedna událost říká například: „Sandbox zákazníka Cyberdyne spotřeboval v tomto intervalu 1 000 `cpu_seconds`.“ Je to přírůstek k započtení právě jednou, nikoli opakovaně zasílaný celoživotní stav čítače.
+An event might say: "Cyberdyne's sandbox consumed 1_000 `cpu_seconds` during this interval." It is an increment to count exactly once. A repeatedly reported lifetime counter would require a different contract.
 
-V DB je to jeden řádek `usage_inbox`:
+In the database this is one `usage_inbox` row:
 
-| Sloupce | Význam |
+| Columns | Meaning |
 | --- | --- |
-| `source`, `event_id` | Složený primární klíč měření; stejná identita se používá i při retry nebo změně dávkování. |
-| `schema_version` | Kladná verze kontraktu události, dodaná explicitně. |
-| `customer_id`, `sandbox_id`, `metric` | Kdo spotřeboval jaký prostředek a ve kterém sandboxu. |
-| `period_start`, `period_end` | Interval spotřeby v `timestamptz`; konec musí být pozdější než začátek. Pro rating pracujeme s intervalem `[start, end)`. |
-| `units` | Nezáporný celočíselný `bigint`; ještě neobsahuje peníze. |
-| `received_at` | Čas přijetí dodaný serverem. Neurčuje historickou cenu spotřeby. |
-| `processed_at`, `processing_error` | Stav účetního zpracování. Úspěšné dokončení nemůže současně mít nevyřešenou chybu. |
+| `source`, `event_id` | The measurement's composite primary key; retries and changes in batching use the same identity. |
+| `schema_version` | A positive event-contract version, supplied explicitly. |
+| `customer_id`, `sandbox_id`, `metric` | Who consumed which resource and in which sandbox. |
+| `period_start`, `period_end` | The consumption interval in `timestamptz`; the end must follow the start. Rating uses `[start, end)`. |
+| `units` | A non-negative integer `bigint` containing the resource quantity. |
+| `received_at` | The server-supplied receipt time. Historical pricing uses consumption time. |
+| `processed_at`, `processing_error` | Accounting processing state. Successful completion cannot coexist with an unresolved error. |
 
-Inbox nemá finanční sloupce ani `group_id`. Nemá ani cizí klíče na zákazníka a metriku: může trvale zachovat vstup, pro který zatím chybí katalog, a následné zpracování musí problém viditelně evidovat.
+The application supports UTC calendar years **1000 through 9999**, including the minimum instant `1000-01-01T00:00:00Z`. Validate these bounds after converting the supplied offset to UTC. For example, `1000-01-01T00:00:00+01:00` falls in UTC year 0999 and is rejected, while `0999-12-31T23:30:00-01:00` falls in UTC year 1000 and is accepted. Calendar years and timestamps use ordinary digits without underscore separators.
 
-Unikátní identita brání dvěma stejným řádkům. Ingestion navíc porovnává obsah: totožný retry zachová původní hodnoty a čas přijetí, jiné údaje pod stejným ID jsou konflikt. Úspěšný příjem do inboxu potvrzuje trvalé uložení; není potvrzením, že byl spotřebován kredit nebo vystavena faktura.
+The inbox has no financial columns, `group_id`, or foreign keys to customers and metrics. It can durably preserve input whose catalog records are missing; subsequent processing must record that problem visibly.
 
-Význam jednotky je součást kontraktu. Pokud budeme chtít zlomky CPU sekund, musíme například definovat jinou celočíselnou jednotku měření; ticks jsou jemnější jednotka **peněz**, ne automatické řešení zlomků resource units.
+The unique identity prevents duplicate rows. Ingestion also compares content: an identical retry preserves the original values and receipt time, while different content under the same ID produces a conflict. Successful inbox receipt confirms durable storage. Credit allocation and invoice issuance occur in later stages.
 
-## 4. Rating: kolik spotřeba podle tehdejší ceny stojí
+The meaning of a unit belongs to the event contract. Supporting fractions of CPU seconds would require defining another integer measurement unit, for example. Ticks provide a finer unit of **money**; fractional resource units need their own representation.
 
-Rating je budoucí Go výpočet. V tomto schématu není samostatná tabulka `rating`, která by sama prováděla ocenění. Worker vybere cenu platnou v okamžiku spotřeby a spočítá přesnou hrubou částku.
+## 4. Rating: the cost under the historical price
 
-`price_versions` uchovává `price_version_id`, volitelné `customer_id`, `metric`, `price_per_million_cents` a `effective_from`. `customer_id IS NULL` znamená výchozí cenu. Poslední platná zákaznická cena má přednost před poslední platnou výchozí cenou. Verze jsou append-only; změna ceny nepřepisuje historii.
+The pure Go calculation `accounting.Rate` performs rating; a future worker will connect it to transactional database writes. This schema has no separate `rating` table that calculates prices. The worker selects the price effective at consumption time and computes the exact gross charge.
 
-Pro současný cenový kontrakt platí:
+`price_versions` stores `price_version_id`, optional `customer_id`, `metric`, `price_per_million_cents`, and `effective_from`. `customer_id IS NULL` denotes a default price. The latest eligible customer-specific price takes precedence over the latest eligible default. Versions are append-only, so price changes preserve historical prices.
+
+For the current price contract:
 
 ```text
 exact_charge_ticks = units × price_per_million_cents
 ```
 
-Dělení milionem se v tomto násobení neobjeví, protože jeden cent už představuje milion ticks. Pro cenu 5 centů za milion je výsledek `1000 × 5 = 5000 ticks`.
+There is no division by a million in this multiplication because one cent already represents a million ticks. At 5 cents per million, the result is `1_000 × 5 = 5_000 ticks`.
 
-Sloupec s ticks používá doménu `billing_ticks` nad přesným PostgreSQL `numeric`. Přijímá pouze nezáporná konečná celá čísla. Agregované `total_units` také používají celočíselné `numeric`; celkový součet tedy nemusí být omezen rozsahem jednoho eventu typu `bigint`. Go musí použít kontrolovanou celočíselnou aritmetiku nebo libovolně velká celá čísla. Přetečení nesmí potichu změnit cenu. `float64` se pro tyto přesné peněžní výpočty nepoužije.
+The tick column uses the `billing_ticks` domain over exact PostgreSQL `numeric`. It accepts only non-negative finite integers. Aggregated `total_units` also uses integer-valued `numeric`, allowing totals beyond the `bigint` range of one event. Go must use checked integer arithmetic or arbitrary-precision integers. Overflow must fail visibly. These exact financial calculations do not use `float64`.
 
-Cena může mít v tomto modelu pouze celé centy **za milion jednotek**. To stále umožňuje ceny jednotlivých měření hluboko pod centem. Ještě jemnější ceník by potřeboval nové vymezení přesnosti; nelze pouze vložit desetinnou hodnotu do `price_per_million_cents` typu `bigint`.
+Both default and customer-specific rates support only whole cents **per million units** in this model. This still allows individual measurements to cost far less than a cent. Finer catalog prices would require a new precision contract; the `bigint` column `price_per_million_cents` cannot store a fractional-cent rate.
 
-### Příklad: proč nestačí sečíst všechny units a použít aktuální cenu
+### Example: why summing all units and using the current price fails
 
-Použijeme skutečné změny cen ze zadání: 5 a 6 centů za milion. Dřívější konverzace používala i ilustrativní cenu 8 centů; ta není součástí našeho seed katalogu.
+Use the assignment's actual price changes: 5 and 6 cents per million. The earlier discussion also used an illustrative price of 8 cents, which is outside the seed catalog.
 
-| Spotřeba Cyberdyne | Historická cena | Přesný výsledek |
+| Cyberdyne consumption | Historical price | Exact result |
 | --- | --- | --- |
-| 1 000 000 jednotek 10. října | 5 centů za milion | 5 000 000 ticks = 5 centů |
-| 1 000 000 jednotek 20. října | 6 centů za milion, platí od 15. října | 6 000 000 ticks = 6 centů |
-| Celkem | Dvě různé cenové verze | 11 000 000 ticks = 11 centů |
+| 1_000_000 units on 10 October | 5 cents per million | 5_000_000 ticks = 5 cents |
+| 1_000_000 units on 20 October | 6 cents per million, effective from 15 October | 6_000_000 ticks = 6 cents |
+| Total | Two different price versions | 11_000_000 ticks = 11 cents |
 
-Ocenit celé dva miliony pozdější cenou 6 centů by vyrobilo 12 centů. Ocenit je starou cenou 5 centů by vyrobilo 10 centů. Samotný měsíční součet units neuchovává informaci, kterou sazbou se má která část ocenit.
+Pricing both million units at the later 6-cent rate would produce 12 cents. Using the earlier 5-cent rate would produce 10 cents. A monthly total of units alone does not identify which rate applies to each part.
 
-Acme má po celé ukázkové období vlastní cenu 4 centy za milion. Změna výchozí ceny na 6 centů tuto platnou zákaznickou cenu nepřebije. Pozdní říjnová událost se také neoceňuje cenou platnou v listopadovém okamžiku přijetí.
+Acme has its own 4-cent price throughout the example period. The default change to 6 cents does not replace that eligible customer price. A late October event also uses its historical consumption price, even if it is received in November.
 
-Úspěšné přiřazení je v `usage_ratings(source, event_id, group_id)`. Primární klíč dovolí jedné inbox identitě přispět do jedné skupiny právě jednou. Cizí klíče vyžadují událost i skupinu. Vybraná cena je dohledatelná přes `rated_usage_groups.price_version_id`; rating link neukládá vlastní částku každého eventu.
+A successful assignment is recorded in `usage_ratings(source, event_id, group_id)`. Its primary key lets one inbox identity contribute to one group exactly once. Foreign keys require both the event and group. The selected price is traceable through `rated_usage_groups.price_version_id`; the rating link does not store a separate amount for each event.
 
-Každý rating segment musí spadat do jednoho UTC měsíce a jedné platné ceny. Trigger vazby kontroluje zákazníka, metriku a hranice měsíce; nevybírá cenu ani nekontroluje její změnu uprostřed intervalu. Starter rater má nepodporovaný crossing segment odmítnout jako viditelnou chybu zpracování. Rozdělení jednoho receipt mezi více cenových skupin by potřebovalo rozšířit současnou vazbu jedna událost–jedna skupina a určit, jak přesně rozdělit units.
+Each rating segment must fit within one UTC month and one applicable price version. The link trigger checks the customer, metric, and month boundaries; it neither selects the price nor checks for a price change inside the interval. The initial rater rejects unsupported crossing segments as visible processing errors. Splitting one receipt across several price groups would require extending the current one-event-to-one-group relationship and defining how to divide units precisely.
 
-## 5. RatedUsageGroup: oceněný účetní mezivýsledek
+## 5. RatedUsageGroup: the rated accounting intermediate
 
-`RatedUsageGroup` odpovídá na otázku: **„Kolik stojí tato kompatibilní spotřeba podle konkrétní historické ceny?“** Obsahuje spotřebu i peněžní výsledek. Skupina dovoluje mnoha měřením z různých sandboxů sdílet jednu hranici zaokrouhlení.
+`RatedUsageGroup` answers: **"How much does this compatible consumption cost under one historical price?"** It contains both usage and its financial result. The group lets many measurements from different sandboxes share one rounding boundary.
 
-V SQL se tabulka jmenuje `rated_usage_groups`. Její unikátní klíč je:
+The SQL table is `rated_usage_groups`. Its unique key is:
 
 ```text
 (customer_id, price_version_id, usage_month, billing_month)
 ```
 
-`metric` je také uložená a musí odpovídat cenové verzi. Všechny částky jsou v USD, proto zde není měnový rozměr. Jiný zákazník, cena, původní měsíc nebo fakturační měsíc znamená jinou skupinu. Sandbox součástí klíče není.
+`metric` is also stored and must match the price version. All amounts are USD, so the key has no currency dimension. A different customer, price, original month, or billing month creates a different group. Sandbox is outside this key.
 
-| Sloupec | Co přesně uchovává |
+| Column | What it stores |
 | --- | --- |
-| `group_id` | Stabilní identitu skupiny pro rating links a kreditové debety. |
-| `customer_id`, `price_version_id`, `metric` | Vlastníka a cenový význam skupiny. |
-| `usage_month` | První den původního měsíce spotřeby, odvozený v UTC. |
-| `billing_month` | První den období, jehož faktura má částku zahrnout; nesmí být před původním měsícem. |
-| `total_units` | Přesný součet započtených jednotek. |
-| `exact_charge_ticks` | Přesnou **hrubou cenu před kreditem**. |
-| `booked_charge_cents` | Kumulativní hrubé centy již zaúčtované podle dřívějšího návrhu průběžného zaúčtování. |
-| `allocated_credit_cents` | Dosud přidělený kredit skupině v celých centech; nejvýše `booked_charge_cents`. |
+| `group_id` | The stable group identity used by rating links and credit debits. |
+| `customer_id`, `price_version_id`, `metric` | The owner and pricing meaning of the group. |
+| `usage_month` | The first day of the original consumption month, derived in UTC. |
+| `billing_month` | The first day of the invoice period that includes the charge; it cannot precede the original month. |
+| `total_units` | The exact sum of counted units. |
+| `exact_charge_ticks` | The exact **gross charge before credit**. |
+| `booked_charge_cents` | The cumulatively rounded gross projection; exact credit allocation uses ticks. |
+| `allocated_credit_ticks` | The exact credit allocated to this group for its future invoice; at most `exact_charge_ticks`. |
 
-V konverzaci se pro hrubou cenu skupiny používal konceptuální název `gross_charge_ticks`. **Skutečný sloupec skupiny je `exact_charge_ticks`.** Název `gross_charge_ticks` existuje v jiné tabulce, `monthly_usage`, která sčítá hrubou cenu všech skupin za původní měsíc zákazníka.
+The discussion used the conceptual name `gross_charge_ticks` for a group's gross charge. **The actual group column is `exact_charge_ticks`.** The name `gross_charge_ticks` belongs to another table, `monthly_usage`, which sums the gross charges of all groups for a customer's original month.
 
-Po tisíci malých měřeních může budoucí worker vytvořit tento obsah:
+After 1_000 small measurements, a future worker could create:
 
 ```text
 customer_id             cyberdyne
@@ -169,96 +171,96 @@ metric                  cpu_seconds
 price_version_id        cpu-default-2026-10-01
 usage_month             2026-10-01
 billing_month           2026-10-01
-total_units             1 000 000
-exact_charge_ticks      5 000 000
+total_units             1_000_000
+exact_charge_ticks      5_000_000
 booked_charge_cents     5
-allocated_credit_cents  0
+allocated_credit_ticks  0
 ```
 
-`price_version_id` zde odkazuje na seeded verzi. Centové hodnoty předpokládají dřívější politiku popsanou níže; samotná migrace je nepočítá.
+`price_version_id` refers to the seeded version. The cent value is a rounded gross projection; the migration itself does not calculate it.
 
-Skupina je současně pravidlo správnosti: pokud bychom do klíče přidali sandbox nebo batch, každý z nich by dostal vlastní zaokrouhlení a stejné celkové units by mohly vytvořit jinou cenu. Cenu nebo měsíce naopak vynechat nemůžeme, protože bychom smíchali odlišný účetní význam.
+Grouping also enforces a correctness rule: adding sandbox or batch to the key would give each one its own rounding boundary, potentially changing the charge for the same total units. Omitting price or months would combine consumption with different accounting meanings.
 
-Identita skupiny se nesmí měnit; její součty jsou zatím proměnlivé. DB ještě nemá zmrazení po fakturaci. Automaticky ani nedokazuje, že `total_units` odpovídá sumě propojených událostí, ticks odpovídají ceně a centy zvolenému zaokrouhlení. Tyto vztahy musí udržovat a ověřovat budoucí finanční writer.
+A group's identity cannot change, but its running totals remain mutable. The database does not yet freeze groups after invoicing. It also does not automatically prove that `total_units` equals the linked events' sum, ticks match the selected price, or cents follow the rounding rule. Future financial writers must maintain and verify these relationships.
 
-## 6. Credits: hrubá cena, použitý kredit a zůstatek
+## 6. Credits: gross charge, allocated credit, and balance
 
-Hrubá cena popisuje hodnotu spotřeby. Kredit je jiná operace: říká, jaká část této ceny už bude pokryta prostředky zákazníka.
+The gross charge describes the value of consumption. Credit determines how much of that charge is covered by the customer's available funds.
 
 ```text
-gross usage charge       USD 10.00 = 1 000 cents = 1 000 000 000 ticks
-applied credit          -USD  7.00 =  -700 cents =  -700 000 000 ticks
+gross usage charge       USD 10.00 = 1_000 cents = 1_000_000_000 ticks
+applied credit          -USD  7.00 =  -700 cents =  -700_000_000 ticks
 ----------------------------------------------------------------------
-payable usage            USD  3.00 =   300 cents =   300 000 000 ticks
+payable usage            USD  3.00 =   300 cents =   300_000_000 ticks
 ```
 
-`exact_charge_ticks` zůstane 1 000 000 000. Nenahradíme ho 300 000 000, protože by se ztratila původní cena spotřeby. Stejně tak kredit nezmění `total_units` ani historickou cenu.
+`exact_charge_ticks` remains 1_000_000_000. Replacing it with 300_000_000 would lose the original consumption value. Credit also preserves `total_units` and the historical price.
 
-V současném schématu odpovídají kreditům tři místa:
+The current schema represents credit in three places:
 
-| Místo | Otázka, na kterou odpovídá |
+| Location | Question answered |
 | --- | --- |
-| `credit_entries` | Které přidělení nebo čerpání změnilo účet a proč? |
-| `customer_billing_state.credit_balance_cents` | Kolik kreditu je nyní dostupné? |
-| `rated_usage_groups.allocated_credit_cents` | Kolik kreditu má tato skupina zachovat pro budoucí fakturu? |
+| `credit_entries` | Which grant or debit changed the account, and why? |
+| `customer_billing_state.credit_balance_ticks` | How much exact credit is available now? |
+| `rated_usage_groups.allocated_credit_ticks` | How much exact credit must this group retain for its future invoice? |
 
-Ledger má `credit_entry_id`, `customer_id`, stabilní `operation_id`, volitelné `group_id`, znaménkovou částku `amount_cents` a `recorded_at`. Grant je kladný bez skupiny; čerpání je záporné s vazbou na skupinu téhož zákazníka. Nulový debet se nevytváří. Záznamy jsou append-only a `(customer_id, operation_id)` je unikátní, aby opakování jedné operace nepřidělilo nebo nespotřebovalo kredit podruhé.
+The ledger contains `credit_entry_id`, `customer_id`, a stable `operation_id`, optional `group_id`, a signed `amount_ticks`, and `recorded_at`. A grant is positive and has no group; a debit is negative and links to a group owned by the same customer. Zero debits are omitted. Records are append-only, and `(customer_id, operation_id)` is unique so retrying one operation cannot grant or consume credit twice.
 
-Zůstatek je rychlá projekce ledgeru. Budoucí writer musí před čerpáním zamknout řádek `customer_billing_state` a společně změnit zůstatek, ledger, alokaci skupiny a `state_version`. DB sama nevypočítává součet ledgeru ani nekontroluje shodu těchto projekcí.
+The balance is a fast ledger projection. Before allocating credit, a future writer must lock the `customer_billing_state` row and change the balance, ledger, group allocation, and `state_version` together. The database does not calculate the ledger sum or verify agreement between these projections automatically.
 
-### Proč se limit počítá z hrubé ceny
+### Why the limit uses gross charges
 
-Ve výše uvedeném příkladu se pro měsíční limit započte 10 USD, i když zákazník zaplatí za spotřebu jen 3 USD. `monthly_usage.gross_charge_ticks` drží cenu podle **původního UTC měsíce spotřeby**, bez odečtení kreditu a bez přičtení doplňků.
+The example above counts USD 10 toward the monthly limit even though the customer pays only USD 3 for usage. `monthly_usage.gross_charge_ticks` retains the charge in the **original UTC consumption month**, before credit and excluding add-ons.
 
-Limit z `customer_billing_state.spend_limit_cents` se převede na stejnou přesnost. Pro nastavený limit platí:
+Convert `customer_billing_state.spend_limit_cents` to the same precision. For a configured limit:
 
 ```text
-reached = gross_charge_ticks >= spend_limit_cents × 1 000 000
+reached = gross_charge_ticks >= spend_limit_cents × 1_000_000
 ```
 
-Limit 8 USD je tedy při hrubé spotřebě 10 USD dosažený, i když splatná spotřeba je jen 3 USD. Nenastavený limit (`NULL`) znamená bez limitu; nula je dosažená už při nulové spotřebě. Billing dál přijme a zaúčtuje všechna naměřená data. Kredit hradí pouze spotřebu; měsíční `concurrency_pack` za 20 USD jím pokrýt nelze.
+A USD 8 limit is therefore reached at USD 10 of gross consumption, even when payable usage is only USD 3. An unset limit (`NULL`) means unlimited; a zero limit is reached even with zero usage. Billing continues to accept and account for all measured consumption. Credit pays for usage only; it cannot cover the USD 20 monthly `concurrency_pack`.
 
-### Co přesně znamená kredit před zaokrouhlením
+### What credit before rounding means
 
-Celý cent kreditu lze přesně převést na ticks. Přesná spotřeba ale může z kreditu odebrat méně než cent:
+A whole cent of credit converts exactly to ticks. Exact usage can consume less than a cent of that credit:
 
 ```text
-available credit = 1 cent = 1 000 000 ticks
-gross usage = 5 000 ticks
-applied credit = min(1 000 000, 5 000) = 5 000 ticks
-remaining credit = 995 000 ticks = 0.995 cent
+available credit = 1 cent = 1_000_000 ticks
+gross usage = 5_000 ticks
+applied credit = min(1_000_000, 5_000) = 5_000 ticks
+remaining credit = 995_000 ticks = 0.995 cent
 net usage = 0 ticks
 ```
 
-Současné `credit_balance_cents`, `credit_entries.amount_cents` a `allocated_credit_cents` jsou `bigint`. Nemohou uložit ani tento debet, ani zbývajících 0,995 centu. Debet 5 000 ticks není totéž co jeden cent.
+Before migration 004, `credit_balance_cents`, `credit_entries.amount_cents`, and `allocated_credit_cents` were `bigint` columns. They could represent neither this debit nor the remaining 0.995 cent. A 5_000-tick debit is only a fraction of a cent.
 
-Doslovné čerpání přesného kreditu před zaokrouhlením by potřebovalo migraci, například nezáporné `credit_balance_ticks` a `allocated_credit_ticks` a znaménkové celočíselné `credit_entries.amount_ticks`. **Jsou to navrhované sloupce, nikoli existující SQL.** Současně je nutné určit pořadí alokací, převod grantů, přenos zlomku kreditu a zaokrouhlování samostatných gross/credit položek. Pouhé zaokrouhlení net částky ještě nezaručí, že samostatně zaokrouhlené řádky dají stejný součet.
+Migration 004 introduces non-negative `credit_balance_ticks` and `allocated_credit_ticks`, plus signed integer `credit_entries.amount_ticks`. It multiplies the original cents by a million and preserves history; incompatible legacy allocations exceeding exact gross charges are rejected atomically. `accounting.AllocateCredit` allocates exact credit to newly processed usage. Allocations follow transaction order under the customer lock; a later grant does not rewrite earlier allocations. Fractional-cent credit remains in the account as ticks.
 
-Dřívější návrh kompatibilní s připravenými sloupci místo toho čerpá kredit z nových kumulativních **centových přírůstků** skupiny. Ten zachovává přesné ticks spotřeby, ale operačně nejprve vypočítá hrubé centy a pak přidělí centový kredit. Tyto dvě politiky nelze zaměňovat. Požadovaný graf určuje vysvětlovaný tok; konkrétní subcentová kreditová politika zatím není implementovaná ani tímto dokumentem vybraná.
+The historical alternative compatible with the columns before migration 004 instead allocates credit against new cumulative **cent increments** of a group. It preserves exact usage ticks, but operationally computes gross cents first and then allocates cent credit. These are distinct policies. The confirmed current policy allocates exact ticks before rounding; the historical cent alternative below explains the difference.
 
-## 7. Rounding: kdy a nad čím vzniknou centy
+## 7. Rounding: when and where cents are produced
 
-Zaokrouhluje se kumulativní částka kompatibilní skupiny. Raw units ani přesné ticks se tím nemění. Vlastní pravidlo je návrhová volba: zadání vyžaduje centové faktury a ukázkové výsledky, ale neurčuje všechny hraniční případy.
+Rounding applies to the cumulative amount of a compatible group. Raw units and exact ticks retain their values. The rounding rule is a design choice: the assignment requires cent-valued invoices and the example's results, but leaves some boundary cases unspecified.
 
-Dřívější návrh používá pro nezáporné částky `half-up`, tedy polovinu centu zaokrouhlí nahoru:
+The shared `RoundCents` calculation uses `half-up` for non-negative amounts, rounding half a cent upward:
 
 ```text
-round_half_up_cents(ticks) = floor((ticks + 500 000) / 1 000 000)
+round_half_up_cents(ticks) = floor((ticks + 500_000) / 1_000_000)
 ```
 
-| Přesná částka | Výsledek |
+| Exact amount | Result |
 | --- | --- |
-| 5 000 ticks = 0,005 centu | 0 centů |
-| 499 999 ticks = 0,499999 centu | 0 centů |
-| 500 000 ticks = 0,5 centu | 1 cent |
-| 1 000 000 ticks = 1 cent | 1 cent |
-| 617 283 945 ticks = 617,283945 centu | 617 centů = 6,17 USD |
+| 5_000 ticks = 0.005 cent | 0 cents |
+| 499_999 ticks = 0.499_999 cent | 0 cents |
+| 500_000 ticks = 0.5 cent | 1 cent |
+| 1_000_000 ticks = 1 cent | 1 cent |
+| 617_283_945 ticks = 617.283_945 cents | 617 cents = USD 6.17 |
 
-Zaokrouhlení negativních kreditových řádků musí respektovat zvolenou politiku. V dosavadním centovém návrhu se vezme už přidělený kladný počet celých centů a na fakturu se přidá jeho záporná hodnota; znovu se nezaokrouhluje.
+The current `InvoiceAmounts` rounds the group's cumulative gross and net amounts. The credit line is the negative difference between those cent values, rather than an independently rounded exact debit. Line totals therefore equal rounded net usage. With 1 cent gross and exactly 0.5 cent of credit, net usage of 0.5 cent rounds to 1 cent; displayed credit is 0 cents, while the ledger retains an exact 500_000-tick debit. A future invoice snapshot must also retain those exact amounts for audit.
 
-### Dřívější návrh: průběžně zaúčtovat jen nový centový přírůstek
+### Historical design before migration 004: book only each new cent increment
 
-Zadání umožňuje zjistit zůstatek kreditu už před vystavením faktury. Dřívější návrh proto po každém eventu spočítá zaokrouhlený **celkový stav skupiny**, odečte předchozí zaúčtované centy a čerpá kredit jen z rozdílu:
+This section retains the original cent alternative and its column names at that time. The assignment allows credit balances to be queried before invoice issuance. After every event, the earlier design therefore calculates the rounded **total group state**, subtracts previously booked cents, and allocates credit only against the difference:
 
 ```text
 new_booked_cents = round_half_up_cents(new_exact_charge_ticks)
@@ -271,42 +273,42 @@ credit_balance_cents -= credit_debit_cents
 credit_entries.amount_cents = -credit_debit_cents  // only when positive
 ```
 
-Takto roste naše skupina s měřeními po 1 000 jednotkách a cenou 5 centů za milion:
+The group grows as follows with 1_000-unit measurements at 5 cents per million:
 
-| Počet událostí | `total_units` | `exact_charge_ticks` | Kumulativní `booked_charge_cents` |
+| Event count | `total_units` | `exact_charge_ticks` | Cumulative `booked_charge_cents` |
 | --- | --- | --- | --- |
-| 1 | 1 000 | 5 000 | 0 |
-| 100 | 100 000 | 500 000 | 1 |
-| 200 | 200 000 | 1 000 000 | 1 |
-| 1 000 | 1 000 000 | 5 000 000 | 5 |
+| 1 | 1_000 | 5_000 | 0 |
+| 100 | 100_000 | 500_000 | 1 |
+| 200 | 200_000 | 1_000_000 | 1 |
+| 1_000 | 1_000_000 | 5_000_000 | 5 |
 
-Přesná hodnota zůstává zachovaná i tehdy, když se průběžná centová projekce změní. Při přechodu od 100. k 200. události už je jeden cent zaúčtovaný; nepřidáme ho znovu. Součet všech centových přírůstků se rovná zaokrouhlenému výsledku celé skupiny.
+Exact values remain available when the running cent projection changes. Between the 100th and 200th events, one cent has already been booked, so it is not added again. All cent increments sum to the rounded result for the entire group.
 
-To zajišťuje stejnou hrubou cenu při různém rozdělení **téže otevřené skupiny**. Neprokazuje to nezávislost kreditových alokací na pořadí různých skupin, pozdních dat nebo nových grantů. Dřívější návrh bere kredit dostupný v okamžiku zpracování a pozdějším grantem zpětně nepřepisuje historické alokace; tato politika potřebuje explicitní worker testy.
+This preserves the same gross charge under different splits of **the same open group**. It does not prove that credit allocations are independent of the order of different groups, late input, or new grants. The earlier design uses credit available at processing time and does not retroactively change historical allocations when later grants arrive; that policy requires explicit worker tests.
 
-Na fakturu se pak zkopírují již zaúčtované gross centy a alokovaný kredit. Uzávěrka kredit podruhé nečerpá a jednotlivá měření znovu nezaokrouhluje. Tento operační návrh tedy neznamená „první převod na centy až při uzávěrce po přesném čerpání kreditu“; graf a současné centové sloupce je potřeba číst s tímto rozdílem.
+The invoice then snapshots already booked gross cents and allocated credit. Closing does not allocate credit again or round individual events again. Operationally, this historical alternative converts gross charges to cents before allocating credit. The diagram's exact-credit-before-rounding flow and the historical cent columns must be read with that distinction in mind.
 
-## 8. InvoiceLine: co je na tomto konkrétním dokladu
+## 8. InvoiceLine: what appears on a particular invoice
 
-`RatedUsageGroup` uchovává oceněný účetní mezivýsledek. `InvoiceLine` zachovává, co se skutečně objevilo na určité vystavené faktuře. Skupina může během otevřeného období růst; vydaná položka se nesmí změnit pozdějším měřením, ceníkem ani adresou.
+`RatedUsageGroup` retains the rated accounting intermediate. `InvoiceLine` preserves what appeared on a specific issued invoice. A group can grow during an open period; an issued line must retain its values when later measurements, prices, or addresses change.
 
-Tabulka `invoice_lines` zatím neexistuje. [Logický ERD](../diagrams/data-model/data-model.mmd) navrhuje:
+The `invoice_lines` table does not exist yet. The [logical ERD](../diagrams/data-model/data-model.mmd) proposes:
 
-| Navrhovaný sloupec | Význam |
+| Proposed column | Meaning |
 | --- | --- |
-| `invoice_line_id`, `invoice_id` | Identitu položky a vazbu na její fakturu. |
-| `group_id` | Volitelný odkaz pro usage nebo credit položku. |
-| `subscription_id` | Volitelný odkaz pro položku doplňku. |
-| `description_snapshot` | Neměnný popis, včetně historické sazby nebo původního měsíce, kde je to potřeba. |
-| `amount_cents` | Výslednou znaménkovou částku: spotřeba/doplněk kladně, použitý kredit záporně. |
+| `invoice_line_id`, `invoice_id` | The line identity and its invoice reference. |
+| `group_id` | An optional reference for a usage or credit line. |
+| `subscription_id` | An optional reference for an add-on line. |
+| `description_snapshot` | An immutable description, including the historical rate or original month where needed. |
+| `amount_cents` | The final signed amount: usage and add-ons are positive; allocated credit is negative. |
 
-Budoucí uzávěrka musí zachovat i potřebné množství, metriku, cenu, měsíce a kreditové detaily. Částky ani popisy vystaveného dokladu se nesmí zpětně odvozovat z proměnlivé skupiny nebo katalogu. Potřebná data se snapshotují a skupiny se uzavřou ve stejné transakci.
+Future closing must also preserve the required quantity, metric, price, months, and credit details. Issued amounts and descriptions cannot be reconstructed later from mutable groups or catalogs. Snapshot the required data and close the groups in the same transaction.
 
-Při dřívější centové politice se usage položka opře o `booked_charge_cents` a kreditová o `-allocated_credit_cents`. Prezentačně lze sloučit několik kreditových alokací do jedné položky, ale jejich původ musí zůstat dohledatelný a sloučení nesmí zavést další zaokrouhlení.
+The current policy derives usage and credit lines with `InvoiceAmounts(exact_charge_ticks, allocated_credit_ticks)`. Credit can be presented as a combined line by summing already calculated cent differences, but its origin and exact ticks must remain traceable. Combining lines cannot introduce another rounding step.
 
-Poplatek za doplněk přijde do faktury jinou cestou: `addon_subscriptions.monthly_price_cents` uchovává cenu při nákupu. Nepotřebuje resource rating ani usage kredit a už je v celých centech. Faktura tedy obsahuje i položky, které nezačaly jako usage event.
+Add-on charges reach the invoice through a separate path: `addon_subscriptions.monthly_price_cents` retains the purchase price. It requires neither resource rating nor usage credit and is already in whole cents. An invoice can therefore contain lines that did not originate as usage events.
 
-Auditní cesta spotřeby má být:
+The intended usage audit path is:
 
 ```text
 invoice line -> frozen rated group -> usage_ratings -> usage_inbox
@@ -314,67 +316,67 @@ invoice line -> frozen rated group -> usage_ratings -> usage_inbox
                                  -> credit_entries
 ```
 
-## 9. Invoice: neměnný měsíční doklad
+## 9. Invoice: an immutable monthly document
 
-Tabulka `invoices` také zatím neexistuje. Návrh obsahuje `invoice_id`, `customer_id`, `billing_month_utc`, `customer_sequence`, `address_snapshot`, `total_cents` a `issued_at_utc`. Položky se odkazují na tuto fakturu.
+The `invoices` table also does not exist yet. The proposal contains `invoice_id`, `customer_id`, `billing_month_utc`, `customer_sequence`, `address_snapshot`, `total_cents`, and `issued_at_utc`. Lines reference this invoice.
 
-Budoucí schéma musí zajistit jednu fakturu pro `(customer_id, billing_month_utc)` a unikátní `(customer_id, customer_sequence)`. Pořadí je zákaznické: `ACME-0001`, `ACME-0002`; čísla Cyberdyne ho neposouvají. Konceptuální `last_invoice_number` z ERD není v současné `customer_billing_state`, takže i číslování čeká na implementaci.
+The future schema must enforce one invoice per `(customer_id, billing_month_utc)` and a unique `(customer_id, customer_sequence)`. Numbering is per customer: `ACME-0001`, `ACME-0002`; Cyberdyne's numbers do not advance Acme's sequence. The conceptual `last_invoice_number` from the ERD is absent from the current `customer_billing_state`, so numbering still needs implementation.
 
-`total_cents` je přesný celočíselný součet znaménkových položek. Adresa vychází z `customers` v okamžiku vystavení a uloží se do snapshotu. Pozdější změna zákazníka už nesmí ovlivnit vydaný doklad.
+`total_cents` is the exact integer sum of signed lines. The address comes from `customers` at issuance and is stored in a snapshot. Later customer changes must preserve the issued document.
 
-### Příklad: celé faktury ze zadání
+### Example: complete assignment invoices
 
-Následující výsledky musí budoucí implementace reprodukovat. Jsou kompatibilní s dřívějším návrhem centového zaúčtování:
+Pure Go calculation tests verify the following results. The future runtime and invoice writer must also reproduce them through public APIs:
 
-| Položka | ACME-0001, říjen | ACME-0002, listopad | CYBERDYNE-0001, říjen |
+| Line | ACME-0001, October | ACME-0002, November | CYBERDYNE-0001, October |
 | --- | --- | --- | --- |
-| Acme usage, 4 centy/milion | 12,00 USD | 4,00 USD | — |
-| Pozdní říjnová Acme usage, 4 centy/milion | — | 2,00 USD | — |
-| Usage za 5 centů/milion | — | — | 6,17 USD |
-| Usage za 6 centů/milion | — | — | 12,00 USD |
-| `concurrency_pack` | 20,00 USD | 20,00 USD | — |
-| Použitý kredit | −12,00 USD | −6,00 USD | 0,00 USD |
-| **Celkem** | **20,00 USD** | **20,00 USD** | **18,17 USD** |
+| Acme usage, 4 cents/million | USD 12.00 | USD 4.00 | — |
+| Late October Acme usage, 4 cents/million | — | USD 2.00 | — |
+| Usage at 5 cents/million | — | — | USD 6.17 |
+| Usage at 6 cents/million | — | — | USD 12.00 |
+| `concurrency_pack` | USD 20.00 | USD 20.00 | — |
+| Allocated credit | −USD 12.00 | −USD 6.00 | USD 0.00 |
+| **Total** | **USD 20.00** | **USD 20.00** | **USD 18.17** |
 
-Acme dostane grant 25 USD (`amount_cents = 2500`). Říjnových 300 milionů units při ceně 4 centy za milion má hodnotu `1 200 000 000 ticks`, tedy 1 200 centů. Použití 12 USD kreditu ponechá 13 USD. Faktura má spotřebu `1200`, kredit `-1200` a doplněk `2000`, celkem `2000` centů.
+Acme receives a USD 25 grant (`amount_ticks = 2_500_000_000`). October's 300 million units at 4 cents per million produce `1_200_000_000 ticks`, or 1_200 cents. Allocating USD 12 of credit leaves USD 13. The invoice contains usage of `1_200`, credit of `-1_200`, and an add-on of `2_000`, totaling `2_000` cents.
 
-V listopadovém dokladu je pozdní říjen za 2 USD a listopad za 4 USD. Jejich skupiny mají oddělené původní měsíce; dohromady spotřebují 6 USD kreditu. Zůstatek klesne ze 13 na 7 USD. Doplněk má dalších 20 USD a kredit ho nehradí. Faktura opět vyjde na 20 USD. Vystavení ani opakovaný požadavek nesmí kredit odečíst ještě jednou.
+November's invoice includes USD 2 of late October usage and USD 4 of November usage. Their groups have separate original months; together they consume USD 6 of credit. The balance falls from USD 13 to USD 7. The add-on contributes another USD 20 and cannot consume credit. The invoice again totals USD 20. Issuance and retries must not deduct credit a second time.
 
-Cyberdyne má v první sazbě `123 456 789 × 5 = 617 283 945 ticks`, po zaokrouhlení 617 centů. Druhá sazba vytvoří jinou skupinu s `200 000 000 × 6 = 1 200 000 000 ticks`, tedy 1 200 centů. Součet faktury je 1 817 centů. Hrubá přesná říjnová spotřeba je `1 817 283 945 ticks`, nad limitem 15 USD (`1 500 000 000 ticks`). Za listopad se limit vyhodnocuje proti listopadovému gross stavu; není potřeba měnit říjnovou fakturu.
+Cyberdyne's first rate gives `123_456_789 × 5 = 617_283_945 ticks`, rounded to 617 cents. The second rate creates another group with `200_000_000 × 6 = 1_200_000_000 ticks`, or 1_200 cents. The invoice totals 1_817 cents. Exact gross October usage is `1_817_283_945 ticks`, above the USD 15 limit (`1_500_000_000 ticks`). November's limit is evaluated against November's gross state; October's invoice retains its issued values.
 
-## 10. Pozdní spotřeba: dvě různá období jsou záměr
+## 10. Late usage: why there are two distinct periods
 
-Acme spotřebuje 50 milionů units 30. října, ale platforma je doručí až po vystavení říjnové faktury. Ocenění stále použije říjnovou zákaznickou cenu 4 centy za milion:
+Acme consumes 50 million units on 30 October, but the platform delivers them after October's invoice has been issued. Rating still uses October's customer-specific price of 4 cents per million:
 
 ```text
-50 000 000 × 4 = 200 000 000 ticks = USD 2.00
+50_000_000 × 4 = 200_000_000 ticks = USD 2.00
 ```
 
-Nová skupina ponese:
+The new group has:
 
 ```text
 usage_month    2026-10-01
 billing_month  2026-11-01
 ```
 
-Listopadových 100 milionů units bude jiná skupina:
+November's 100 million units form another group:
 
 ```text
 usage_month    2026-11-01
 billing_month  2026-11-01
-exact_charge_ticks  400 000 000
+exact_charge_ticks  400_000_000
 ```
 
-Listopadová faktura tak zahrne 2 USD za říjen a 4 USD za listopad, ale gross projekce pro limity přiřadí 2 USD zpět říjnu. Acme bude mít po doúčtování gross říjen 14 USD a gross listopad 4 USD. Vydaná říjnová faktura zůstane stejná.
+November's invoice includes USD 2 for October and USD 4 for November, while the gross projection for limits assigns the USD 2 back to October. After the late charge, Acme's gross usage is USD 14 for October and USD 4 for November. The issued October invoice remains immutable.
 
-Právě proto nestačí jediný sloupec „month“ a právě proto oceněná skupina není totéž co fakturační položka. Jedna popisuje původ a cenu spotřeby, druhá konkrétní doklad, na kterém je částka vyúčtována.
+A single "month" column would lose this distinction. A rated group describes the origin and cost of usage; an invoice line describes the particular issued document that bills it.
 
-Uzávěrka ještě potřebuje implementovat pevnou hranici přijatých událostí zákazníka. Počká na jejich zpracování bez držení zámku, který potřebuje worker; pod zákaznickým zámkem pak atomicky zmrazí skupiny a vytvoří fakturu s položkami. Nevyřešená chyba před touto hranicí musí uzávěrku blokovat. Pozdější vstup se nasměruje do vhodného otevřeného období. Současné schéma ukládá oba měsíce, ale tuto uzávěrku ani routing samo neprovádí.
+Closing still needs a stable boundary of accepted customer events. It waits for their processing without holding the lock needed by the worker, then atomically freezes groups and creates the invoice and its lines under the customer lock. An unresolved error before this boundary must block closing. Later input is routed to an appropriate open period. The current schema stores both months; closing and routing require application implementation.
 
-## 11. Co musí při zpracování zůstat pohromadě
+## 11. What must stay atomic during processing
 
-Worker musí v jedné transakci provést přiřazení události, změny skupiny, změnu gross měsíčního stavu, případný kreditový debet a zůstatek, `state_version` a inbox `processed_at`. Jinak by pád mohl zanechat spotřebovaný kredit bez dokončené události nebo dvojí účinek při retry.
+In one transaction, the worker must assign the event, update the group and original-month gross state, apply any credit debit and balance change, update `state_version`, and mark inbox `processed_at`. Otherwise a crash could consume credit without completing the event, or a retry could apply the financial effect twice.
 
-Unikátní `usage_ratings` je potřebná pojistka, ale sama nedokazuje kompletní právě-jednou finanční účinek. Zápisy musejí sdílet transakci a zákaznický zámek. U chyby zůstane input dohledatelný; chybějící zákazník, metrika nebo cena se nesmí tiše změnit na bezplatnou spotřebu.
+Unique `usage_ratings` links are a necessary safeguard, but do not alone prove exactly-once financial effects. Writes must share a transaction and customer lock. On error, input remains traceable; missing customers, metrics, or prices must fail visibly rather than create free consumption.
 
-Před implementací workeru je nutné vybrat subcentovou kreditovou politiku a ověřit uvedené příklady, polovinu centu, rozdělení téže spotřeby do více událostí, cenové a UTC měsíční hranice, pořadí grantů a pozdních událostí, přetečení a retry. Uzávěrka navíc potřebuje neměnné snapshoty, idempotentní číslování a shodu součtu řádků s fakturou. Jsou to zbývající implementační úkoly; tento dokument ani diagram je nevydávají za hotové chování.
+The confirmed policy allocates sub-cent ticks before rounding. Pure Go tests verify the amounts above, half-cent boundaries, split usage, price and UTC boundaries, later grants, late routing, and overflow. The worker still needs transactional integration and verification of retries, concurrency, and process failure. Closing additionally needs immutable snapshots, idempotent numbering, and agreement between line totals and invoice totals. These are remaining implementation tasks; the document and diagram distinguish them from implemented behavior.

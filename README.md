@@ -4,11 +4,11 @@ Billing service for the E2B assignment, built with Go and PostgreSQL. It provide
 
 The project uses the selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected). The [architecture comparison](docs/brainstorming/architecture-options.md) records the design rationale.
 
-The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. Financial processing and invoices are planned subsequent work.
+The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. The [financial rules](docs/architecture/accounting-rules.md) define the shared Go calculations, exact credit before rounding, and transaction/closing contract. Runtime financial processing and invoices are planned subsequent work.
 
 The [implemented PostgreSQL ERD](docs/diagrams/implemented-data-model/implemented-data-model.png) shows the actual tables, columns, and foreign keys, including `usage_ratings`. Its [editable Mermaid source](docs/diagrams/implemented-data-model/implemented-data-model.mmd) accompanies the preview.
 
-The [usage-to-invoice flow](docs/architecture/usage-to-invoice.md) maps usage events, rating, exact groups, credit, rounding, invoice lines, and invoices to database records, including the current credit precision limit and planned invoice snapshots.
+The [usage-to-invoice flow](docs/architecture/usage-to-invoice.md) maps usage events, rating, exact groups, credit, rounding, invoice lines, and invoices to database records, including exact tick credit and planned invoice snapshots.
 
 ## Local setup
 
@@ -73,29 +73,29 @@ bodies under the existing 1 MiB limit, plus decoded objects and HTTP overhead.
 
 ### Workload assumptions and measurements
 
-The assignment asks the design to consider approximately 50,000 customers,
+The assignment asks the design to consider approximately 50_000 customers,
 each running from a few to thousands of sandboxes, with minute-based reports.
 It does not prescribe an average sandbox count, batching topology, peak rate,
 or latency target, and does not require the implementation to demonstrate that
 capacity. For the following calculations, assume one metric and one event per
 active sandbox per minute, coalesced by platform collectors across customers:
 
-| Average active sandboxes per customer | Events/s | Requests/s at 1,000 events/batch |
+| Average active sandboxes per customer | Events/s | Requests/s at 1_000 events/batch |
 | --- | --- | --- |
-| 3 | 2,500 | 2.5 |
-| 10 | 8,333.3 | 8.3 |
-| 100 | 83,333.3 | 83.3 |
+| 3 | 2_500 | 2.5 |
+| 10 | 8_333.3 | 8.3 |
+| 100 | 83_333.3 | 83.3 |
 
 Rate = customers × average active sandboxes × metrics / 60. More metrics and
 retries multiply this rate. A separate batch from every customer each minute
 would instead mean about 833 HTTP requests/s, even with only ten events each.
-The 1,000-event maximum also remains subject to the 1 MiB body limit. Spread
+The 1_000-event maximum also remains subject to the 1 MiB body limit. Spread
 minute reports with jitter; a synchronized burst and recovery backlog need
 separate capacity measurements and producer buffering.
 
 On 2026-10-09, a local Docker/Linux arm64 sample used 16 concurrent writers, private
 schemas, two runs of 50 new batches, PostgreSQL 18.6, and the existing synchronous
-commit path. For 1,000-event batches, p95 latency including pool waiting was
+commit path. For 1_000-event batches, p95 latency including pool waiting was
 306–324 ms with 4 connections, 260–409 ms with 8, and 209–217 ms with 16.
 Short samples vary; more connections do not guarantee lower latency.
 Eight connections are the initial per-process budget: these observed latencies
@@ -116,7 +116,7 @@ docker compose run --rm --no-deps api go test -tags=integration -run '^$' \
 
 Tune deployments from measured p95/p99 acceptance latency, connection-acquisition
 waits, CPU, disk/WAL behavior, overload responses, and accounting backlog. At
-8,333 events/s with 1,000-event batches, a measured mean transaction time of
+8_333 events/s with 1_000-event batches, a measured mean transaction time of
 0.2 s would imply about 1.7 occupied connections on average; p95 is not the mean
 and this example does not cover peaks. Validate representative payloads, retries,
 worker competition, and sustained storage growth before changing budgets or
@@ -225,7 +225,7 @@ accepted producer metadata; it is not stored or used for deduplication.
 
 Requests require uncompressed UTF-8 `application/json`, one JSON document,
 case-sensitive field names, and no unknown or duplicate members. The body limit
-is 1 MiB (1048576 bytes), with 1–1000 events and at most 256 UTF-8 bytes per
+is 1 MiB (1_048_576 bytes), with 1–1_000 events and at most 256 UTF-8 bytes per
 identifier or optional `batch_id`. Every required event field must be explicit
 and non-null; zero units are valid. Versions and units use int32/int64 integer
 tokens without decimal or exponent notation. Consumption times require valid
@@ -236,7 +236,7 @@ Identifiers are preserved and time instants normalize to UTC.
 | --- | --- |
 | `202` | Whole batch durably committed; identical existing measurements preserved. |
 | `400` | Invalid or ambiguous JSON, incorrect types, or numeric decoding outside int32/int64 ranges. |
-| `413` | The body exceeds 1048576 bytes. |
+| `413` | The body exceeds 1_048_576 bytes. |
 | `415` | Unsupported content type, charset, or compression. |
 | `422` | Missing/null fields, invalid measurement values, or an event-count limit violation. |
 | `409` | Different measurement content for one event identity, stored or repeated in the request. |
@@ -296,10 +296,10 @@ The default scenario reproduces these exact hourly totals:
 
 | Consumption hour (UTC) | Acme `cpu_seconds` | Cyberdyne `cpu_seconds` |
 | --- | ---: | ---: |
-| October 10, 2026, 12:00 | 100000000 | 123456789 |
-| October 20, 2026, 12:00 | 200000000 | 200000000 |
-| October 30, 2026, 12:00 (late) | 50000000 | — |
-| November 3, 2026, 12:00 | 100000000 | — |
+| October 10, 2026, 12:00 | 100_000_000 | 123_456_789 |
+| October 20, 2026, 12:00 | 200_000_000 | 200_000_000 |
+| October 30, 2026, 12:00 (late) | 50_000_000 | — |
+| November 3, 2026, 12:00 | 100_000_000 | — |
 
 ### Generate, pause, resume, and replay
 
@@ -398,10 +398,10 @@ measurements for those customers. Use an isolated database for independent
 experiments. `send`, `status`, and `replay` use the saved plan directly.
 
 `INTERVAL` must divide one hour and lie between `1m` and `1h`; `SANDBOXES` is
-between 1 and 1000, and the resulting scenario is limited to 10000 events.
+between 1 and 1_000, and the resulting scenario is limited to 10_000 events.
 Division distributes the integer remainder without changing any hourly total.
 Each event represents an increment for its sandbox and interval, never a
-cumulative counter. Both API limits (1000 events and 1 MiB per request) are
+cumulative counter. Both API limits (1_000 events and 1 MiB per request) are
 respected even when long identifiers require smaller batches. Snapshot storage
 is intended for small reproducible scenarios; it is not a measured load capacity
 or a production metering implementation.
@@ -599,6 +599,8 @@ Migration [001_usage_inbox.sql](migrations/001_usage_inbox.sql) creates the inbo
 
 Migration [002_billing_model.sql](migrations/002_billing_model.sql) creates the accounting tables. [003_assignment_seed.sql](migrations/003_assignment_seed.sql) loads Acme, Cyberdyne, the historical prices, and `concurrency_pack`. Account balances start at zero with no spend limit. The seed is versioned and runs once; repeating `make migrate` preserves existing data.
 
+Migration [004_exact_credit.sql](migrations/004_exact_credit.sql) converts credit balances, group allocations, and signed ledger amounts from whole cents to exact ticks. One cent becomes 1_000_000 ticks, preserving existing history. A legacy allocation exceeding exact gross usage stops the migration atomically; see the [migration guidance](docs/architecture/accounting-rules.md#migration-and-verification) before upgrading existing financial records.
+
 To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged. The initial migration creates the usage inbox schema.
 
 ## Project layout
@@ -622,18 +624,18 @@ Enable the tracked [pre-commit hook](.githooks/pre-commit) once after cloning:
 make install-hooks
 ```
 
-Every subsequent normal commit checks the staged snapshot with `gofmt` and
-`go vet`, including integration-tagged test code. An unformatted file or a vet
-finding stops the commit. The hook preserves partial staging and never formats
-or stages files automatically. Fix reported problems, then stage the intended
+Every subsequent normal commit checks the staged snapshot with `gofmt`, the
+project's numeric-literal rule, and `go vet`, including integration-tagged test
+code. A formatting violation or vet finding stops the commit. The hook preserves
+partial staging and never formats or stages files automatically. Fix reported problems, then stage the intended
 changes and commit again.
 
 | Command | Behavior |
 | --- | --- |
-| `make fmt` | Apply standard `gofmt` formatting to project Go files. |
-| `make fmt-check` | Fail when project Go files differ from `gofmt`; change no files. |
+| `make fmt` | Group decimal numeric literals, preserve plain calendar years, and apply `gofmt`. |
+| `make fmt-check` | Check `gofmt` and numeric-literal grouping; change no files. |
 | `make vet` | Run `go vet ./...` and `go vet -tags=integration ./...`. |
-| `make check` | Run formatting and vet checks together, as CI does. |
+| `make check` | Run `gofmt`, numeric-literal, and vet checks together, as CI does. |
 | `make install-hooks` | Set this clone's `core.hooksPath` to the tracked `.githooks` directory. |
 
 These commands use installed Go when available, otherwise Docker builds the
@@ -641,6 +643,18 @@ These commands use installed Go when available, otherwise Docker builds the
 database is needed. `E2B_GO_CHECKS_DOCKER=1 make check` explicitly uses Docker;
 CI uses this mode to match the pinned project toolchain. Local private `tools/`
 worktrees and dependency directories are excluded from formatting.
+
+The [numeric-literal checker](cmd/number-format/main.go) requires underscore
+groups of three for decimal Go literals with five or more digits, for example
+`10_000` and `1_000_000`. Fractional digits group from the decimal point, as in
+`0.000_000_01`. Smaller literals may remain plain; existing separators must use
+the same grouping. Calendar years stay plain, including `2026`, year-named values,
+the year argument to `time.Date`, and comparisons with `Year()`. The checker reads
+Go syntax, so comments, string values, dates inside strings, and non-decimal
+literals are preserved. Markdown prose and calculation examples follow the same
+number style; years, dates, identifiers, URLs, and copyable language examples
+retain their required syntax. `make fmt` repairs Go literals; checks report the
+file, line, and required spelling without editing files.
 
 Hook configuration is local Git metadata and must be enabled in each clone.
 Git permits bypassing local hooks with `--no-verify`; CI independently runs the
@@ -744,7 +758,7 @@ The [Go event model](internal/usage/event.go) provides standalone application
 validation of measurement values: identifiers must contain a non-whitespace
 character, use valid UTF-8, and contain no NUL characters; schema versions must
 be positive and units non-negative. Interval endpoints must be supplied, have
-UTC years from 1 through 9999, use at most microsecond precision, and increase
+UTC years from 1000 through 9999, use at most microsecond precision, and increase
 when compared as instants. Finer timestamp precision is rejected to avoid losing
 measurement content when it is later stored in PostgreSQL. Customer existence
 and supported version or metric registries are separate concerns.

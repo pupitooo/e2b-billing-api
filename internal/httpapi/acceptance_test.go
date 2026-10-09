@@ -144,7 +144,7 @@ func TestUsageBatchStoreInput(t *testing.T) {
 			t.Errorf("Parsed store input = %+v", event)
 		}
 		if event.PeriodStart.Location() != time.UTC || receipt.Location() != time.UTC ||
-			receipt.Before(before) || receipt.After(time.Now()) || receipt.Nanosecond()%1000 != 0 {
+			receipt.Before(before) || receipt.After(time.Now()) || receipt.Nanosecond()%1_000 != 0 {
 			t.Errorf("Receipt or consumption time was not supplied canonically: %s", receipt)
 		}
 		deadline, bounded := ctx.Deadline()
