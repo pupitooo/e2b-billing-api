@@ -1,0 +1,31 @@
+---
+title: Option B - synchronous Go and PostgreSQL
+config:
+  layout: dagre
+  flowchart:
+    wrappingWidth: 300
+    nodeSpacing: 60
+    rankSpacing: 75
+---
+%% Considered alternative; not the selected implementation.
+%% Customer locks coordinate usage, credit, and closing.
+%% Receipt identity and financial effects commit together before acknowledgement.
+flowchart LR
+    platform["Sandbox platform - separate system<br/>Go simulator in the assignment<br/>Durable sender buffer<br/>Stable IDs + retry + status polling"]
+    callers["Customer / E2B administrator<br/>Closing operator"]
+    api["Billing service - Go<br/>HTTP API + synchronous accounting<br/>Pricing, credit, spend, invoice closing"]
+    database[("PostgreSQL accounting store<br/>Receipt identities + usage charges<br/>Credit ledger + spend state<br/>Immutable invoices")]
+
+    platform <-->|"HTTP / JSON<br/>POST /usage/batches<br/>Accounting result after commit"| api
+    platform <-->|"HTTP GET<br/>/customers/{id}/spend-status"| api
+    callers <-->|"HTTP commands and queries<br/>Credit, prices, add-ons,<br/>limits, invoices, closing"| api
+    api <-->|"SQL: customer lock + one transaction<br/>Deduplicate + financial effect<br/>SQL reads and commands"| database
+
+    classDef platformNode fill:#e8f1fb,stroke:#31588a,color:#172b4d;
+    classDef goModule fill:#e9f7ee,stroke:#287d4e,color:#173b28;
+    classDef storedData fill:#edf0ff,stroke:#56649c,color:#24335c;
+    classDef actor fill:#f2f3f5,stroke:#6b7280,color:#253044;
+    class platform platformNode;
+    class api goModule;
+    class database storedData;
+    class callers actor;

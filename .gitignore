@@ -1,17 +1,33 @@
 # Local documentation stays private until explicitly included.
-# The option C diagram is the only documentation artifact tracked for now.
+# Track the architecture comparison and the four option diagrams.
 /docs/*
+!/docs/brainstorming/
+/docs/brainstorming/*
+!/docs/brainstorming/architecture-options.md
 !/docs/diagrams/
 /docs/diagrams/*
+!/docs/diagrams/option-a-components/
+/docs/diagrams/option-a-components/*
+!/docs/diagrams/option-a-components/option-a-components.mmd
+!/docs/diagrams/option-a-components/option-a-components.png
+!/docs/diagrams/option-b-components/
+/docs/diagrams/option-b-components/*
+!/docs/diagrams/option-b-components/option-b-components.mmd
+!/docs/diagrams/option-b-components/option-b-components.png
 !/docs/diagrams/option-c-components/
 /docs/diagrams/option-c-components/*
 !/docs/diagrams/option-c-components/option-c-components.mmd
 !/docs/diagrams/option-c-components/option-c-components.png
+!/docs/diagrams/option-d-components/
+/docs/diagrams/option-d-components/*
+!/docs/diagrams/option-d-components/option-d-components.mmd
+!/docs/diagrams/option-d-components/option-d-components.png
 
 # Local agent instructions and editor settings.
 /AGENTS.md
 /agents.md
 /.vscode/
+/*.code-workspace
 
 # Local documentation generation tools.
 /tools/

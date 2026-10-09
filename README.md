@@ -1,6 +1,6 @@
 # E2B Billing API
 
-Billing service for the E2B assignment, using Go and the option C architecture: HTTP ingestion, a durable PostgreSQL inbox, and asynchronous accounting workers.
+Billing service for the E2B assignment, using Go and the selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected): HTTP ingestion, a durable PostgreSQL inbox, and asynchronous accounting workers. The [architecture comparison](docs/brainstorming/architecture-options.md) describes options A–D, their diagrams, and TODOs for further design and higher load.
 
 The current implementation provides PostgreSQL, versioned schema migrations, and the `usage_inbox` table. The Go API, platform simulator, accounting worker, and financial tables are planned next; there are no running HTTP endpoints yet.
 
