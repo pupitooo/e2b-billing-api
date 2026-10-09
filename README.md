@@ -1,8 +1,10 @@
 # E2B Billing API
 
-Billing service for the E2B assignment, built with Go and PostgreSQL. It provides an HTTP API, versioned database migrations, and the `usage_inbox` table.
+Billing service for the E2B assignment, built with Go and PostgreSQL. It provides an HTTP API, versioned database migrations, a usage inbox, and an accounting model with the assignment's initial catalog.
 
 The project uses the selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected). The [architecture comparison](docs/brainstorming/architecture-options.md) records the design rationale.
+
+The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. Financial processing and invoices are planned subsequent work.
 
 ## Local setup
 
@@ -296,7 +298,7 @@ List tables:
 \dt
 ```
 
-The current tables are `usage_inbox` (received usage events) and `schema_migrations` (applied migration versions). Inspect the inbox's columns, types, constraints, and indexes:
+The tables include `usage_inbox` (received events), `schema_migrations` (migration versions), and the [billing model tables](docs/architecture/billing-model.md#tables-and-relationships). Inspect the inbox's columns, types, constraints, and indexes:
 
 ```text
 \d usage_inbox
@@ -311,7 +313,17 @@ ORDER BY received_at DESC, source, event_id
 LIMIT 50;
 ```
 
-An empty result (`0 rows`) is expected after initial setup. No usage is seeded, and the integrity tests roll back their fixtures.
+An empty inbox (`0 rows`) is expected after initial setup. Migrations seed the customer, price, metric, and add-on catalog; no usage or example business actions are seeded, and integrity tests roll back their fixtures. Inspect initial account state:
+
+```sql
+TABLE customers;
+TABLE customer_billing_state;
+SELECT price_version_id, customer_id, metric,
+       price_per_million_cents / 100.0 AS usd_per_million, effective_from
+FROM price_versions
+ORDER BY metric, customer_id NULLS FIRST, effective_from;
+TABLE addons;
+```
 
 You can enter any SQL query in this session. End each SQL statement with a semicolon. For example, count stored events:
 
@@ -359,6 +371,8 @@ make migration-status
 
 Migration [001_usage_inbox.sql](migrations/001_usage_inbox.sql) creates the inbox and its partial index for pending, error-free input. Migrations are explicitly invoked, so they also run against an existing Docker volume; restarting the container does not apply them.
 
+Migration [002_billing_model.sql](migrations/002_billing_model.sql) creates the accounting tables. [003_assignment_seed.sql](migrations/003_assignment_seed.sql) loads Acme, Cyberdyne, the historical prices, and `concurrency_pack`. Account balances start at zero with no spend limit. The seed is versioned and runs once; repeating `make migrate` preserves existing data.
+
 To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged. The initial migration creates the usage inbox schema.
 
 ## Project layout
@@ -390,7 +404,7 @@ To extend the schema, add the next numbered SQL file and a corresponding version
 
 The [handler tests](internal/httpapi/handler_test.go) use `httptest` to check routes, method restrictions, and the current usage response without a running server. With a local Go toolchain, run `go test ./...`; the integration build tag keeps external API tests out of this command. `make go-test` runs the same package tests in a container without starting services.
 
-The [SQL integrity tests](tests/sql/usage_inbox.sql) apply pending migrations, check schema integrity in UTC and `Asia/Shanghai`, and roll back their test data. Output identifies the suite and time zone being tested. Any test failure makes the command fail.
+The SQL suite applies pending migrations and discovers all `tests/sql/*.sql` files. [Inbox tests](tests/sql/usage_inbox.sql), [billing model tests](tests/sql/billing_model.sql), and [assignment seed tests](tests/sql/assignment_seed.sql) run in UTC and `Asia/Shanghai` and roll back their data. Seed checks use a private schema, preserving edited application data. Output identifies the file and time zone; any failure makes the command fail.
 
 The original [API happy-path request](tests/api/usage_batches_test.go) and response
 expectations remain unchanged. The [acceptance tests](tests/api/acceptance_test.go)

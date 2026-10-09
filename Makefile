@@ -151,6 +151,9 @@ _test-db: migrate
 	@set -eu; \
 	for test_zone in UTC Asia/Shanghai; do \
 	  printf '[test:db] Running database integrity tests (timezone: %s)\n' "$$test_zone"; \
-	  $(COMPOSE) exec -T postgres sh -c 'exec psql -X --set=ON_ERROR_STOP=on --set=test_timezone="$$1" --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"' sh "$$test_zone" < tests/sql/usage_inbox.sql; \
+	  for test_file in tests/sql/*.sql; do \
+	    printf '[test:db] Running %s\n' "$$test_file"; \
+	    $(COMPOSE) exec -T postgres sh -c 'exec psql -X --set=ON_ERROR_STOP=on --set=test_timezone="$$1" --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"' sh "$$test_zone" < "$$test_file"; \
+	  done; \
 	done; \
 	printf '[test:db] Database integrity tests passed in all configured time zones.\n'
