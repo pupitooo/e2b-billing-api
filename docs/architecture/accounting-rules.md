@@ -80,6 +80,10 @@ Invoice tables and their writer remain subsequent work.
 
 ## UTC months, limits, add-ons, and late usage
 
+Consumption, receipt times, and accounting months support UTC years 1000 through
+9999. Bounds apply after converting offsets to UTC; a local year alone does not
+determine validity. Calendar years retain ordinary digits without underscores.
+
 `UsageMonth` uses the original UTC month regardless of timestamp offset.
 `LimitReached` compares that month's exact gross ticks with the limit converted
 from cents. Credit and add-ons are excluded. `NULL` means unlimited; zero is reached

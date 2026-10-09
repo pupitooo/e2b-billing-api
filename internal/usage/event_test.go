@@ -18,8 +18,8 @@ func validEvent() usage.Event {
 		CustomerID:    "acme",
 		SandboxID:     "acme-sandbox-001",
 		Metric:        "cpu_seconds",
-		PeriodStart:   time.Date(2_026, 10, 10, 12, 0, 0, 0, time.UTC),
-		PeriodEnd:     time.Date(2_026, 10, 10, 13, 0, 0, 0, time.UTC),
+		PeriodStart:   time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC),
+		PeriodEnd:     time.Date(2026, 10, 10, 13, 0, 0, 0, time.UTC),
 		Units:         100_000_000,
 	}
 }
@@ -27,7 +27,7 @@ func validEvent() usage.Event {
 // TestEventValidateValid checks measurements that the standalone value contract
 // must accept, including zero units, integer bounds, Unicode identifiers, and
 // interval instants across offsets and UTC month boundaries. It also verifies
-// that value validation does not assume customer, metric, or version registries.
+// the UTC year bounds 1000–9999 without assuming customer, metric, or version registries.
 func TestEventValidateValid(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -47,28 +47,32 @@ func TestEventValidateValid(t *testing.T) {
 			e.EventID = "測定-001"
 		}},
 		{"UTC month boundary at microsecond precision", func(e *usage.Event) {
-			e.PeriodStart = time.Date(2_026, 10, 31, 23, 59, 59, 999_999_000, time.UTC)
-			e.PeriodEnd = time.Date(2_026, 11, 1, 0, 0, 0, 0, time.UTC)
+			e.PeriodStart = time.Date(2026, 10, 31, 23, 59, 59, 999_999_000, time.UTC)
+			e.PeriodEnd = time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 		}},
 		{"offset wall clock ends earlier but instant ends later", func(e *usage.Event) {
-			e.PeriodStart = time.Date(2_026, 10, 10, 12, 0, 0, 0, time.FixedZone("UTC+02", 2*60*60))
-			e.PeriodEnd = time.Date(2_026, 10, 10, 11, 0, 0, 0, time.UTC)
+			e.PeriodStart = time.Date(2026, 10, 10, 12, 0, 0, 0, time.FixedZone("UTC+02", 2*60*60))
+			e.PeriodEnd = time.Date(2026, 10, 10, 11, 0, 0, 0, time.UTC)
 		}},
 		{"Asia Shanghai across UTC month boundary", func(e *usage.Event) {
 			zone := time.FixedZone("Asia/Shanghai", 8*60*60)
-			e.PeriodStart = time.Date(2_026, 11, 1, 7, 30, 0, 0, zone)
-			e.PeriodEnd = time.Date(2_026, 11, 1, 8, 0, 0, 0, zone)
+			e.PeriodStart = time.Date(2026, 11, 1, 7, 30, 0, 0, zone)
+			e.PeriodEnd = time.Date(2026, 11, 1, 8, 0, 0, 0, zone)
 		}},
 		{"before Unix epoch", func(e *usage.Event) {
-			e.PeriodStart = time.Date(1_969, 12, 31, 23, 59, 59, 999_999_000, time.UTC)
-			e.PeriodEnd = time.Date(1_970, 1, 1, 0, 0, 0, 0, time.UTC)
+			e.PeriodStart = time.Date(1969, 12, 31, 23, 59, 59, 999_999_000, time.UTC)
+			e.PeriodEnd = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
 		}},
 		{"lowest UTC year", func(e *usage.Event) {
-			e.PeriodStart = time.Date(1, 1, 1, 0, 0, 1, 0, time.UTC)
+			e.PeriodStart = time.Date(1000, 1, 1, 0, 0, 0, 0, time.UTC)
 			e.PeriodEnd = e.PeriodStart.Add(time.Microsecond)
 		}},
+		{"local year below minimum becomes valid in UTC", func(e *usage.Event) {
+			e.PeriodStart = time.Date(999, 12, 31, 23, 30, 0, 0, time.FixedZone("UTC-01", -60*60))
+			e.PeriodEnd = e.PeriodStart.Add(time.Hour)
+		}},
 		{"highest UTC year", func(e *usage.Event) {
-			e.PeriodStart = time.Date(9_999, 12, 31, 23, 59, 59, 999_998_000, time.UTC)
+			e.PeriodStart = time.Date(9999, 12, 31, 23, 59, 59, 999_998_000, time.UTC)
 			e.PeriodEnd = e.PeriodStart.Add(time.Microsecond)
 		}},
 	}
@@ -146,7 +150,7 @@ func TestEventValidateInvalidNumbers(t *testing.T) {
 }
 
 // TestEventValidateInvalidPeriods rejects absent, reversed, or equal interval
-// endpoints and timestamps outside the UTC range or PostgreSQL precision.
+// endpoints and timestamps outside UTC years 1000–9999 or PostgreSQL precision.
 // Offset scenarios verify that ordering uses instants rather than wall clocks,
 // preventing invalid consumption intervals from reaching later storage.
 func TestEventValidateInvalidPeriods(t *testing.T) {
@@ -163,21 +167,27 @@ func TestEventValidateInvalidPeriods(t *testing.T) {
 			e.PeriodEnd = e.PeriodStart.In(time.FixedZone("UTC+08", 8*60*60))
 		}},
 		{"offset wall clock ends later but instant ends earlier", "period_end", func(e *usage.Event) {
-			e.PeriodEnd = time.Date(2_026, 10, 10, 13, 0, 0, 0, time.FixedZone("UTC+02", 2*60*60))
+			e.PeriodEnd = time.Date(2026, 10, 10, 13, 0, 0, 0, time.FixedZone("UTC+02", 2*60*60))
 		}},
 		{"submicrosecond start", "period_start", func(e *usage.Event) { e.PeriodStart = e.PeriodStart.Add(time.Nanosecond) }},
 		{"submicrosecond end", "period_end", func(e *usage.Event) { e.PeriodEnd = e.PeriodEnd.Add(time.Nanosecond) }},
 		{"UTC start year zero", "period_start", func(e *usage.Event) {
 			e.PeriodStart = time.Date(0, 1, 1, 0, 0, 0, 0, time.UTC)
 		}},
+		{"UTC start before minimum year", "period_start", func(e *usage.Event) {
+			e.PeriodStart = time.Date(999, 12, 31, 23, 59, 59, 999_999_000, time.UTC)
+		}},
+		{"UTC end before minimum year", "period_end", func(e *usage.Event) {
+			e.PeriodEnd = time.Date(999, 12, 31, 23, 59, 59, 999_999_000, time.UTC)
+		}},
 		{"UTC end year ten thousand", "period_end", func(e *usage.Event) {
-			e.PeriodEnd = time.Date(10_000, 1, 1, 0, 0, 0, 0, time.UTC)
+			e.PeriodEnd = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
 		}},
 		{"offset moves start outside lowest UTC year", "period_start", func(e *usage.Event) {
-			e.PeriodStart = time.Date(1, 1, 1, 0, 0, 0, 0, time.FixedZone("UTC+01", 60*60))
+			e.PeriodStart = time.Date(1000, 1, 1, 0, 0, 0, 0, time.FixedZone("UTC+01", 60*60))
 		}},
 		{"offset moves end outside highest UTC year", "period_end", func(e *usage.Event) {
-			e.PeriodEnd = time.Date(9_999, 12, 31, 23, 30, 0, 0, time.FixedZone("UTC-01", -60*60))
+			e.PeriodEnd = time.Date(9999, 12, 31, 23, 30, 0, 0, time.FixedZone("UTC-01", -60*60))
 		}},
 	}
 	for _, tt := range tests {

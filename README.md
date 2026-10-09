@@ -624,18 +624,18 @@ Enable the tracked [pre-commit hook](.githooks/pre-commit) once after cloning:
 make install-hooks
 ```
 
-Every subsequent normal commit checks the staged snapshot with `gofmt` and
-`go vet`, including integration-tagged test code. An unformatted file or a vet
-finding stops the commit. The hook preserves partial staging and never formats
-or stages files automatically. Fix reported problems, then stage the intended
+Every subsequent normal commit checks the staged snapshot with `gofmt`, the
+project's numeric-literal rule, and `go vet`, including integration-tagged test
+code. A formatting violation or vet finding stops the commit. The hook preserves
+partial staging and never formats or stages files automatically. Fix reported problems, then stage the intended
 changes and commit again.
 
 | Command | Behavior |
 | --- | --- |
-| `make fmt` | Apply standard `gofmt` formatting to project Go files. |
-| `make fmt-check` | Fail when project Go files differ from `gofmt`; change no files. |
+| `make fmt` | Group decimal numeric literals, preserve plain calendar years, and apply `gofmt`. |
+| `make fmt-check` | Check `gofmt` and numeric-literal grouping; change no files. |
 | `make vet` | Run `go vet ./...` and `go vet -tags=integration ./...`. |
-| `make check` | Run formatting and vet checks together, as CI does. |
+| `make check` | Run `gofmt`, numeric-literal, and vet checks together, as CI does. |
 | `make install-hooks` | Set this clone's `core.hooksPath` to the tracked `.githooks` directory. |
 
 These commands use installed Go when available, otherwise Docker builds the
@@ -643,6 +643,18 @@ These commands use installed Go when available, otherwise Docker builds the
 database is needed. `E2B_GO_CHECKS_DOCKER=1 make check` explicitly uses Docker;
 CI uses this mode to match the pinned project toolchain. Local private `tools/`
 worktrees and dependency directories are excluded from formatting.
+
+The [numeric-literal checker](cmd/number-format/main.go) requires underscore
+groups of three for decimal Go literals with five or more digits, for example
+`10_000` and `1_000_000`. Fractional digits group from the decimal point, as in
+`0.000_000_01`. Smaller literals may remain plain; existing separators must use
+the same grouping. Calendar years stay plain, including `2026`, year-named values,
+the year argument to `time.Date`, and comparisons with `Year()`. The checker reads
+Go syntax, so comments, string values, dates inside strings, and non-decimal
+literals are preserved. Markdown prose and calculation examples follow the same
+number style; years, dates, identifiers, URLs, and copyable language examples
+retain their required syntax. `make fmt` repairs Go literals; checks report the
+file, line, and required spelling without editing files.
 
 Hook configuration is local Git metadata and must be enabled in each clone.
 Git permits bypassing local hooks with `--no-verify`; CI independently runs the
@@ -746,7 +758,7 @@ The [Go event model](internal/usage/event.go) provides standalone application
 validation of measurement values: identifiers must contain a non-whitespace
 character, use valid UTF-8, and contain no NUL characters; schema versions must
 be positive and units non-negative. Interval endpoints must be supplied, have
-UTC years from 1 through 9_999, use at most microsecond precision, and increase
+UTC years from 1000 through 9999, use at most microsecond precision, and increase
 when compared as instants. Finer timestamp precision is rejected to avoid losing
 measurement content when it is later stored in PostgreSQL. Customer existence
 and supported version or metric registries are separate concerns.

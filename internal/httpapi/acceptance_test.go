@@ -140,7 +140,7 @@ func TestUsageBatchStoreInput(t *testing.T) {
 		if event.Source != "  platform-test  " || event.EventID != "test-event" ||
 			event.CustomerID != "acme" || event.SandboxID != "sandbox-001" ||
 			event.SchemaVersion != 1 || event.Metric != "cpu_seconds" || event.Units != 0 ||
-			!event.PeriodStart.Equal(time.Date(2_026, 10, 10, 12, 0, 0, 0, time.UTC)) {
+			!event.PeriodStart.Equal(time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)) {
 			t.Errorf("Parsed store input = %+v", event)
 		}
 		if event.PeriodStart.Location() != time.UTC || receipt.Location() != time.UTC ||

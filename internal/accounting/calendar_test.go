@@ -7,7 +7,7 @@ import (
 	"e2b/billing-api/internal/accounting"
 )
 
-// UTCMonth returns the UTC month boundary, including year one, and rejects
+// UTCMonth returns the UTC month boundary, including year 1000, and rejects
 // missing timestamps and years beyond the supported transport range.
 func TestUTCMonth(t *testing.T) {
 	tests := []struct {
@@ -24,8 +24,8 @@ func TestUTCMonth(t *testing.T) {
 		},
 		{
 			name:      "first supported year has a valid January boundary",
-			timestamp: instant(t, "0001-01-02T12:00:00Z"),
-			wantMonth: "0001-01-01T00:00:00Z",
+			timestamp: instant(t, "1000-01-02T12:00:00Z"),
+			wantMonth: "1000-01-01T00:00:00Z",
 			wantError: false,
 		},
 		{
@@ -34,8 +34,24 @@ func TestUTCMonth(t *testing.T) {
 			wantError: true,
 		},
 		{
+			name:      "UTC instant below year 1000 is rejected",
+			timestamp: instant(t, "0999-12-31T23:59:59.999999Z"),
+			wantError: true,
+		},
+		{
+			name:      "offset moves local year 1000 below the UTC minimum",
+			timestamp: instant(t, "1000-01-01T00:00:00+01:00"),
+			wantError: true,
+		},
+		{
+			name:      "offset moves local year 0999 into supported UTC year 1000",
+			timestamp: instant(t, "0999-12-31T23:30:00-01:00"),
+			wantMonth: "1000-01-01T00:00:00Z",
+			wantError: false,
+		},
+		{
 			name:      "year beyond the transport range is rejected",
-			timestamp: time.Date(10_000, 1, 1, 0, 0, 0, 0, time.UTC),
+			timestamp: time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC),
 			wantError: true,
 		},
 	}
@@ -81,9 +97,9 @@ func TestUsageMonth(t *testing.T) {
 		},
 		{
 			name:      "consumption in the first supported month is valid",
-			start:     "0001-01-02T12:00:00Z",
-			end:       "0001-01-02T13:00:00Z",
-			wantMonth: "0001-01-01T00:00:00Z",
+			start:     "1000-01-02T12:00:00Z",
+			end:       "1000-01-02T13:00:00Z",
+			wantMonth: "1000-01-01T00:00:00Z",
 			wantError: false,
 		},
 		{
@@ -108,6 +124,12 @@ func TestUsageMonth(t *testing.T) {
 			name:      "missing end is rejected",
 			start:     "2026-11-01T07:00:00+08:00",
 			end:       "",
+			wantError: true,
+		},
+		{
+			name:      "consumption before year 1000 is rejected",
+			start:     "0999-12-31T23:00:00Z",
+			end:       "1000-01-01T00:00:00Z",
 			wantError: true,
 		},
 	}
@@ -186,11 +208,11 @@ func TestBillingMonth(t *testing.T) {
 			wantError:    false,
 		},
 		{
-			name:         "closed January in year one routes to February",
-			usageMonth:   "0001-01-01T00:00:00Z",
-			receivedAt:   "0001-01-02T12:00:00Z",
-			closedMonths: []string{"0001-01-01T00:00:00Z"},
-			wantMonth:    "0001-02-01T00:00:00Z",
+			name:         "closed January in year 1000 routes to February",
+			usageMonth:   "1000-01-01T00:00:00Z",
+			receivedAt:   "1000-01-02T12:00:00Z",
+			closedMonths: []string{"1000-01-01T00:00:00Z"},
+			wantMonth:    "1000-02-01T00:00:00Z",
 			wantError:    false,
 		},
 		{
@@ -212,6 +234,25 @@ func TestBillingMonth(t *testing.T) {
 			usageMonth:   "2026-10-01T00:00:00Z",
 			receivedAt:   "",
 			closedMonths: nil,
+			wantError:    true,
+		},
+		{
+			name:       "original usage month before year 1000 is rejected",
+			usageMonth: "0999-12-01T00:00:00Z",
+			receivedAt: "1000-01-01T00:00:00Z",
+			wantError:  true,
+		},
+		{
+			name:       "receipt before year 1000 is rejected",
+			usageMonth: "1000-01-01T00:00:00Z",
+			receivedAt: "0999-12-31T23:59:59Z",
+			wantError:  true,
+		},
+		{
+			name:         "closure before year 1000 is rejected",
+			usageMonth:   "1000-01-01T00:00:00Z",
+			receivedAt:   "1000-01-01T00:00:00Z",
+			closedMonths: []string{"0999-12-01T00:00:00Z"},
 			wantError:    true,
 		},
 		{
@@ -247,7 +288,7 @@ func TestBillingMonth(t *testing.T) {
 }
 
 // AddonCharge bills the full monthly price from the UTC purchase month onward,
-// including year one, and rejects a noncanonical billing month or negative price.
+// including year 1000, and rejects a noncanonical billing month or negative price.
 func TestAddonCharge(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -282,9 +323,9 @@ func TestAddonCharge(t *testing.T) {
 			wantError:    false,
 		},
 		{
-			name:         "purchase in year one incurs that month's full charge",
-			purchasedAt:  "0001-01-02T12:00:00Z",
-			billingMonth: "0001-01-01T00:00:00Z",
+			name:         "purchase in year 1000 incurs that month's full charge",
+			purchasedAt:  "1000-01-02T12:00:00Z",
+			billingMonth: "1000-01-01T00:00:00Z",
 			priceCents:   2_000,
 			wantCents:    2_000,
 			wantError:    false,
@@ -301,6 +342,20 @@ func TestAddonCharge(t *testing.T) {
 			purchasedAt:  "2026-11-01T07:59:59+08:00",
 			billingMonth: "2026-10-01T00:00:00Z",
 			priceCents:   -1,
+			wantError:    true,
+		},
+		{
+			name:         "purchase before year 1000 is rejected",
+			purchasedAt:  "0999-12-31T23:59:59Z",
+			billingMonth: "1000-01-01T00:00:00Z",
+			priceCents:   2_000,
+			wantError:    true,
+		},
+		{
+			name:         "billing month before year 1000 is rejected",
+			purchasedAt:  "1000-01-01T00:00:00Z",
+			billingMonth: "0999-12-01T00:00:00Z",
+			priceCents:   2_000,
 			wantError:    true,
 		},
 	}

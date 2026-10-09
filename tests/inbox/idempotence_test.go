@@ -23,7 +23,7 @@ func TestInboxIdenticalRetry(t *testing.T) {
 			pool := testDatabase(t, nil)
 			store := inbox.NewPostgres(pool, 5*time.Second)
 			event := fixtureEvents()[0]
-			receipt := time.Date(2_026, 11, 1, 0, 30, 0, 0, time.UTC)
+			receipt := time.Date(2026, 11, 1, 0, 30, 0, 0, time.UTC)
 			if err := store.InsertBatch(context.Background(), []usage.Event{event}, receipt); err != nil {
 				t.Fatalf("Seed original event: %v", err)
 			}
@@ -230,7 +230,7 @@ func TestInboxWaitingWriter(t *testing.T) {
 			}
 			defer holder.Rollback(context.Background())
 			event := fixtureEvents()[0]
-			originalReceipt := time.Date(2_026, 11, 1, 0, 30, 0, 0, time.UTC)
+			originalReceipt := time.Date(2026, 11, 1, 0, 30, 0, 0, time.UTC)
 			if _, err := holder.Exec(context.Background(), `
 				INSERT INTO usage_inbox
 					(source, event_id, schema_version, customer_id, sandbox_id, metric,

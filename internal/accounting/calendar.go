@@ -3,13 +3,15 @@ package accounting
 import (
 	"fmt"
 	"time"
+
+	"e2b/billing-api/internal/usage"
 )
 
 // UTCMonth returns the first instant of the timestamp's original UTC month.
 func UTCMonth(timestamp time.Time) (time.Time, error) {
 	utc := timestamp.UTC()
-	if timestamp.IsZero() || utc.Year() < 1 || utc.Year() > 9_999 {
-		return time.Time{}, fmt.Errorf("timestamp must have a UTC year between 1 and 9999")
+	if timestamp.IsZero() || utc.Year() < usage.MinUTCYear || utc.Year() > usage.MaxUTCYear {
+		return time.Time{}, fmt.Errorf("timestamp must have a UTC year between %d and %d", usage.MinUTCYear, usage.MaxUTCYear)
 	}
 	return time.Date(utc.Year(), utc.Month(), 1, 0, 0, 0, 0, time.UTC), nil
 }
@@ -59,7 +61,7 @@ func BillingMonth(usageMonth, receivedAt time.Time, closedMonths []time.Time) (t
 	}
 	for closed[candidate] {
 		candidate = candidate.AddDate(0, 1, 0)
-		if candidate.Year() > 9_999 {
+		if candidate.Year() > usage.MaxUTCYear {
 			return time.Time{}, fmt.Errorf("no representable open billing month")
 		}
 	}
@@ -83,12 +85,11 @@ func AddonCharge(purchasedAt, billingMonth time.Time, priceCents int64) (int64, 
 	return priceCents, nil
 }
 
-// A calendar month is a date, not a missing timestamp. January of year one is
-// a valid month even though its UTC boundary equals Go's zero time value.
+// canonicalMonth requires a first-of-month UTC instant in the supported year range.
 func canonicalMonth(month time.Time) (time.Time, error) {
 	utc := month.UTC()
 	canonical := time.Date(utc.Year(), utc.Month(), 1, 0, 0, 0, 0, time.UTC)
-	if utc.Year() < 1 || utc.Year() > 9_999 || !canonical.Equal(month) {
+	if utc.Year() < usage.MinUTCYear || utc.Year() > usage.MaxUTCYear || !canonical.Equal(month) {
 		return time.Time{}, fmt.Errorf("month must be a UTC month boundary")
 	}
 	return canonical, nil

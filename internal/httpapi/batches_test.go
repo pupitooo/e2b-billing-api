@@ -15,7 +15,7 @@ import (
 const validUsageBatch = `{"batch_id":"test","events":[{"source":"platform-test","event_id":"test-event","schema_version":1,"customer_id":"acme","sandbox_id":"sandbox-001","metric":"cpu_seconds","period_start":"2026-10-10T12:00:00Z","period_end":"2026-10-10T13:00:00Z","units":100000000}]}`
 
 // TestUsageBatchValidInput verifies accepted transport forms, explicit zero
-// units, integer bounds, Unicode, and equivalent UTC-offset representations.
+// units, integer bounds, Unicode, and UTC-offset representations at year 1000.
 // Valid requests reach a store double that successfully confirms the batch.
 func TestUsageBatchValidInput(t *testing.T) {
 	tests := []struct {
@@ -35,6 +35,14 @@ func TestUsageBatchValidInput(t *testing.T) {
 		{"offset wall clock comparison", changeEvent(t, func(e map[string]any) {
 			e["period_start"] = "2026-10-10T12:00:00+02:00"
 			e["period_end"] = "2026-10-10T11:00:00Z"
+		})},
+		{"minimum UTC year", changeEvent(t, func(e map[string]any) {
+			e["period_start"] = "1000-01-01T00:00:00Z"
+			e["period_end"] = "1000-01-01T01:00:00Z"
+		})},
+		{"local year below minimum becomes valid in UTC", changeEvent(t, func(e map[string]any) {
+			e["period_start"] = "0999-12-31T23:30:00-01:00"
+			e["period_end"] = "1000-01-01T01:30:00Z"
 		})},
 		{"valid surrogate pair", strings.Replace(validUsageBatch, "test-event", `\ud83d\ude80`, 1)},
 		{"escaped literal surrogate text", strings.Replace(validUsageBatch, "test-event", `\\ud800`, 1)},
@@ -116,7 +124,7 @@ func TestUsageBatchInvalidJSON(t *testing.T) {
 
 // TestUsageBatchInvalidValues checks semantic rejection of otherwise correctly
 // typed JSON: required envelope values, identifiers, counts, and finite ordered
-// intervals with the precision that PostgreSQL will preserve.
+// intervals within UTC years 1000–9999 and PostgreSQL timestamp precision.
 func TestUsageBatchInvalidValues(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -141,6 +149,9 @@ func TestUsageBatchInvalidValues(t *testing.T) {
 		{"invalid offset minute", changeEvent(t, func(e map[string]any) { e["period_start"] = "2026-10-10T12:00:00+00:60" }), "events[0].period_start"},
 		{"invalid calendar date", changeEvent(t, func(e map[string]any) { e["period_start"] = "2026-02-30T12:00:00Z" }), "events[0].period_start"},
 		{"submicrosecond timestamp", changeEvent(t, func(e map[string]any) { e["period_start"] = "2026-10-10T12:00:00.0000001Z" }), "events[0].period_start"},
+		{"start below minimum UTC year", changeEvent(t, func(e map[string]any) { e["period_start"] = "0999-12-31T23:59:59Z" }), "events[0].period_start"},
+		{"end below minimum UTC year", changeEvent(t, func(e map[string]any) { e["period_end"] = "0999-12-31T23:59:59Z" }), "events[0].period_end"},
+		{"offset moves start below minimum UTC year", changeEvent(t, func(e map[string]any) { e["period_start"] = "1000-01-01T00:00:00+01:00" }), "events[0].period_start"},
 		{"equal instants in different offsets", changeEvent(t, func(e map[string]any) { e["period_end"] = "2026-10-10T20:00:00+08:00" }), "events[0].period_end"},
 		{"end before start", changeEvent(t, func(e map[string]any) { e["period_end"] = "2026-10-10T11:59:59Z" }), "events[0].period_end"},
 	}
