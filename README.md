@@ -6,7 +6,13 @@ The current implementation provides PostgreSQL, versioned schema migrations, and
 
 The [platform and billing contract](#platform-and-billing-contract) records proposed delivery responsibilities, acknowledgement rules, and agreements still to be made.
 
-## Get the source
+## Local setup
+
+### Requirements
+
+Docker with Docker Compose and Make. The PostgreSQL client runs inside the container. Run all `make` commands from the repository root.
+
+### Get the source
 
 If you do not already have a local checkout, clone the repository:
 
@@ -14,24 +20,30 @@ If you do not already have a local checkout, clone the repository:
 git clone https://github.com/pupitooo/e2b-billing-api.git
 ```
 
-## Quick start
+### Configuration
 
-Requirements: Docker with Docker Compose and Make. The PostgreSQL client runs inside the container.
+Docker Compose reads an optional local `.env` file. The defaults are sufficient for local development. Copy [.env.example](.env.example) to `.env` to change the host port or development password. Keep the same configuration for subsequent commands.
 
-Run these commands from the repository root:
+### Initialize the database
+
+On first setup, start PostgreSQL and apply the schema:
 
 ```sh
-make up
+make up SERVICE=postgres
 make migrate
 ```
 
-`make up` starts the services and waits for readiness. `make migrate` applies pending migrations to a fresh or existing database. PostgreSQL is now ready for connections; the Go API is not implemented yet.
+The database is now ready for connections. Run migrations again when an update introduces schema changes; see [Database migrations](#database-migrations). An existing database with all migrations applied needs no initialization on restart.
 
-See [Database connection](#database-connection) for connection settings, [Database migrations](#database-migrations) for migration status, and [Verification](#verification) for integrity tests.
+## Running services
 
-## Local configuration and service commands
+Start all implemented services:
 
-Docker Compose reads an optional local `.env` file. Copy `.env.example` to `.env` to change the host port or development password. Keep the same configuration for subsequent commands.
+```sh
+make up
+```
+
+`make up` starts the services and waits for readiness. It does not apply database migrations. Currently, PostgreSQL is the only implemented service; the Go API, platform simulator, and accounting worker will use the same Compose file and service commands as they are added.
 
 | Command | Purpose |
 | --- | --- |
@@ -49,7 +61,9 @@ PostgreSQL uses the pinned `postgres:18.6-alpine` image, UTC timestamps, and a n
 
 `E2B_POSTGRES_PASSWORD` initializes the role password when the volume is empty. Changing the environment variable later does not update the password in an existing database.
 
-## Database connection
+## Database
+
+### Database connection
 
 | Setting | Default |
 | --- | --- |
@@ -77,7 +91,9 @@ make psql
 
 Inside the session, run `\d usage_inbox` to inspect the table, `TABLE schema_migrations;` to inspect applied migrations, and `\q` to exit.
 
-## Database migrations
+### Database migrations
+
+With PostgreSQL running, apply pending migrations after first setup or an update that adds migrations, then inspect the applied versions:
 
 ```sh
 make migrate
@@ -89,6 +105,20 @@ make migration-status
 Migration [001_usage_inbox.sql](migrations/001_usage_inbox.sql) creates the inbox and its partial index for pending, error-free input. Migrations are explicitly invoked, so they also run against an existing Docker volume; restarting the container does not apply them.
 
 To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged. The initial migration creates the receipt schema; assignment customers, prices, credit, and invoices will be introduced with their own tables and seed data.
+
+## Verification
+
+With PostgreSQL running:
+
+```sh
+make test
+```
+
+`make test` applies pending migrations before running the tests.
+
+The SQL tests verify required application-supplied versions and receipt times, preservation of those values, duplicate identity rejection, preservation of original units, independent source namespaces, large integer totals, non-negative units, valid intervals, and valid processing state transitions. They run in a transaction and roll back their fixtures.
+
+`make test` runs the suite in both UTC and `Asia/Shanghai`. Each run sets the session time zone inside the test transaction. Fixtures near a UTC month boundary verify that stored timestamps preserve the supplied instants even when their local dates fall in the next month. UTC billing month calculations will be tested with the future accounting implementation.
 
 ## Usage inbox contract
 
@@ -167,15 +197,5 @@ The highlighted inbox is implemented in this change. The other blocks describe t
 | `GET /customers/{id}/spend-status` | Return the current UTC month, processed gross spend, limit status, and processing lag. |
 
 An accepted event may still await accounting. The worker will claim pending rows through SQL, apply prices and credit under the customer lock, and commit the financial effect with the inbox completion marker in one transaction. Monthly closing must wait for the customer's fixed boundary of accepted input before issuing an immutable invoice. The platform polls spend status independently of sending new usage.
-
-## Verification
-
-```sh
-make test
-```
-
-The SQL tests verify required application-supplied versions and receipt times, preservation of those values, duplicate identity rejection, preservation of original units, independent source namespaces, large integer totals, non-negative units, valid intervals, and valid processing state transitions. They run in a transaction and roll back their fixtures.
-
-`make test` runs the suite in both UTC and `Asia/Shanghai`. Each run sets the session time zone inside the test transaction. Fixtures near a UTC month boundary verify that stored timestamps preserve the supplied instants even when their local dates fall in the next month. UTC billing month calculations will be tested with the future accounting implementation.
 
 Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.
