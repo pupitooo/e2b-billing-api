@@ -111,7 +111,7 @@ Reproduce the short storage sample after starting PostgreSQL with
 ```sh
 docker compose build api
 docker compose run --rm --no-deps api go test -tags=integration -run '^$' \
-  -bench '^BenchmarkInboxInsertBatch$' -benchtime=50x -cpu=16 -count=2 ./tests/inbox
+  -bench '^BenchmarkPostgresInsertBatch$' -benchtime=50x -cpu=16 -count=2 ./tests/inbox
 ```
 
 Tune deployments from measured p95/p99 acceptance latency, connection-acquisition
@@ -674,7 +674,7 @@ in [gofmt](https://pkg.go.dev/cmd/gofmt) and [go vet](https://pkg.go.dev/cmd/vet
 | `make inbox-test` | Start PostgreSQL and run repository tests in private schemas. |
 | `make test SUITE=go` | Run Go unit, PostgreSQL repository, HTTP acceptance, and worker lifecycle tests; services start automatically. |
 | `make test SUITE=db` | Run only the database integrity suite in both configured time zones. |
-| `make test RUN='^TestUsageBatchesHappyPath$'` | Run only the named Go test. Supplying `RUN` selects the Go suite by default. |
+| `make test RUN='^TestPostUsageBatches$/^usage_batches_happy_path$'` | Run only the named Go scenario. Supplying `RUN` selects the Go suite by default. |
 
 `SUITE` accepts `all` (the default), `go`, or `db`. `RUN` uses the standard [Go `-run` regular-expression filter](https://go.dev/src/cmd/go/internal/test/test.go): anchors select an exact test name; a pattern such as `Usage` selects matching names. Explicit `SUITE=all RUN=Usage` runs the full SQL suite and matching Go tests. Unknown suites and `SUITE=db` combined with `RUN` fail before starting test work.
 
@@ -698,7 +698,7 @@ health, and bounded shutdown. The [worker process tests](tests/worker/lifecycle_
 start the compiled executable without an API or database dependency, verify its
 health probe, send SIGTERM, and require a clean exit with heartbeat cleanup. They
 also reject invalid startup configuration. Run them through `make test`, or
-filter with `make test RUN='^TestWorkerProcessLifecycle$'`.
+filter with `make test RUN='^TestWorkerExecutable$/^worker_process_lifecycle$'`.
 
 Simulator unit tests verify exact fixture totals, splitting, barriers, durable
 recovery, file locking after a killed process, safe retries, and retained errors.

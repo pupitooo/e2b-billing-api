@@ -9,135 +9,176 @@
 BEGIN;
 SET LOCAL TIME ZONE :'test_timezone';
 
-DO $tests$
+CREATE TEMP TABLE test_assertion_context (unused boolean) ON COMMIT DROP;
+
+-- assert_result executes one scenario's read and compares the complete named
+-- result with its explicit JSON expectation; NULL and missing rows also differ.
+CREATE FUNCTION pg_temp.assert_result(scenario text, input_sql text, want_result jsonb)
+RETURNS void LANGUAGE plpgsql AS $function$
 DECLARE
-    fixture_source constant text := 'usage-inbox-schema-test';
-    fixture_id constant text := 'acme-cpu-001';
-    fixture_version constant integer := 2;
-    -- These UTC instants display in the following month in Asia/Shanghai.
-    fixture_period_start constant timestamptz := '2026-10-31T23:00:00Z';
-    fixture_period_end constant timestamptz := '2026-10-31T23:30:00Z';
-    fixture_received_at constant timestamptz := '2026-10-31T23:30:05.123456Z';
-    fixture_processed_at constant timestamptz := '2026-10-31T23:30:10Z';
-    stored usage_inbox%ROWTYPE;
+    got_result jsonb;
 BEGIN
-    INSERT INTO usage_inbox (
-        source, event_id, schema_version, customer_id, sandbox_id, metric,
-        period_start, period_end, units, received_at
-    ) VALUES (
-        fixture_source, fixture_id, fixture_version, 'acme', 'sb-001', 'cpu_seconds',
-        fixture_period_start, fixture_period_end, 100000000, fixture_received_at
-    );
-
-    SELECT * INTO STRICT stored
-    FROM usage_inbox
-    WHERE source = fixture_source AND event_id = fixture_id;
-
-    IF stored.schema_version IS DISTINCT FROM fixture_version
-        OR stored.received_at IS DISTINCT FROM fixture_received_at
-        OR stored.processed_at IS NOT NULL OR stored.processing_error IS NOT NULL THEN
-        RAISE EXCEPTION 'New input must preserve the supplied version and receipt time and remain pending';
+    EXECUTE 'SELECT to_jsonb(result) FROM (' || input_sql || ') AS result' INTO STRICT got_result;
+    IF got_result IS DISTINCT FROM want_result THEN
+        RAISE EXCEPTION '%: result = %, want %; input SQL: %', scenario, got_result, want_result, input_sql;
     END IF;
-
-    -- Epoch comparisons also detect accidentally dropping time zone information.
-    IF EXTRACT(EPOCH FROM stored.period_start) IS DISTINCT FROM EXTRACT(EPOCH FROM fixture_period_start)
-        OR EXTRACT(EPOCH FROM stored.period_end) IS DISTINCT FROM EXTRACT(EPOCH FROM fixture_period_end)
-        OR EXTRACT(EPOCH FROM stored.received_at) IS DISTINCT FROM EXTRACT(EPOCH FROM fixture_received_at) THEN
-        RAISE EXCEPTION 'Stored timestamps must preserve the supplied UTC instants across session time zones';
-    END IF;
-
-    -- Required application values must not be silently supplied by the database.
-    BEGIN
-        INSERT INTO usage_inbox (
-            source, event_id, customer_id, sandbox_id, metric,
-            period_start, period_end, units, received_at
-        ) VALUES (
-            fixture_source, fixture_id || '-missing-version', 'acme', 'sb-001', 'cpu_seconds',
-            fixture_period_start, fixture_period_end, 100000000, fixture_received_at
-        );
-        RAISE EXCEPTION 'Input without an explicit schema version was accepted';
-    EXCEPTION WHEN not_null_violation THEN
-        NULL;
-    END;
-
-    BEGIN
-        INSERT INTO usage_inbox (
-            source, event_id, schema_version, customer_id, sandbox_id, metric,
-            period_start, period_end, units
-        ) VALUES (
-            fixture_source, fixture_id || '-missing-receipt-time', fixture_version, 'acme', 'sb-001', 'cpu_seconds',
-            fixture_period_start, fixture_period_end, 100000000
-        );
-        RAISE EXCEPTION 'Input without an explicit receipt time was accepted';
-    EXCEPTION WHEN not_null_violation THEN
-        NULL;
-    END;
-
-    -- An identity cannot be inserted twice or overwritten with changed units.
-    BEGIN
-        INSERT INTO usage_inbox (
-            source, event_id, schema_version, customer_id, sandbox_id, metric,
-            period_start, period_end, units, received_at
-        ) VALUES (
-            fixture_source, fixture_id, fixture_version, 'acme', 'sb-001', 'cpu_seconds',
-            fixture_period_start, fixture_period_end, 200000000, fixture_received_at
-        );
-        RAISE EXCEPTION 'Duplicate identity was accepted';
-    EXCEPTION WHEN unique_violation THEN
-        NULL;
-    END;
-
-    IF (SELECT units FROM usage_inbox
-        WHERE source = fixture_source AND event_id = fixture_id) <> 100000000 THEN
-        RAISE EXCEPTION 'Duplicate input changed the original measurement';
-    END IF;
-
-    -- Independent sources may use the same event ID; large totals remain exact.
-    INSERT INTO usage_inbox (
-        source, event_id, schema_version, customer_id, sandbox_id, metric,
-        period_start, period_end, units, received_at
-    ) VALUES (
-        fixture_source || '-other', fixture_id, fixture_version, 'acme', 'sb-002', 'cpu_seconds',
-        fixture_period_start, fixture_period_end, 3000000000, fixture_received_at
-    );
-
-    IF (SELECT units FROM usage_inbox
-        WHERE source = fixture_source || '-other' AND event_id = fixture_id) <> 3000000000 THEN
-        RAISE EXCEPTION 'Units must retain values beyond 32-bit integer range';
-    END IF;
-
-    BEGIN
-        UPDATE usage_inbox SET units = -1
-        WHERE source = fixture_source AND event_id = fixture_id;
-        RAISE EXCEPTION 'Negative usage was accepted';
-    EXCEPTION WHEN check_violation THEN
-        NULL;
-    END;
-
-    BEGIN
-        UPDATE usage_inbox SET period_end = period_start
-        WHERE source = fixture_source AND event_id = fixture_id;
-        RAISE EXCEPTION 'An empty usage interval was accepted';
-    EXCEPTION WHEN check_violation THEN
-        NULL;
-    END;
-
-    UPDATE usage_inbox SET processing_error = 'Price not found'
-    WHERE source = fixture_source AND event_id = fixture_id;
-
-    BEGIN
-        UPDATE usage_inbox SET processed_at = fixture_processed_at
-        WHERE source = fixture_source AND event_id = fixture_id;
-        RAISE EXCEPTION 'Errored input was marked as successfully processed';
-    EXCEPTION WHEN check_violation THEN
-        NULL;
-    END;
-
-    UPDATE usage_inbox SET processing_error = NULL, processed_at = fixture_processed_at
-    WHERE source = fixture_source AND event_id = fixture_id;
-
-    RAISE NOTICE 'usage_inbox integrity tests passed (TimeZone: %)', current_setting('TimeZone');
 END;
-$tests$;
+$function$;
+
+-- assert_rejection executes the explicit invalid write in a subtransaction.
+-- Its expected failure rolls back the write, keeping later scenarios isolated.
+CREATE FUNCTION pg_temp.assert_rejection(scenario text, input_sql text, want_sqlstate text)
+RETURNS void LANGUAGE plpgsql AS $function$
+BEGIN
+    BEGIN
+        EXECUTE input_sql;
+    EXCEPTION WHEN OTHERS THEN
+        IF SQLSTATE = want_sqlstate THEN
+            RETURN;
+        END IF;
+        RAISE EXCEPTION '%: SQLSTATE = %, want % (%); input SQL: %', scenario, SQLSTATE, want_sqlstate, SQLERRM, input_sql;
+    END;
+    RAISE EXCEPTION '%: write succeeded, want SQLSTATE %; input SQL: %', scenario, want_sqlstate, input_sql;
+END;
+$function$;
+
+-- Input: one UTC month-boundary event, explicit version two, and receipt time.
+INSERT INTO usage_inbox (
+    source, event_id, schema_version, customer_id, sandbox_id, metric,
+    period_start, period_end, units, received_at
+) VALUES (
+    'usage-inbox-schema-test', 'acme-cpu-001', 2, 'acme', 'sb-001', 'cpu_seconds',
+    '2026-10-31T23:00:00Z', '2026-10-31T23:30:00Z', 100000000, '2026-10-31T23:30:05.123456Z'
+);
+
+SELECT pg_temp.assert_result(
+    scenario => 'explicit inbox values and UTC instants survive both session time zones',
+    input_sql => $input$
+        SELECT schema_version, units,
+            to_char(period_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS period_start,
+            to_char(period_end AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS period_end,
+            to_char(received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS received_at,
+            processed_at IS NULL AS pending, processing_error IS NULL AS error_free
+        FROM usage_inbox WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'
+    $input$,
+    want_result => $want$
+    {
+        "schema_version": 2,
+        "units": 100000000,
+        "period_start": "2026-10-31T23:00:00.000000Z",
+        "period_end": "2026-10-31T23:30:00.000000Z",
+        "received_at": "2026-10-31T23:30:05.123456Z",
+        "pending": true,
+        "error_free": true
+    }
+    $want$::jsonb
+);
+
+SELECT pg_temp.assert_rejection(
+    scenario => 'schema_version must be supplied by the application',
+    input_sql => $input$
+        INSERT INTO usage_inbox (
+            source, event_id, customer_id, sandbox_id, metric, period_start, period_end, units, received_at
+        ) VALUES ('usage-inbox-schema-test', 'missing-version', 'acme', 'sb-001', 'cpu_seconds',
+            '2026-10-31T23:00:00Z', '2026-10-31T23:30:00Z', 100000000, '2026-10-31T23:30:05.123456Z')
+    $input$,
+    want_sqlstate => '23502'
+);
+
+SELECT pg_temp.assert_rejection(
+    scenario => 'received_at must be supplied by the application',
+    input_sql => $input$
+        INSERT INTO usage_inbox (
+            source, event_id, schema_version, customer_id, sandbox_id, metric, period_start, period_end, units
+        ) VALUES ('usage-inbox-schema-test', 'missing-receipt', 2, 'acme', 'sb-001', 'cpu_seconds',
+            '2026-10-31T23:00:00Z', '2026-10-31T23:30:00Z', 100000000)
+    $input$,
+    want_sqlstate => '23502'
+);
+
+SELECT pg_temp.assert_rejection(
+    scenario => 'duplicate source and event identity cannot overwrite units',
+    input_sql => $input$
+        INSERT INTO usage_inbox (
+            source, event_id, schema_version, customer_id, sandbox_id, metric,
+            period_start, period_end, units, received_at
+        ) VALUES ('usage-inbox-schema-test', 'acme-cpu-001', 2, 'acme', 'sb-001', 'cpu_seconds',
+            '2026-10-31T23:00:00Z', '2026-10-31T23:30:00Z', 200000000, '2026-10-31T23:30:05.123456Z')
+    $input$,
+    want_sqlstate => '23505'
+);
+
+SELECT pg_temp.assert_result(
+    scenario => 'duplicate rejection preserves the original measurement',
+    input_sql => $input$
+        SELECT units FROM usage_inbox WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'
+    $input$,
+    want_result => $want$
+    {
+        "units": 100000000
+    }
+    $want$::jsonb
+);
+
+-- Input: another source uses the same event ID and units above the int32 range.
+INSERT INTO usage_inbox (
+    source, event_id, schema_version, customer_id, sandbox_id, metric,
+    period_start, period_end, units, received_at
+) VALUES ('usage-inbox-schema-test-other', 'acme-cpu-001', 2, 'acme', 'sb-002', 'cpu_seconds',
+    '2026-10-31T23:00:00Z', '2026-10-31T23:30:00Z', 3000000000, '2026-10-31T23:30:05.123456Z');
+
+SELECT pg_temp.assert_result(
+    scenario => 'independent source retains large exact units',
+    input_sql => $input$
+        SELECT units FROM usage_inbox WHERE source = 'usage-inbox-schema-test-other' AND event_id = 'acme-cpu-001'
+    $input$,
+    want_result => $want$
+    {
+        "units": 3000000000
+    }
+    $want$::jsonb
+);
+
+SELECT pg_temp.assert_rejection(
+    scenario => 'usage units cannot be negative',
+    input_sql => $input$
+        UPDATE usage_inbox SET units = -1 WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'
+    $input$,
+    want_sqlstate => '23514'
+);
+
+SELECT pg_temp.assert_rejection(
+    scenario => 'usage period must have positive duration',
+    input_sql => $input$
+        UPDATE usage_inbox SET period_end = period_start WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'
+    $input$,
+    want_sqlstate => '23514'
+);
+
+-- Input: an unresolved accounting error remains on the event.
+UPDATE usage_inbox SET processing_error = 'Price not found' WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001';
+SELECT pg_temp.assert_rejection(
+    scenario => 'processed_at cannot coexist with an unresolved processing error',
+    input_sql => $input$
+        UPDATE usage_inbox SET processed_at = '2026-10-31T23:30:10Z' WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'
+    $input$,
+    want_sqlstate => '23514'
+);
+
+-- Input: clear the error before marking successful processing.
+UPDATE usage_inbox SET processing_error = NULL, processed_at = '2026-10-31T23:30:10Z' WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001';
+SELECT pg_temp.assert_result(
+    scenario => 'successful processing is accepted after clearing the error',
+    input_sql => $input$
+        SELECT to_char(processed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS processed_at, processing_error
+        FROM usage_inbox WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'
+    $input$,
+    want_result => $want$
+    {
+        "processed_at": "2026-10-31T23:30:10Z",
+        "processing_error": null
+    }
+    $want$::jsonb
+);
 
 ROLLBACK;

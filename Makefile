@@ -71,7 +71,7 @@ help:
 	  'Database commands always target postgres; start it with make up first.' \
 	  'Example: make up SERVICE=postgres' \
 	  'Example: make simulate SCENARIO=assignment MODE=step' \
-	  'Example: make test RUN="^TestUsageBatchesHappyPath$$"'
+	  'Example: make test RUN="^TestPostUsageBatches$$/^usage_batches_happy_path$$"'
 
 services:
 	@$(COMPOSE) config --services

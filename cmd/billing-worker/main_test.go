@@ -9,158 +9,311 @@ import (
 	"time"
 )
 
-// TestLoadConfigRequiresEnvironment verifies that each missing or empty setting
-// fails with its name instead of silently selecting a runtime default.
-func TestLoadConfigRequiresEnvironment(t *testing.T) {
-	for _, name := range []string{
-		"E2B_WORKER_POLL_INTERVAL", "E2B_WORKER_BATCH_TIMEOUT",
-		"E2B_WORKER_SHUTDOWN_TIMEOUT", "E2B_WORKER_HEARTBEAT_MAX_AGE",
-		"E2B_WORKER_HEARTBEAT_FILE",
-	} {
-		t.Run(name, func(t *testing.T) {
-			getenv := configEnvironment(nil)
-			_, err := loadConfig(func(key string) string {
-				if key == name {
-					return ""
+// loadConfig requires every worker setting, preserves valid overrides, and
+// rejects invalid durations, empty heartbeat paths, and unsafe health windows.
+func TestLoadConfig(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "custom heartbeat")
+	tests := []struct {
+		name              string
+		overrides         map[string]string
+		emptyEnvironment  bool
+		want              config
+		wantError         bool
+		wantErrorContains string
+	}{
+		{
+			name: "all explicit overrides are retained",
+			overrides: map[string]string{
+				"E2B_WORKER_POLL_INTERVAL": "250ms", "E2B_WORKER_BATCH_TIMEOUT": "3s",
+				"E2B_WORKER_SHUTDOWN_TIMEOUT": "2s", "E2B_WORKER_HEARTBEAT_MAX_AGE": "4s",
+				"E2B_WORKER_HEARTBEAT_FILE": filename,
+			},
+			want: config{pollInterval: 250 * time.Millisecond, batchTimeout: 3 * time.Second,
+				shutdownTimeout: 2 * time.Second, heartbeatMaxAge: 4 * time.Second, heartbeatFile: filename},
+			wantError: false,
+		},
+		{
+			name:             "empty environment is rejected",
+			emptyEnvironment: true,
+			wantError:        true,
+		},
+		{
+			name:              "whitespace-only heartbeat path is rejected",
+			overrides:         map[string]string{"E2B_WORKER_HEARTBEAT_FILE": " \t\n"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_FILE",
+		},
+		{
+			name:              "missing E2B_WORKER_POLL_INTERVAL",
+			overrides:         map[string]string{"E2B_WORKER_POLL_INTERVAL": ""},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_POLL_INTERVAL",
+		},
+		{
+			name:              "missing E2B_WORKER_BATCH_TIMEOUT",
+			overrides:         map[string]string{"E2B_WORKER_BATCH_TIMEOUT": ""},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_BATCH_TIMEOUT",
+		},
+		{
+			name:              "missing E2B_WORKER_SHUTDOWN_TIMEOUT",
+			overrides:         map[string]string{"E2B_WORKER_SHUTDOWN_TIMEOUT": ""},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_SHUTDOWN_TIMEOUT",
+		},
+		{
+			name:              "missing E2B_WORKER_HEARTBEAT_MAX_AGE",
+			overrides:         map[string]string{"E2B_WORKER_HEARTBEAT_MAX_AGE": ""},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_MAX_AGE",
+		},
+		{
+			name:              "missing E2B_WORKER_HEARTBEAT_FILE",
+			overrides:         map[string]string{"E2B_WORKER_HEARTBEAT_FILE": ""},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_FILE",
+		},
+		{
+			name:              "reject E2B_WORKER_POLL_INTERVAL=invalid",
+			overrides:         map[string]string{"E2B_WORKER_POLL_INTERVAL": "invalid"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_POLL_INTERVAL",
+		},
+		{
+			name:              "reject E2B_WORKER_POLL_INTERVAL=10",
+			overrides:         map[string]string{"E2B_WORKER_POLL_INTERVAL": "10"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_POLL_INTERVAL",
+		},
+		{
+			name:              "reject E2B_WORKER_POLL_INTERVAL=0s",
+			overrides:         map[string]string{"E2B_WORKER_POLL_INTERVAL": "0s"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_POLL_INTERVAL",
+		},
+		{
+			name:              "reject E2B_WORKER_POLL_INTERVAL=-1s",
+			overrides:         map[string]string{"E2B_WORKER_POLL_INTERVAL": "-1s"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_POLL_INTERVAL",
+		},
+		{
+			name:              "reject E2B_WORKER_BATCH_TIMEOUT=invalid",
+			overrides:         map[string]string{"E2B_WORKER_BATCH_TIMEOUT": "invalid"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_BATCH_TIMEOUT",
+		},
+		{
+			name:              "reject E2B_WORKER_BATCH_TIMEOUT=10",
+			overrides:         map[string]string{"E2B_WORKER_BATCH_TIMEOUT": "10"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_BATCH_TIMEOUT",
+		},
+		{
+			name:              "reject E2B_WORKER_BATCH_TIMEOUT=0s",
+			overrides:         map[string]string{"E2B_WORKER_BATCH_TIMEOUT": "0s"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_BATCH_TIMEOUT",
+		},
+		{
+			name:              "reject E2B_WORKER_BATCH_TIMEOUT=-1s",
+			overrides:         map[string]string{"E2B_WORKER_BATCH_TIMEOUT": "-1s"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_BATCH_TIMEOUT",
+		},
+		{
+			name:              "reject E2B_WORKER_SHUTDOWN_TIMEOUT=invalid",
+			overrides:         map[string]string{"E2B_WORKER_SHUTDOWN_TIMEOUT": "invalid"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_SHUTDOWN_TIMEOUT",
+		},
+		{
+			name:              "reject E2B_WORKER_SHUTDOWN_TIMEOUT=10",
+			overrides:         map[string]string{"E2B_WORKER_SHUTDOWN_TIMEOUT": "10"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_SHUTDOWN_TIMEOUT",
+		},
+		{
+			name:              "reject E2B_WORKER_SHUTDOWN_TIMEOUT=0s",
+			overrides:         map[string]string{"E2B_WORKER_SHUTDOWN_TIMEOUT": "0s"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_SHUTDOWN_TIMEOUT",
+		},
+		{
+			name:              "reject E2B_WORKER_SHUTDOWN_TIMEOUT=-1s",
+			overrides:         map[string]string{"E2B_WORKER_SHUTDOWN_TIMEOUT": "-1s"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_SHUTDOWN_TIMEOUT",
+		},
+		{
+			name:              "reject E2B_WORKER_HEARTBEAT_MAX_AGE=invalid",
+			overrides:         map[string]string{"E2B_WORKER_HEARTBEAT_MAX_AGE": "invalid"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_MAX_AGE",
+		},
+		{
+			name:              "reject E2B_WORKER_HEARTBEAT_MAX_AGE=10",
+			overrides:         map[string]string{"E2B_WORKER_HEARTBEAT_MAX_AGE": "10"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_MAX_AGE",
+		},
+		{
+			name:              "reject E2B_WORKER_HEARTBEAT_MAX_AGE=0s",
+			overrides:         map[string]string{"E2B_WORKER_HEARTBEAT_MAX_AGE": "0s"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_MAX_AGE",
+		},
+		{
+			name:              "reject E2B_WORKER_HEARTBEAT_MAX_AGE=-1s",
+			overrides:         map[string]string{"E2B_WORKER_HEARTBEAT_MAX_AGE": "-1s"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_MAX_AGE",
+		},
+		{
+			name:              "equal to batch plus polling",
+			overrides:         map[string]string{"E2B_WORKER_HEARTBEAT_MAX_AGE": "6s"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_MAX_AGE",
+		},
+		{
+			name:              "shorter than batch plus polling",
+			overrides:         map[string]string{"E2B_WORKER_HEARTBEAT_MAX_AGE": "5s"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_MAX_AGE",
+		},
+		{
+			name:              "batch plus polling overflows",
+			overrides:         map[string]string{"E2B_WORKER_BATCH_TIMEOUT": "9223372036854775807ns"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_MAX_AGE",
+		},
+		{
+			name:              "polling plus batch overflows",
+			overrides:         map[string]string{"E2B_WORKER_POLL_INTERVAL": "9223372036854775807ns"},
+			wantError:         true,
+			wantErrorContains: "E2B_WORKER_HEARTBEAT_MAX_AGE",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			getenv := configEnvironment(tt.overrides)
+			if tt.emptyEnvironment {
+				getenv = func(string) string { return "" }
+			}
+			got, err := loadConfig(getenv)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("loadConfig(%v) error = nil; want an error", tt.overrides)
 				}
-				return getenv(key)
-			})
-			if err == nil || !strings.Contains(err.Error(), name) {
-				t.Fatalf("Missing-setting error = %v, want %s", err, name)
+				if !strings.Contains(err.Error(), tt.wantErrorContains) {
+					t.Errorf("loadConfig error = %q; want text %q", err, tt.wantErrorContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig(%v) error = %v; want nil", tt.overrides, err)
+			}
+			if got != tt.want {
+				t.Errorf("loadConfig(%v) = %+v; want %+v", tt.overrides, got, tt.want)
 			}
 		})
 	}
-	if _, err := loadConfig(func(string) string { return "" }); err == nil {
-		t.Fatal("An empty environment must fail configuration")
-	}
-	if _, err := loadConfig(configEnvironment(map[string]string{"E2B_WORKER_HEARTBEAT_FILE": " \t\n"})); err == nil {
-		t.Fatal("A whitespace-only heartbeat path must fail configuration")
-	}
 }
 
-// TestLoadConfigOverrides verifies that all supported environment settings
-// supply the runtime configuration, including fractional intervals and a custom file.
-func TestLoadConfigOverrides(t *testing.T) {
-	filename := filepath.Join(t.TempDir(), "custom heartbeat")
-	values := map[string]string{
-		"E2B_WORKER_POLL_INTERVAL":     "250ms",
-		"E2B_WORKER_BATCH_TIMEOUT":     "3s",
-		"E2B_WORKER_SHUTDOWN_TIMEOUT":  "2s",
-		"E2B_WORKER_HEARTBEAT_MAX_AGE": "4s",
-		"E2B_WORKER_HEARTBEAT_FILE":    filename,
-	}
-	cfg, err := loadConfig(configEnvironment(values))
-	if err != nil {
-		t.Fatalf("Load overridden configuration: %v", err)
-	}
-	want := config{
-		pollInterval: 250 * time.Millisecond, batchTimeout: 3 * time.Second,
-		shutdownTimeout: 2 * time.Second, heartbeatMaxAge: 4 * time.Second,
-		heartbeatFile: filename,
-	}
-	if cfg != want {
-		t.Fatalf("Overridden configuration = %+v, want %+v", cfg, want)
-	}
-}
-
-// TestLoadConfigRejectsInvalidDurations verifies that every duration setting
-// rejects malformed, unitless, zero, and negative values with its setting name.
-func TestLoadConfigRejectsInvalidDurations(t *testing.T) {
-	for _, setting := range []string{
-		"E2B_WORKER_POLL_INTERVAL", "E2B_WORKER_BATCH_TIMEOUT",
-		"E2B_WORKER_SHUTDOWN_TIMEOUT", "E2B_WORKER_HEARTBEAT_MAX_AGE",
-	} {
-		for _, value := range []string{"invalid", "10", "0s", "-1s"} {
-			t.Run(setting+"="+value, func(t *testing.T) {
-				_, err := loadConfig(configEnvironment(map[string]string{setting: value}))
-				if err == nil || !strings.Contains(err.Error(), setting) {
-					t.Fatalf("Configuration error = %v, want an error identifying %s", err, setting)
+// run returns the declared exit status for health probes and invalid commands
+// and leaves no heartbeat behind when startup cannot proceed.
+func TestRun(t *testing.T) {
+	t.Run("worker healthcheck command", func(t *testing.T) {
+		tests := []struct {
+			name         string
+			data         string
+			missing      bool
+			wantExitCode int
+		}{
+			{
+				name:         "healthy",
+				data:         time.Now().UTC().Format(time.RFC3339Nano),
+				wantExitCode: 0,
+			},
+			{
+				name:         "stale",
+				data:         time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano),
+				wantExitCode: 1,
+			},
+			{
+				name:         "future",
+				data:         time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano),
+				wantExitCode: 1,
+			},
+			{
+				name:         "malformed",
+				data:         "invalid timestamp",
+				wantExitCode: 1,
+			},
+			{
+				name:         "missing",
+				missing:      true,
+				wantExitCode: 1,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				filename := filepath.Join(t.TempDir(), "heartbeat")
+				if !tt.missing {
+					if err := os.WriteFile(filename, []byte(tt.data), 0600); err != nil {
+						t.Fatalf("Write command health fixture: %v", err)
+					}
+				}
+				getenv := configEnvironment(map[string]string{"E2B_WORKER_HEARTBEAT_FILE": filename})
+				if got := run([]string{"healthcheck"}, getenv); got != tt.wantExitCode {
+					t.Fatalf("Healthcheck exit code = %d, want %d", got, tt.wantExitCode)
 				}
 			})
 		}
-	}
-}
-
-// TestLoadConfigHeartbeatWindow verifies that health cannot become stale during
-// a permitted batch plus idle wait, including when duration addition overflows.
-func TestLoadConfigHeartbeatWindow(t *testing.T) {
-	tests := []struct {
-		name   string
-		values map[string]string
-	}{
-		{name: "equal to batch plus polling", values: map[string]string{"E2B_WORKER_HEARTBEAT_MAX_AGE": "6s"}},
-		{name: "shorter than batch plus polling", values: map[string]string{"E2B_WORKER_HEARTBEAT_MAX_AGE": "5s"}},
-		{name: "batch plus polling overflows", values: map[string]string{"E2B_WORKER_BATCH_TIMEOUT": "9223372036854775807ns"}},
-		{name: "polling plus batch overflows", values: map[string]string{"E2B_WORKER_POLL_INTERVAL": "9223372036854775807ns"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := loadConfig(configEnvironment(tt.values))
-			if err == nil || !strings.Contains(err.Error(), "E2B_WORKER_HEARTBEAT_MAX_AGE") {
-				t.Fatalf("Heartbeat-window error = %v, want rejection naming E2B_WORKER_HEARTBEAT_MAX_AGE", err)
-			}
-		})
-	}
-}
-
-// TestWorkerHealthcheckCommand verifies that the executable's healthcheck mode
-// exits successfully only for a readable, fresh, valid heartbeat.
-func TestWorkerHealthcheckCommand(t *testing.T) {
-	tests := []struct {
-		name    string
-		data    string
-		missing bool
-		want    int
-	}{
-		{name: "healthy", data: time.Now().UTC().Format(time.RFC3339Nano)},
-		{name: "stale", data: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano), want: 1},
-		{name: "future", data: time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano), want: 1},
-		{name: "malformed", data: "invalid timestamp", want: 1},
-		{name: "missing", missing: true, want: 1},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			filename := filepath.Join(t.TempDir(), "heartbeat")
-			if !tt.missing {
-				if err := os.WriteFile(filename, []byte(tt.data), 0600); err != nil {
-					t.Fatalf("Write command health fixture: %v", err)
+	})
+	t.Run("worker command rejects invalid input", func(t *testing.T) {
+		tests := []struct {
+			name                 string
+			args                 []string
+			values               map[string]string
+			wantExitCode         int
+			wantHeartbeatMissing bool
+		}{
+			{
+				name:                 "unknown argument",
+				args:                 []string{"unknown"},
+				wantExitCode:         1,
+				wantHeartbeatMissing: true,
+			},
+			{
+				name:                 "extra healthcheck argument",
+				args:                 []string{"healthcheck", "extra"},
+				wantExitCode:         1,
+				wantHeartbeatMissing: true,
+			},
+			{
+				name:                 "invalid configuration",
+				values:               map[string]string{"E2B_WORKER_POLL_INTERVAL": "0s"},
+				wantExitCode:         1,
+				wantHeartbeatMissing: true,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				filename := filepath.Join(t.TempDir(), "heartbeat")
+				values := map[string]string{"E2B_WORKER_HEARTBEAT_FILE": filename}
+				for name, value := range tt.values {
+					values[name] = value
 				}
-			}
-			getenv := configEnvironment(map[string]string{"E2B_WORKER_HEARTBEAT_FILE": filename})
-			if got := run([]string{"healthcheck"}, getenv); got != tt.want {
-				t.Fatalf("Healthcheck exit code = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-// TestWorkerCommandRejectsInvalidInput verifies that invalid arguments and
-// configuration fail immediately without starting a worker or creating health.
-func TestWorkerCommandRejectsInvalidInput(t *testing.T) {
-	tests := []struct {
-		name   string
-		args   []string
-		values map[string]string
-	}{
-		{name: "unknown argument", args: []string{"unknown"}},
-		{name: "extra healthcheck argument", args: []string{"healthcheck", "extra"}},
-		{name: "invalid configuration", values: map[string]string{"E2B_WORKER_POLL_INTERVAL": "0s"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			filename := filepath.Join(t.TempDir(), "heartbeat")
-			values := map[string]string{"E2B_WORKER_HEARTBEAT_FILE": filename}
-			for name, value := range tt.values {
-				values[name] = value
-			}
-			if got := run(tt.args, configEnvironment(values)); got != 1 {
-				t.Fatalf("Invalid command exit code = %d, want 1", got)
-			}
-			if _, err := os.Stat(filename); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("Invalid command published a heartbeat: %v", err)
-			}
-		})
-	}
+				if got := run(tt.args, configEnvironment(values)); got != tt.wantExitCode {
+					t.Fatalf("Invalid command exit code = %d, want %d", got, tt.wantExitCode)
+				}
+				if _, err := os.Stat(filename); errors.Is(err, os.ErrNotExist) != tt.wantHeartbeatMissing {
+					t.Fatalf("Invalid command published a heartbeat: %v", err)
+				}
+			})
+		}
+	})
 }
 
 // configEnvironment supplies a complete valid environment with fixture overrides so tests
