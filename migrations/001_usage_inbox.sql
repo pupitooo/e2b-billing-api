@@ -13,7 +13,13 @@ CREATE TABLE usage_inbox (
     processing_error text,
     PRIMARY KEY (source, event_id),
     CHECK (period_end > period_start),
-    CHECK (processed_at IS NULL OR processing_error IS NULL)
+    -- Successfully processed events must not have an unresolved error.
+    CONSTRAINT usage_inbox_processed_without_error CHECK (
+        CASE
+            WHEN processed_at IS NOT NULL THEN processing_error IS NULL
+            ELSE TRUE
+        END
+    )
 );
 
 -- Supports polling unprocessed events without processing errors.
