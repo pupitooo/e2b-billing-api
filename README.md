@@ -200,7 +200,13 @@ The database rejects a repeated `(source, event_id)` and preserves the original 
 
 ## Platform and billing contract
 
-**Status: working draft for option C, updated 8 October 2026.** The delivery rules below are proposals for the future API and simulator, not implemented HTTP guarantees. Record subsequent agreements and unresolved decisions in this section. The assignment makes the platform a separately owned measurement source and requires billing to handle retries, delays, and platform unavailability; it does not specify recovery from destruction of the platform's only storage copy.
+**Status: working draft for option C, updated 9 October 2026.** Event identity is a confirmed design agreement; the delivery rules below remain proposals for the future API and simulator, not implemented HTTP guarantees. Record subsequent agreements and unresolved decisions in this section. The assignment makes the platform a separately owned measurement source and requires billing to handle retries, delays, and platform unavailability; it does not specify recovery from destruction of the platform's only storage copy.
+
+### Event identity
+
+The platform must assign each measurement an `event_id` that is unique within its `source` across all customers, sandboxes, producer instances, and restarts. The identity is `(source, event_id)`; `source` defines a stable namespace, not a namespace local to a customer or sandbox. Allocate the ID before the first send, for example using a UUID, and preserve both identity fields on retries, after restarts, and when regrouping events into batches. Never reuse an identity for a different measurement.
+
+`customer_id` and `sandbox_id` are part of the event content, not the identity. An identical retry succeeds without another insert; the same identity with changed content, including a different customer or sandbox, is a conflict. This comparison will be implemented by the future billing API; the current database primary key only prevents duplicate rows.
 
 ### Responsibility boundary
 
