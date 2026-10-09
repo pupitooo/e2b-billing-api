@@ -61,7 +61,7 @@ func processReceipt(ctx context.Context, tx pgx.Tx, candidate receipt) error {
 	if err != nil {
 		return quarantine(ctx, tx, item.event, err.Error())
 	}
-	closed, err := loadClosedMonths(ctx, tx, item.event.CustomerID)
+	closed, err := routingMonths(ctx, tx, item.event)
 	if err != nil {
 		return err
 	}

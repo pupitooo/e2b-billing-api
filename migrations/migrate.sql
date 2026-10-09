@@ -67,4 +67,10 @@ SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 6) AS apply_0
     INSERT INTO schema_migrations (version, name) VALUES (6, 'spend_limit_operations');
 \endif
 
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 7) AS apply_007 \gset
+\if :apply_007
+    \ir 007_monthly_invoices.sql
+    INSERT INTO schema_migrations (version, name) VALUES (7, 'monthly_invoices');
+\endif
+
 COMMIT;

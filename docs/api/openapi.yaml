@@ -507,7 +507,7 @@ paths:
         month onward, including month-end purchases. Credit never pays add-ons. One subscription per customer/add-on
         is supported; quantities, cancellation, and proration are outside the assignment. Reuse subscription_id
         and unchanged content after a lost response. Changed content or a second identity for an existing
-        subscription returns 409. A new purchase cannot start at or before an already closed month; retry
+        subscription returns 409. A new purchase cannot start at or before an already closing or closed month; retry
         of an existing purchase still succeeds.
       x-implementation-status: implemented
       parameters:
@@ -841,6 +841,241 @@ paths:
                 state_version: 3
                 pending_events: 0
                 processing_errors: 0
+        '404':
+          description: Customer or catalog resource does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '503':
+          description: Database deadline or storage failure. Retry unchanged operation identity and content;
+            outcome may be unknown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
+  /customers/{customer_id}/invoices:
+    post:
+      operationId: issueMonthlyInvoice
+      tags:
+      - Billing
+      summary: Close a UTC month and issue its immutable invoice
+      description: The customer/month is the stable operation identity. First capture a durable cohort of
+        committed pending receipts through the target month under the account lock. Drain without holding
+        that lock across transactions. Cohort processing errors block issuance with 409; storage deadlines
+        return 503 and retain resumable closing state. Later accepted receipts route to another open month
+        even with an older receipt timestamp. Finalize closure, freeze rated groups, snapshot buyer details
+        and exact audit ticks, and allocate the next customer-specific invoice number in one transaction.
+        Retry returns the original snapshot and never consumes credit again. Issue months in increasing
+        order; earlier unclosed rated groups block a later close. Empty months are supported. An operator
+        invokes closing explicitly; no automatic calendar scheduler is included. USD group presentation
+        uses cumulative half-up cents and an aggregate credit line derived from rounded gross minus rounded
+        net. Add-ons are charged in full, including the purchase month.
+      x-implementation-status: implemented
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceMonth'
+            example:
+              month: 2026-10
+      responses:
+        '200':
+          description: Committed result or current snapshot. Identical command retries succeed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+              example:
+                customer_id: acme
+                number: ACME-0001
+                month: 2026-10
+                customer_name: Acme Inc.
+                country: US
+                billing_address: 1 Market St, San Francisco, CA 94105
+                currency: USD
+                lines:
+                - kind: usage
+                  description: Usage
+                  amount_cents: 1200
+                  price_version_id: cpu-acme-october
+                  metric: cpu_seconds
+                  usage_month: 2026-10
+                  units: '300000000'
+                  gross_ticks: '1200000000'
+                  credit_ticks: '1200000000'
+                - kind: addon
+                  description: concurrency_pack
+                  amount_cents: 2000
+                  subscription_id: acme-concurrency
+                - kind: credit
+                  description: Used credit
+                  amount_cents: -1200
+                total_cents: 2000
+                gross_usage_ticks: '1200000000'
+                credit_used_ticks: '1200000000'
+                issued_at: '2026-11-01T00:00:00Z'
+        '400':
+          description: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+        '404':
+          description: Customer or catalog resource does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '409':
+          description: Operation identity has different content, financial history conflicts, or closing
+            is blocked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_conflict
+                  message: Operation identity has different content, financial history conflicts, or closing
+                    is blocked.
+        '413':
+          description: Command body exceeds 65536 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Command body exceeds 65536 bytes.
+        '415':
+          description: Use uncompressed application/json with optional UTF-8 charset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: unsupported_media_type
+                  message: Use uncompressed application/json with optional UTF-8 charset.
+        '422':
+          description: Explicit required field or value is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  message: Explicit required field or value is invalid.
+        '503':
+          description: Database deadline or storage failure. Retry unchanged operation identity and content;
+            outcome may be unknown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
+  /customers/{customer_id}/invoices/{month}:
+    get:
+      operationId: getMonthlyInvoice
+      tags:
+      - Billing
+      summary: Read an issued invoice snapshot
+      description: Read immutable invoice lines, buyer identity, exact gross/credit ticks, and total cents.
+        Returns 404 until issuance. Subsequent usage, grants, price versions, add-on catalog changes, or
+        buyer edits cannot modify this snapshot.
+      x-implementation-status: implemented
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      - name: month
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/BillingMonth'
+      responses:
+        '200':
+          description: Committed result or current snapshot. Identical command retries succeed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+              example:
+                customer_id: acme
+                number: ACME-0001
+                month: 2026-10
+                customer_name: Acme Inc.
+                country: US
+                billing_address: 1 Market St, San Francisco, CA 94105
+                currency: USD
+                lines:
+                - kind: usage
+                  description: Usage
+                  amount_cents: 1200
+                  price_version_id: cpu-acme-october
+                  metric: cpu_seconds
+                  usage_month: 2026-10
+                  units: '300000000'
+                  gross_ticks: '1200000000'
+                  credit_ticks: '1200000000'
+                - kind: addon
+                  description: concurrency_pack
+                  amount_cents: 2000
+                  subscription_id: acme-concurrency
+                - kind: credit
+                  description: Used credit
+                  amount_cents: -1200
+                total_cents: 2000
+                gross_usage_ticks: '1200000000'
+                credit_used_ticks: '1200000000'
+                issued_at: '2026-11-01T00:00:00Z'
         '404':
           description: Customer or catalog resource does not exist.
           content:
@@ -1208,3 +1443,98 @@ components:
           type: integer
           format: int64
           minimum: 0
+
+    InvoiceLine:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - description
+      - amount_cents
+      properties:
+        kind:
+          type: string
+          enum:
+          - usage
+          - addon
+          - credit
+        description:
+          type: string
+        amount_cents:
+          type: integer
+          format: int64
+        price_version_id:
+          $ref: '#/components/schemas/Identifier'
+        metric:
+          $ref: '#/components/schemas/Identifier'
+        usage_month:
+          $ref: '#/components/schemas/BillingMonth'
+        units:
+          type: string
+          pattern: ^[0-9]+$
+        gross_ticks:
+          type: string
+          pattern: ^[0-9]+$
+        credit_ticks:
+          type: string
+          pattern: ^[0-9]+$
+        subscription_id:
+          $ref: '#/components/schemas/Identifier'
+
+    Invoice:
+      type: object
+      additionalProperties: false
+      required:
+      - customer_id
+      - number
+      - month
+      - customer_name
+      - country
+      - billing_address
+      - currency
+      - lines
+      - total_cents
+      - gross_usage_ticks
+      - credit_used_ticks
+      - issued_at
+      properties:
+        customer_id:
+          $ref: '#/components/schemas/Identifier'
+        number:
+          type: string
+        month:
+          $ref: '#/components/schemas/BillingMonth'
+        customer_name:
+          type: string
+        country:
+          type: string
+        billing_address:
+          type: string
+        currency:
+          type: string
+          const: USD
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceLine'
+        total_cents:
+          type: integer
+          format: int64
+          minimum: 0
+        gross_usage_ticks:
+          type: string
+          pattern: ^[0-9]+$
+        credit_used_ticks:
+          type: string
+          pattern: ^[0-9]+$
+        issued_at:
+          $ref: '#/components/schemas/ConsumptionTime'
+
+    InvoiceMonth:
+      type: object
+      additionalProperties: false
+      required:
+      - month
+      properties:
+        month:
+          $ref: '#/components/schemas/BillingMonth'

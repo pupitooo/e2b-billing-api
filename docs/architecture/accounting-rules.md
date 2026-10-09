@@ -1,9 +1,9 @@
 # Financial rules and shared accounting primitives
 
 `internal/accounting` implements pure Go calculations for historical rating,
-exact credit, UTC months, limits, add-ons, and invoice presentation. The API still
-acknowledges inbox receipt only. The worker remains an idle scaffold; database
-accounting, financial endpoints, and invoice issuance follow separately.
+exact credit, UTC months, limits, add-ons, and invoice presentation. The usage API acknowledges durable inbox receipt; the standalone worker applies
+these rules transactionally. Financial commands and immutable invoice issuance
+are implemented in `internal/billing` and documented in OpenAPI.
 
 The assignment requires historical prices, customer overrides, usage-only credit,
 gross monthly limits, full monthly add-on charges, immutable invoices, and the
@@ -72,11 +72,11 @@ than independently rounding credit, so displayed lines sum to rounded net usage.
 For one cent gross and half a cent credit, net rounds to one cent and displayed
 credit is zero cents. The ledger still records the exact half-cent debit.
 
-Future immutable invoice snapshots must retain exact gross and credit ticks for
+Immutable invoice snapshots retain exact gross and credit ticks for
 audit alongside cent presentation. Presentation never overwrites credit records.
 Sum already rounded group lines without another rounding step. Add-ons use their
 purchased whole-cent price. Invoice totals need checked addition within `bigint`.
-Invoice tables and their writer remain subsequent work.
+Migration 007 adds durable closing cohorts, immutable invoice snapshots, frozen-group links, and per-customer invoice sequences.
 
 ## UTC months, limits, add-ons, and late usage
 
@@ -101,11 +101,10 @@ keeps October's historical price, and contributes to October gross spend. If
 November is also closed, move forward again. The helper takes closure state as
 input; it does not create or persist that state.
 
-## Transaction and closing contract for subsequent writers
+## Transaction and closing contract
 
 Every financial writer first locks `customer_billing_state` with `FOR UPDATE`,
-before reading mutable balances or closure state. The initial worker should
-process one customer per transaction. Never hold inbox row locks while waiting
+before reading mutable balances or closure state. The worker processes one receipt for one customer per transaction. Never hold inbox row locks while waiting
 for the account lock; consistent ordering avoids deadlocks with closing and grants.
 
 Commit the rating link, group totals, credit allocation/debit/balance, original-month
@@ -122,8 +121,8 @@ customer's next number in one transaction. Do not consume credit again. Later
 accepted input follows the late-usage rule, including a request whose receipt
 timestamp predates its eventual commit.
 
-The durable cohort, closed-month records, invoice schema, and recovery mechanism
-belong to invoice implementation. A receipt timestamp alone is not a closing
+The invoice implementation persists cohort membership and closing state; a retry
+resumes after fixing the supported catalog and explicitly releasing processing errors. A receipt timestamp alone is not a closing
 watermark. Used historical prices and issued invoices cannot be silently rewritten
 by a later command; retroactive corrections require a separate policy.
 
@@ -157,5 +156,4 @@ events, historical prices, UTC and price boundaries, routing, limits, add-ons,
 and assignment totals of USD 20.00, USD 20.00, and USD 18.17 with credit balances
 of USD 13.00 and USD 7.00. SQL tests exercise real legacy conversion, sub-cent
 credit, constraints, and append-only history in UTC and Asia/Shanghai. These
-verify calculations and schema; runtime accounting and complete invoice tests
-follow with their implementations.
+verify calculations and schema; runtime accounting, public command, and immutable invoice tests now cover their implementations.
