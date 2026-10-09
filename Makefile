@@ -35,7 +35,7 @@ export REVERSE SIM_API_URL SCENARIO_FILE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs simulate simulate-help
+.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs simulate simulate-help fmt fmt-check vet check install-hooks
 
 help:
 	@printf '%s\n' \
@@ -61,6 +61,11 @@ help:
 	  'docs     Start Scalar documentation and the API for browser requests' \
 	  'simulate Run or resume platform usage; MODE=step releases one step' \
 	  'simulate-help Show all simulator options' \
+	  'fmt      Format project Go source with gofmt' \
+	  'fmt-check Reject Go source that differs from gofmt' \
+	  'vet      Run go vet with default and integration build tags' \
+	  'check    Run formatting and static checks together' \
+	  'install-hooks Enable staged Go checks before every commit in this clone' \
 	  '' \
 	  'Service commands apply to all services when SERVICE is omitted.' \
 	  'Database commands always target postgres; start it with make up first.' \
@@ -70,6 +75,22 @@ help:
 
 services:
 	@$(COMPOSE) config --services
+
+fmt:
+	@sh scripts/go-quality.sh fmt
+
+fmt-check:
+	@sh scripts/go-quality.sh fmt-check
+
+vet:
+	@sh scripts/go-quality.sh vet
+
+check:
+	@sh scripts/go-quality.sh check
+
+install-hooks:
+	@git config --local core.hooksPath .githooks
+	@printf '%s\n' 'Pre-commit Go checks enabled for this clone.'
 
 docs:
 	@$(MAKE) up SERVICE=docs
