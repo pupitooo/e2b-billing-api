@@ -1,6 +1,10 @@
 # Local documentation stays private until explicitly included.
-# Track the architecture comparison and the four option diagrams.
+# Track API documentation, the architecture comparison, and the four option diagrams.
 /docs/*
+!/docs/api/
+/docs/api/*
+!/docs/api/openapi.yaml
+!/docs/api/Caddyfile
 !/docs/brainstorming/
 /docs/brainstorming/*
 !/docs/brainstorming/architecture-options.md

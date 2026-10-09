@@ -12,7 +12,7 @@ export SERVICE RUN SUITE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps migrate migration-status psql test go-test db-test api-test _test-db _test-go
+.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test _test-db _test-go docs
 
 help:
 	@printf '%s\n' \
@@ -25,6 +25,7 @@ help:
 	  'restart  Restart services and wait for readiness' \
 	  'logs     Show the last 100 log lines per service' \
 	  'ps       Show running and stopped containers' \
+	  'links    Show browser links for running HTTP services' \
 	  'services List service names from compose.yaml' \
 	  'migrate  Apply pending database migrations' \
 	  'migration-status List applied database migrations' \
@@ -33,6 +34,7 @@ help:
 	  'go-test  Run Go package tests without external services' \
 	  'db-test  Run SQL integrity tests in both time zones' \
 	  'api-test Start the API and run HTTP integration tests' \
+	  'docs     Start Scalar documentation and the API for browser requests' \
 	  '' \
 	  'Service commands apply to all services when SERVICE is omitted.' \
 	  'Database commands always target postgres; start it with make up first.' \
@@ -41,6 +43,9 @@ help:
 
 services:
 	@$(COMPOSE) config --services
+
+docs:
+	@$(MAKE) up SERVICE=docs
 
 check-service:
 	@set -eu; \
@@ -58,6 +63,7 @@ check-service:
 
 up: check-service
 	@$(COMPOSE) up --build -d --wait --wait-timeout 120 $(SERVICE_ARG)
+	@$(MAKE) --no-print-directory links
 
 stop: check-service
 	@$(COMPOSE) stop $(SERVICE_ARG)
@@ -72,12 +78,28 @@ down: check-service
 restart: check-service
 	@$(COMPOSE) restart --no-deps $(SERVICE_ARG)
 	@$(COMPOSE) up -d --wait --wait-timeout 120 $(SERVICE_ARG)
+	@$(MAKE) --no-print-directory links
 
 logs: check-service
 	@$(COMPOSE) logs --tail=100 $(SERVICE_ARG)
 
 ps: check-service
 	@$(COMPOSE) ps --all $(SERVICE_ARG)
+	@$(MAKE) --no-print-directory links
+
+links:
+	@set -eu; \
+	running_services="$$($(COMPOSE) ps --services --status running)"; \
+	for service_name in $$running_services; do \
+	  case "$$service_name" in \
+	    api) \
+	      address="$$($(COMPOSE) port api 8080)"; \
+	      printf 'API health: http://%s/healthz\n' "$$address" ;; \
+	    docs) \
+	      address="$$($(COMPOSE) port docs 8080)"; \
+	      printf 'API documentation: http://%s/\n' "$$address" ;; \
+	  esac; \
+	done
 
 migrate:
 	@$(COMPOSE) exec -T postgres sh -c 'exec psql -X --set=ON_ERROR_STOP=on --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}" --file=/migrations/migrate.sql'
