@@ -271,6 +271,22 @@ Every required inbox field must be supplied explicitly; the table has no databas
 
 The composite primary key rejects repeated `(source, event_id)` values. The schema enforces required values, positive schema versions, non-negative units, increasing interval endpoints, and consistent processing state. Text content, customer existence, and supported metrics are not validated by the database. The HTTP handler does not write to this table.
 
+The [Go event model](internal/usage/event.go) provides standalone application
+validation of measurement values: identifiers must contain a non-whitespace
+character, use valid UTF-8, and contain no NUL characters; schema versions must
+be positive and units non-negative. Interval endpoints must be supplied, have
+UTC years from 1 through 9999, use at most microsecond precision, and increase
+when compared as instants. Finer timestamp precision is rejected to avoid losing
+measurement content when it is later stored in PostgreSQL. Customer existence
+and supported version or metric registries are separate concerns.
+
+The [event tests](internal/usage/event_test.go) cover required values, integer
+boundaries, Unicode whitespace, timestamp precision, and intervals across time
+zones and UTC month boundaries. Run them with `make go-test RUN=EventValidate`.
+This validator is the first ingestion step and is not yet connected to the HTTP
+handler. Checking JSON field presence, including the distinction between omitted
+units and valid zero units, will be part of HTTP decoding.
+
 ## Architecture and HTTP interfaces
 
 ![Option C: building blocks and interfaces](docs/diagrams/option-c-components/option-c-components.png)
