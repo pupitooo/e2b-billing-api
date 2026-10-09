@@ -56,8 +56,14 @@ func (s *Store) CloseMonth(ctx context.Context, customer, monthValue string) (In
 	if err := s.drainClosing(ctx, customer, month); err != nil {
 		return Invoice{}, err
 	}
+	return s.issueInvoice(ctx, customer, month)
+}
+
+// issueInvoice owns the final atomic publication boundary. An identical retry
+// reads the frozen snapshot before constructing or numbering another invoice.
+func (s *Store) issueInvoice(ctx context.Context, customer string, month time.Time) (Invoice, error) {
 	var result Invoice
-	err = s.transact(ctx, func(tx pgx.Tx) error {
+	err := s.transact(ctx, func(tx pgx.Tx) error {
 		if _, err := lockAccount(ctx, tx, customer); err != nil {
 			return err
 		}

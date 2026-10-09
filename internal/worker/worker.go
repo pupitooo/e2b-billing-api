@@ -26,11 +26,8 @@ type Worker struct {
 // Run starts immediately, waits after idle or failed iterations, and removes its
 // heartbeat on exit. A heartbeat measures loop activity, not accounting success.
 func (w Worker) Run(ctx context.Context) error {
-	if w.ProcessBatch == nil || w.Logger == nil {
-		return fmt.Errorf("worker requires a batch processor and logger")
-	}
-	if w.PollInterval <= 0 || w.BatchTimeout <= 0 || w.HeartbeatFile == "" {
-		return fmt.Errorf("worker requires positive intervals and a heartbeat file")
+	if err := w.validate(); err != nil {
+		return err
 	}
 	if err := writeHeartbeat(w.HeartbeatFile); err != nil {
 		return err
@@ -38,12 +35,7 @@ func (w Worker) Run(ctx context.Context) error {
 	defer os.Remove(w.HeartbeatFile)
 
 	for ctx.Err() == nil {
-		batchCtx, cancel := context.WithTimeout(ctx, w.BatchTimeout)
-		more, err := w.ProcessBatch(batchCtx)
-		if err == nil {
-			err = batchCtx.Err()
-		}
-		cancel()
+		more, err := w.processNextBatch(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -53,18 +45,44 @@ func (w Worker) Run(ctx context.Context) error {
 		if err != nil {
 			w.Logger.Error("Worker batch failed; retrying after the polling interval", "error", err)
 		}
-		if more && err == nil {
-			continue
-		}
-		timer := time.NewTimer(w.PollInterval)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil
-		case <-timer.C:
+		if !more || err != nil {
+			waitForPoll(ctx, w.PollInterval)
 		}
 	}
 	return nil
+}
+
+func (w Worker) validate() error {
+	if w.ProcessBatch == nil || w.Logger == nil {
+		return fmt.Errorf("worker requires a batch processor and logger")
+	}
+	if w.PollInterval <= 0 || w.BatchTimeout <= 0 || w.HeartbeatFile == "" {
+		return fmt.Errorf("worker requires positive intervals and a heartbeat file")
+	}
+	return nil
+}
+
+// processNextBatch owns the batch deadline, including processors that return
+// success after their context expires. Lifecycle cancellation stays in Run.
+func (w Worker) processNextBatch(ctx context.Context) (bool, error) {
+	batchCtx, cancel := context.WithTimeout(ctx, w.BatchTimeout)
+	defer cancel()
+	more, err := w.ProcessBatch(batchCtx)
+	if err == nil {
+		err = batchCtx.Err()
+	}
+	return more, err
+}
+
+// waitForPoll ends on either the interval or cancellation. The processing loop
+// checks cancellation before starting another batch and removes its heartbeat.
+func waitForPoll(ctx context.Context, interval time.Duration) {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
+	}
 }
 
 // RunUntilStopped bounds shutdown even if a processor ignores cancellation.
