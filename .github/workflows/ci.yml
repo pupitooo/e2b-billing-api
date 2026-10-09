@@ -16,6 +16,7 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: e2b-ci
       E2B_POSTGRES_PORT: '15432'
+      E2B_API_PORT: '18081'
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -25,9 +26,9 @@ jobs:
         run: make up SERVICE=postgres
       - name: Run all tests
         run: make test
-      - name: Show PostgreSQL logs on failure
+      - name: Show service logs on failure
         if: failure()
-        run: make logs SERVICE=postgres
+        run: make logs
       - name: Remove containers and test data
         if: always()
         run: docker compose down --volumes --remove-orphans

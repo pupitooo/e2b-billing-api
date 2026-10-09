@@ -2,7 +2,7 @@
 
 Billing service for the E2B assignment, using Go and the selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected): HTTP ingestion, a durable PostgreSQL inbox, and asynchronous accounting workers. The [architecture comparison](docs/brainstorming/architecture-options.md) describes options A–D, their diagrams, and TODOs for further design and higher load.
 
-The current implementation provides PostgreSQL, versioned schema migrations, and the `usage_inbox` table. The Go API, platform simulator, accounting worker, and financial tables are planned next; there are no running HTTP endpoints yet.
+The current implementation provides PostgreSQL, versioned schema migrations, the `usage_inbox` table, and a Go HTTP API skeleton. `POST /usage/batches` returns a fixed response for interface exploration; it does not validate or store usage yet. The platform simulator, accounting worker, and financial tables remain planned.
 
 The [platform and billing contract](#platform-and-billing-contract) records proposed delivery responsibilities, acknowledgement rules, and agreements still to be made.
 
@@ -10,7 +10,7 @@ The [platform and billing contract](#platform-and-billing-contract) records prop
 
 ### Requirements
 
-Docker with Docker Compose and Make. The PostgreSQL client runs inside the container. Run all `make` commands from the repository root.
+Docker with Docker Compose and Make. The PostgreSQL client and Go toolchain run inside containers; no local Go installation is required. Run all `make` commands from the repository root.
 
 ### Get the source
 
@@ -22,7 +22,7 @@ git clone https://github.com/pupitooo/e2b-billing-api.git
 
 ### Configuration
 
-Docker Compose reads an optional local `.env` file. The defaults are sufficient for local development. Copy [.env.example](.env.example) to `.env` to change the host port or development password. Keep the same configuration for subsequent commands.
+Docker Compose reads an optional local `.env` file. The defaults are sufficient for local development. Copy [.env.example](.env.example) to `.env` to change the API port (`E2B_API_PORT`, default `8081`), PostgreSQL port, or development password. Keep the same configuration for subsequent commands.
 
 ### Initialize the database
 
@@ -43,23 +43,63 @@ Start all implemented services:
 make up
 ```
 
-`make up` starts the services and waits for readiness. It does not apply database migrations. Currently, PostgreSQL is the only implemented service; the Go API, platform simulator, and accounting worker will use the same Compose file and service commands as they are added.
+`make up` starts the API and PostgreSQL and waits for readiness. It does not apply database migrations. The API skeleton can also run independently of PostgreSQL. The platform simulator and accounting worker will use the same Compose file and service commands as they are added.
 
 | Command | Purpose |
 | --- | --- |
 | `make up` | Start all services and wait for readiness. |
 | `make up SERVICE=postgres` | Start PostgreSQL and wait for readiness. |
+| `make up SERVICE=api` | Build and start the Go API skeleton and wait for readiness. |
 | `make ps` | Show running and stopped services. |
 | `make logs SERVICE=postgres` | Show the last 100 PostgreSQL log lines. |
 | `make restart SERVICE=postgres` | Restart PostgreSQL and wait for readiness. |
 | `make stop` | Stop services while retaining containers and data. |
 | `make down` | Remove containers and the network while retaining database data. |
-| `make services` | List available service names; currently `postgres`. |
+| `make services` | List available service names: `api` and `postgres`. |
 | `make help` | Show all available commands. |
 
 PostgreSQL uses the pinned `postgres:18.6-alpine` image, UTC timestamps, and a named volume. Its port is published on `127.0.0.1`. Database data survives `make stop`, `make restart`, and `make down`.
 
 `E2B_POSTGRES_PASSWORD` initializes the role password when the volume is empty. Changing the environment variable later does not update the password in an existing database.
+
+## Go API skeleton
+
+Start the API:
+
+```sh
+make up SERVICE=api
+```
+
+The API is available at `http://127.0.0.1:8081` by default. `GET /healthz` returns `200` when the HTTP server is available; it does not check the database. The entry point is [cmd/billing-api/main.go](cmd/billing-api/main.go), with routes in [internal/httpapi/handler.go](internal/httpapi/handler.go).
+
+Try the proposed usage request:
+
+```sh
+curl -i http://127.0.0.1:8081/usage/batches \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "batch_id": "acme-batch-000001",
+    "events": [{
+      "schema_version": 1,
+      "source": "platform-simulator",
+      "event_id": "acme-cpu-000001",
+      "customer_id": "acme",
+      "sandbox_id": "acme-sandbox-001",
+      "metric": "cpu_seconds",
+      "period_start": "2026-10-10T12:00:00Z",
+      "period_end": "2026-10-10T13:00:00Z",
+      "units": 100000000
+    }]
+  }'
+```
+
+The skeleton returns HTTP `202` with `Content-Type: application/json` and this fixed body:
+
+```json
+{"status":"accepted"}
+```
+
+**This response is a stub, not a durable receipt.** The handler ignores the request body and performs no validation, database writes, deduplication, or accounting. It exists to explore the interface before implementing ingestion in a separate PR. Once ingestion is implemented, a successful response will confirm the committed batch; the delivery guarantees below describe that intended behavior.
 
 ## Database
 
@@ -174,10 +214,19 @@ With PostgreSQL running:
 | --- | --- |
 | `make test` | Run all test suites. |
 | `make db-test` | Run only the database integrity suite. |
+| `make api-test` | Build and start the API, then run its HTTP happy-path test. PostgreSQL is not required for the skeleton. |
 
 Database tests apply pending migrations, check schema integrity in UTC and `Asia/Shanghai`, and roll back their test data. Output identifies the suite and time zone being tested. Any test failure makes the command fail.
 
-[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The `Database tests` check is required before merging into `main`; the branch must also be up to date with `main`. Failed runs include PostgreSQL logs, and each run removes its test containers and volume.
+The [API happy-path test](tests/api/usage_batches_test.go) sends a valid Acme measurement to the running service and checks HTTP `202`, JSON content type, and `status: accepted`. It uses HTTP only, without importing the handler or asserting stub internals, so the same test can remain when validation and persistence are implemented. `make api-test` runs it in a temporary Go container on the Compose network; the API stays running for manual exploration.
+
+With Go 1.27 or later installed locally, the same test can target a running API directly:
+
+```sh
+E2B_API_URL=http://127.0.0.1:8081 go test -count=1 -v ./tests/api
+```
+
+[CI](.github/workflows/ci.yml) runs `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `Database tests` check now runs both the database and HTTP suites; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
 
 ## Usage inbox contract
 
@@ -249,7 +298,7 @@ The local billing setup covers restarts with the PostgreSQL volume intact. Repli
 | Existing identity with changed content | A conflict; the original measurement and its financial effect are preserved. | Retain the unresolved input for investigation; do not treat it as delivered or repeatedly submit changed content under that identity. |
 | Invalid or unsupported input | The affected input was not accepted. | Keep a visible failure record and resolve the contract or data error before resubmission. |
 
-The durable-receipt promise comes from this application contract, not from HTTP `202` alone. Exact response bodies and whole-batch versus per-event failure behaviour remain open below.
+The durable-receipt promise comes from this application contract, not from HTTP `202` alone. The current skeleton proposes `status: accepted` for the successful response. Additional response fields, errors, and whole-batch versus per-event failure behaviour remain open below.
 
 Arrival order is not consumption-time order. The sender preserves the original measurement interval; billing resolves prices by consumption time and handles late usage without changing issued invoices. Credit changes and closing still require coordinated customer transactions.
 
@@ -264,18 +313,19 @@ Arrival order is not consumption-time order. The sender preserves the original m
 | Spend-status freshness | Both teams | Polling interval and how pending input or unavailable status affects platform decisions. |
 | Broker history for growth | Both teams | Whether replay after successful accounting, independent consumers, and a raw archive are needed. Pending work must survive until durable processing or handoff; post-processing broker history is a separate choice. |
 
-## Architecture and planned HTTP interfaces
+## Architecture and HTTP interfaces
 
 ![Option C: building blocks and interfaces](docs/diagrams/option-c-components/option-c-components.png)
 
 [Native Mermaid source](docs/diagrams/option-c-components/option-c-components.mmd).
 
-The highlighted inbox is implemented in this change. The other blocks describe the intended architecture. API and worker modules may initially share one Go process. The two storage blocks represent tables in one PostgreSQL database.
+The highlighted inbox schema is implemented, and the Go API now has the skeleton described above. The remaining blocks and ingestion behavior describe the intended architecture. API and worker modules may initially share one Go process. The two storage blocks represent tables in one PostgreSQL database.
 
-| Planned interface | Purpose |
-| --- | --- |
-| `POST /usage/batches` | Validate and store usage; return `202` after the inbox transaction commits. |
-| `GET /customers/{id}/spend-status` | Return the current UTC month, processed gross spend, limit status, and processing lag. |
+| Interface | Status | Purpose |
+| --- | --- | --- |
+| `GET /healthz` | Implemented | Confirm HTTP server readiness. |
+| `POST /usage/batches` | Response stub | Explore the request and response. Planned: validate and store usage, returning `202` after the inbox transaction commits. |
+| `GET /customers/{id}/spend-status` | Planned | Return the current UTC month, processed gross spend, limit status, and processing lag. |
 
 An accepted event may still await accounting. The worker will claim pending rows through SQL, apply prices and credit under the customer lock, and commit the financial effect with the inbox completion marker in one transaction. Monthly closing must wait for the customer's fixed boundary of accepted input before issuing an immutable invoice. The platform polls spend status independently of sending new usage.
 

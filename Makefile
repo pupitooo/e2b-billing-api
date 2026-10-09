@@ -9,7 +9,7 @@ export SERVICE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps migrate migration-status psql test db-test
+.PHONY: help services check-service up stop down restart logs ps migrate migration-status psql test db-test api-test
 
 help:
 	@printf '%s\n' \
@@ -27,6 +27,7 @@ help:
 	  'psql     Open an interactive database session' \
 	  'test     Run all implemented test suites' \
 	  'db-test  Apply migrations and run database integrity tests' \
+	  'api-test Build and start the API; run its HTTP happy-path test' \
 	  '' \
 	  'Service commands apply to all services when SERVICE is omitted.' \
 	  'Database commands always target postgres; start it with make up first.' \
@@ -81,7 +82,11 @@ migration-status:
 psql:
 	@$(COMPOSE) exec postgres sh -c 'exec psql -X --username="$${POSTGRES_USER}" --dbname="$${POSTGRES_DB}"'
 
-test: db-test
+test: db-test api-test
+
+api-test:
+	@$(COMPOSE) up --build -d --wait --wait-timeout 120 api
+	@$(COMPOSE) run --rm --no-deps -e E2B_API_URL=http://api:8080 api go test -count=1 -v ./...
 
 db-test: migrate
 	@set -eu; \
