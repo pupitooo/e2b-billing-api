@@ -8,6 +8,8 @@ The [billing model guide](docs/architecture/billing-model.md) describes customer
 
 The [implemented PostgreSQL ERD](docs/diagrams/implemented-data-model/implemented-data-model.png) shows the actual tables, columns, and foreign keys, including `usage_ratings`. Its [editable Mermaid source](docs/diagrams/implemented-data-model/implemented-data-model.mmd) accompanies the preview.
 
+The [usage-to-invoice flow](docs/architecture/usage-to-invoice.md) maps usage events, rating, exact groups, credit, rounding, invoice lines, and invoices to database records, including the current credit precision limit and planned invoice snapshots.
+
 ## Local setup
 
 ### Requirements

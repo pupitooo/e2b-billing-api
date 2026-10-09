@@ -1,0 +1,40 @@
+---
+title: Usage events to invoice
+config:
+  layout: dagre
+  flowchart:
+    wrappingWidth: 340
+    nodeSpacing: 35
+    rankSpacing: 40
+    useMaxWidth: false
+---
+%% User-requested conceptual flow, recorded on 9 October 2026.
+%% This is an accounting pipeline, not seven services or seven SQL tables.
+%% Rating, credit allocation, and rounding logic are planned Go work.
+%% Credit precedes rounding conceptually; current SQL stores credit in cents.
+%% Exact credit deduction below one cent requires a precision decision and migration.
+%% InvoiceLine and Invoice are planned immutable snapshots, not existing tables.
+flowchart TB
+    events["Usage events<br/>Customer used 1,000 CPU seconds<br/>usage_inbox: raw integer units"]
+    rating["Rating<br/>Price rule: USD 0.05 / 1,000,000 units<br/>price_versions + usage_ratings"]
+    group["RatedUsageGroup<br/>Sum compatible usage + exact gross ticks<br/>rated_usage_groups"]
+    credits["Credits (optional)<br/>Deduct eligible usage credit<br/>Current DB: cent ledger and balance"]
+    rounding["Rounding<br/>Convert cumulative group ticks to cents<br/>No rounding of individual events"]
+    line["InvoiceLine (planned)<br/>Immutable usage, credit, and add-on lines<br/>Proposed invoice_lines table"]
+    invoice["Invoice (planned)<br/>Customer, address, number, and cent total<br/>Proposed invoices table"]
+
+    events --> rating
+    rating -->|"1,000 units x 5 = 5,000 ticks"| group
+    group --> credits
+    credits -->|"See guide for current credit precision limits"| rounding
+    rounding --> line
+    line --> invoice
+
+    classDef input fill:#e9f7ee,stroke:#287d4e,color:#173b28;
+    classDef accounting fill:#edf0ff,stroke:#56649c,color:#24335c;
+    classDef precision fill:#fff2cf,stroke:#a56800,color:#543800;
+    classDef planned fill:#f2f3f5,stroke:#6b7280,color:#253044,stroke-dasharray:5 4;
+    class events input;
+    class rating,group accounting;
+    class credits,rounding precision;
+    class line,invoice planned;

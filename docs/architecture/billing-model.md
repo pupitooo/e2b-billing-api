@@ -2,6 +2,8 @@
 
 The schema prepares PostgreSQL for the Go accounting worker. It stores the initial catalog and accounting records; rating, credit allocation, spend-status endpoints, and invoices follow in later changes.
 
+The [usage-to-invoice guide](usage-to-invoice.md) explains the accounting pipeline and the fields used at every stage. Its conceptual credit-before-rounding order also identifies the limits of this schema's cent-based credit records.
+
 ## Implemented PostgreSQL schema (ERD)
 
 This diagram shows all 12 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `003`, including the runner's `schema_migrations` table. It uses the names and types from the migrations.
