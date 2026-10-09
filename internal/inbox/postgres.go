@@ -13,13 +13,34 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// PoolLimits reserves a finite connection budget for one API process.
+type PoolLimits struct {
+	MaxConns int32
+	MinConns int32
+}
+
 // OpenPool establishes PostgreSQL connections with UTC sessions. An empty
 // connection string uses the standard PG environment variables. Migrations
 // remain explicit; the caller owns the returned pool and must close it.
-func OpenPool(ctx context.Context, connectionString string) (*pgxpool.Pool, error) {
+// An optional limit overrides pool sizes from the connection string.
+func OpenPool(ctx context.Context, connectionString string, limits ...PoolLimits) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(connectionString)
 	if err != nil {
 		return nil, errors.New("invalid PostgreSQL connection configuration")
+	}
+	if len(limits) > 1 {
+		return nil, errors.New("only one inbox pool limit may be supplied")
+	}
+	if len(limits) == 1 {
+		limit := limits[0]
+		if limit.MaxConns <= 0 || limit.MinConns < 0 || limit.MinConns > limit.MaxConns {
+			return nil, errors.New("inbox pool requires positive maximum connections and minimum between zero and maximum")
+		}
+		config.MaxConns, config.MinConns = limit.MaxConns, limit.MinConns
+		// MinIdleConns can also be specified in the DSN and must fit the budget.
+		if config.MinIdleConns > config.MaxConns {
+			return nil, errors.New("pool_min_idle_conns exceeds the inbox connection budget")
+		}
 	}
 	config.ConnConfig.RuntimeParams["timezone"] = "UTC"
 	pool, err := pgxpool.NewWithConfig(ctx, config)
@@ -35,7 +56,8 @@ func OpenPool(ctx context.Context, connectionString string) (*pgxpool.Pool, erro
 
 // Postgres stores complete batches in the existing usage_inbox schema.
 type Postgres struct {
-	pool *pgxpool.Pool
+	pool            *pgxpool.Pool
+	rollbackTimeout time.Duration
 }
 
 // ConflictError identifies a reused measurement key with different content.
@@ -50,8 +72,9 @@ func (err *ConflictError) Error() string {
 }
 
 // NewPostgres uses the caller's pool without taking ownership of its lifetime.
-func NewPostgres(pool *pgxpool.Pool) *Postgres {
-	return &Postgres{pool: pool}
+// The caller supplies a positive rollback budget independent of request cancellation.
+func NewPostgres(pool *pgxpool.Pool, rollbackTimeout time.Duration) *Postgres {
+	return &Postgres{pool: pool, rollbackTimeout: rollbackTimeout}
 }
 
 // InsertBatch validates values and commits the entire batch or rolls it back.
@@ -97,7 +120,7 @@ func (store *Postgres) InsertBatch(ctx context.Context, events []usage.Event, re
 	}
 	defer func() {
 		// Cancellation must not prevent cleanup of an already-open transaction.
-		cleanupContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cleanupContext, cancel := context.WithTimeout(context.Background(), store.rollbackTimeout)
 		defer cancel()
 		_ = transaction.Rollback(cleanupContext)
 	}()

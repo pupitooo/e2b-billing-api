@@ -4,6 +4,7 @@ services:
   api:
     build: .
     restart: unless-stopped
+    stop_grace_period: ${E2B_API_STOP_GRACE_PERIOD:-60s}
     depends_on:
       postgres:
         condition: service_healthy
@@ -15,6 +16,17 @@ services:
       PGUSER: e2b
       PGPASSWORD: ${E2B_POSTGRES_PASSWORD:-e2b_local_dev}
       PGSSLMODE: disable
+      E2B_API_STARTUP_TIMEOUT: ${E2B_API_STARTUP_TIMEOUT:-10s}
+      E2B_API_READ_HEADER_TIMEOUT: ${E2B_API_READ_HEADER_TIMEOUT:-5s}
+      E2B_API_READ_TIMEOUT: ${E2B_API_READ_TIMEOUT:-15s}
+      E2B_API_WRITE_TIMEOUT: ${E2B_API_WRITE_TIMEOUT:-35s}
+      E2B_API_IDLE_TIMEOUT: ${E2B_API_IDLE_TIMEOUT:-90s}
+      E2B_API_INGESTION_TIMEOUT: ${E2B_API_INGESTION_TIMEOUT:-10s}
+      E2B_API_ROLLBACK_TIMEOUT: ${E2B_API_ROLLBACK_TIMEOUT:-5s}
+      E2B_API_SHUTDOWN_TIMEOUT: ${E2B_API_SHUTDOWN_TIMEOUT:-45s}
+      E2B_API_DB_MAX_CONNS: ${E2B_API_DB_MAX_CONNS:-8}
+      E2B_API_DB_MIN_CONNS: ${E2B_API_DB_MIN_CONNS:-2}
+      E2B_API_MAX_IN_FLIGHT_BATCHES: ${E2B_API_MAX_IN_FLIGHT_BATCHES:-32}
     ports:
       - "127.0.0.1:${E2B_API_PORT:-8081}:8080"
     healthcheck:

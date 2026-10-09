@@ -21,10 +21,20 @@ type BatchStore interface {
 }
 
 // NewHandler routes requests through validation and the supplied durable store.
-func NewHandler(store BatchStore) http.Handler {
+// The owner supplies positive database and admission budgets. Excess batches
+// receive retryable 503 before application body parsing.
+func NewHandler(store BatchStore, ingestionTimeout time.Duration, maxInFlight int) http.Handler {
 	mux := http.NewServeMux()
+	inFlight := make(chan struct{}, maxInFlight)
 	mux.HandleFunc("POST /usage/batches", func(w http.ResponseWriter, r *http.Request) {
-		postUsageBatches(w, r, store)
+		select {
+		case inFlight <- struct{}{}:
+			defer func() { <-inFlight }()
+		default:
+			writeInboxUnavailable(w)
+			return
+		}
+		postUsageBatches(w, r, store, ingestionTimeout)
 	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -32,7 +42,7 @@ func NewHandler(store BatchStore) http.Handler {
 	return mux
 }
 
-func postUsageBatches(w http.ResponseWriter, r *http.Request, store BatchStore) {
+func postUsageBatches(w http.ResponseWriter, r *http.Request, store BatchStore, ingestionTimeout time.Duration) {
 	receivedAt := time.Now().UTC().Truncate(time.Microsecond)
 	mediaType, parameters, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" ||
@@ -59,7 +69,7 @@ func postUsageBatches(w http.ResponseWriter, r *http.Request, store BatchStore) 
 		writeRequestError(w, validationError)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), ingestionTimeout)
 	defer cancel()
 	if store == nil {
 		err = errors.New("inbox store is not configured")
@@ -78,16 +88,22 @@ func postUsageBatches(w http.ResponseWriter, r *http.Request, store BatchStore) 
 		}
 		// A failed/lost commit response can leave the outcome unknown. Clients
 		// must retain the original keys and content when retrying after 503.
-		w.Header().Set("Retry-After", "1")
-		writeRequestError(w, &requestError{
-			status: http.StatusServiceUnavailable, Code: "inbox_unavailable",
-			Message: "Inbox storage is unavailable. Retry the same event identities and content.",
-		})
+		writeInboxUnavailable(w)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte("{\"status\":\"accepted\"}\n"))
+}
+
+// writeInboxUnavailable also covers admission exhaustion: no success is
+// acknowledged, and unchanged producer retries preserve the event contract.
+func writeInboxUnavailable(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "1")
+	writeRequestError(w, &requestError{
+		status: http.StatusServiceUnavailable, Code: "inbox_unavailable",
+		Message: "Inbox storage is unavailable. Retry the same event identities and content.",
+	})
 }
 
 func writeRequestError(w http.ResponseWriter, err *requestError) {
