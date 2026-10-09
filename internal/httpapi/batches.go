@@ -35,6 +35,8 @@ type requestError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Field   string `json:"field,omitempty"`
+	Source  string `json:"source,omitempty"`
+	EventID string `json:"event_id,omitempty"`
 }
 
 type usageBatch struct {
@@ -225,9 +227,9 @@ func isNull(raw []byte) bool {
 }
 
 func invalidJSON(message, field string) *requestError {
-	return &requestError{400, "invalid_json", message, field}
+	return &requestError{status: 400, Code: "invalid_json", Message: message, Field: field}
 }
 
 func invalidBatch(message, field string) *requestError {
-	return &requestError{422, "invalid_batch", message, field}
+	return &requestError{status: 422, Code: "invalid_batch", Message: message, Field: field}
 }

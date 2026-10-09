@@ -4,6 +4,9 @@ services:
   api:
     build: .
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       TZ: UTC
       PGHOST: postgres

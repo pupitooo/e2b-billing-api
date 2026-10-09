@@ -206,7 +206,8 @@ func testDatabase(t *testing.T, settings map[string]string) *pgxpool.Pool {
 	if _, err := rand.Read(random[:]); err != nil {
 		t.Fatalf("Generate private schema name: %v", err)
 	}
-	schema := pgx.Identifier{"test_inbox_" + hex.EncodeToString(random[:])}.Sanitize()
+	schemaName := "test_inbox_" + hex.EncodeToString(random[:])
+	schema := pgx.Identifier{schemaName}.Sanitize()
 	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
 		t.Fatalf("Create private schema: %v", err)
 	}
@@ -219,6 +220,7 @@ func testDatabase(t *testing.T, settings map[string]string) *pgxpool.Pool {
 	})
 	config := admin.Config()
 	config.ConnConfig.RuntimeParams["search_path"] = schema
+	config.ConnConfig.RuntimeParams["application_name"] = schemaName
 	for key, value := range settings {
 		config.ConnConfig.RuntimeParams[key] = value
 	}

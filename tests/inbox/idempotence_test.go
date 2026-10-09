@@ -222,8 +222,8 @@ func TestInboxConcurrentConflictingBatches(t *testing.T) {
 func TestInboxWaitingWriter(t *testing.T) {
 	for _, outcome := range []string{"commit", "rollback", "cancel waiting request"} {
 		t.Run(outcome, func(t *testing.T) {
-			const application = "inbox-waiting-writer-test"
-			pool := testDatabase(t, map[string]string{"application_name": application})
+			pool := testDatabase(t, nil)
+			application := pool.Config().ConnConfig.RuntimeParams["application_name"]
 			holder, err := pool.Begin(context.Background())
 			if err != nil {
 				t.Fatalf("Begin competing transaction: %v", err)

@@ -20,7 +20,7 @@ func validEvent() usage.Event {
 		Metric:        "cpu_seconds",
 		PeriodStart:   time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC),
 		PeriodEnd:     time.Date(2026, 10, 10, 13, 0, 0, 0, time.UTC),
-		Units:         100000000,
+		Units:         100_000_000,
 	}
 }
 
@@ -43,7 +43,7 @@ func TestEventValidateValid(t *testing.T) {
 			e.Metric = "another-metric"
 		}},
 		{"nonblank Unicode identifiers", func(e *usage.Event) {
-			e.Source = "  zdroj-žluťoučký  "
+			e.Source = "  zdroj-žluťoučký kůň  "
 			e.EventID = "測定-001"
 		}},
 		{"UTC month boundary at microsecond precision", func(e *usage.Event) {

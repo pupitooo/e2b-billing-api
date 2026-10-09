@@ -26,7 +26,7 @@ func TestHandlerRoutes(t *testing.T) {
 		{"unknown route", "An unregistered path returns HTTP 404.", http.MethodGet, "/missing", http.StatusNotFound, "", ""},
 		{"usage method", "The usage endpoint rejects GET requests and advertises POST in the Allow header.", http.MethodGet, "/usage/batches", http.StatusMethodNotAllowed, "POST", ""},
 	}
-	handler := httpapi.NewHandler()
+	handler := httpapi.NewHandler(acceptingStore())
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log(tt.description)
@@ -46,12 +46,12 @@ func TestHandlerRoutes(t *testing.T) {
 
 // TestUsageBatchResponse verifies the current acknowledgement response:
 // a valid request returns HTTP 202, a JSON content type, and an "accepted"
-// status after validation. The response stub does not confirm storage yet.
+// status after validation and a successful call to the durable store.
 func TestUsageBatchResponse(t *testing.T) {
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(validUsageBatch))
 	request.Header.Set("Content-Type", "application/json")
-	httpapi.NewHandler().ServeHTTP(response, request)
+	httpapi.NewHandler(acceptingStore()).ServeHTTP(response, request)
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("Status = %d, want %d", response.Code, http.StatusAccepted)
 	}
