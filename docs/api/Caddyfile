@@ -1,0 +1,32 @@
+{
+	auto_https off
+	admin off
+}
+
+:8080 {
+	root * /usr/share/caddy
+	templates
+	header -Server
+	header Cache-Control "no-cache"
+
+	# Keep browser requests on the documentation origin.
+	handle_path /api/* {
+		reverse_proxy api:8080
+	}
+
+	# Scalar's startup script writes its document configuration here.
+	handle /configuration.json {
+		root * /tmp
+		file_server
+	}
+
+	handle /health {
+		respond "OK" 200
+	}
+
+	handle {
+		file_server {
+			precompressed gzip
+		}
+	}
+}

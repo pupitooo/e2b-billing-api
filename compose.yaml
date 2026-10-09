@@ -15,6 +15,35 @@ services:
       retries: 12
       start_period: 5s
 
+  docs:
+    image: scalarapi/api-reference@sha256:720f243b22561e621bf4a87b23595ed2f7aeae366ff38be1fe68bde8ef4aaa9d
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_REFERENCE_CONFIG: |
+        {
+          "url": "/openapi.yaml",
+          "layout": "modern",
+          "theme": "default",
+          "withDefaultFonts": false,
+          "showDeveloperTools": "never",
+          "agent": {"disabled": true},
+          "metaData": {"title": "E2B Billing API Reference"}
+        }
+    ports:
+      - "127.0.0.1:${E2B_DOCS_PORT:-8082}:8080"
+    volumes:
+      - ./docs/api/openapi.yaml:/usr/share/caddy/openapi.yaml:ro
+      - ./docs/api/Caddyfile:/etc/caddy/Caddyfile:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
   postgres:
     image: postgres:18.6-alpine
     restart: unless-stopped
