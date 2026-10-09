@@ -7,107 +7,333 @@ import (
 	"e2b/billing-api/internal/accounting"
 )
 
-// Offset timestamps must preserve the UTC usage month, including a segment that
-// ends exactly at the next UTC month's boundary. Crossing segments are errors.
-func TestUsageMonthUTC(t *testing.T) {
-	start := instant(t, "2026-11-01T07:00:00+08:00")
-	end := instant(t, "2026-11-01T08:00:00+08:00")
-	month, err := accounting.UsageMonth(start, end)
-	if err != nil || !month.Equal(instant(t, "2026-10-01T00:00:00Z")) || month.Location() != time.UTC {
-		t.Fatalf("UTC October month expected: %s, %v", month, err)
-	}
-	for _, badEnd := range []time.Time{start, start.Add(-time.Second), end.Add(time.Microsecond), {}} {
-		if _, err := accounting.UsageMonth(start, badEnd); err == nil {
-			t.Fatalf("Invalid or crossing interval ending %s must fail", badEnd)
-		}
-	}
-	if _, err := accounting.UTCMonth(time.Date(10_000, 1, 1, 0, 0, 0, 0, time.UTC)); err == nil {
-		t.Fatal("An unrepresentable transport year must fail")
-	}
-}
-
-// Late usage retains its original open month, or moves beyond closed months
-// without changing its usage month. Future usage never bills into an earlier month.
-func TestBillingMonthRouting(t *testing.T) {
-	october := instant(t, "2026-10-01T00:00:00Z")
-	november := instant(t, "2026-11-01T00:00:00Z")
-	december := instant(t, "2026-12-01T00:00:00Z")
-	for _, fixture := range []struct {
-		usage, receipt, want time.Time
-		closed               []time.Time
+// UTCMonth returns the UTC month boundary, including year one, and rejects
+// missing timestamps and years beyond the supported transport range.
+func TestUTCMonth(t *testing.T) {
+	tests := []struct {
+		name      string
+		timestamp time.Time
+		wantMonth string
+		wantError bool
 	}{
-		{october, november.Add(time.Hour), october, nil},
-		{october, november.Add(time.Hour), november, []time.Time{october}},
-		{october, november.Add(time.Hour), december, []time.Time{october, november}},
-		{november, october.Add(time.Hour), november, nil},
-		{october, october.Add(time.Hour), november, []time.Time{october}},
-	} {
-		got, err := accounting.BillingMonth(fixture.usage, fixture.receipt, fixture.closed)
-		if err != nil || !got.Equal(fixture.want) {
-			t.Fatalf("Billing month: got %s, %v; want %s", got, err, fixture.want)
-		}
+		{
+			name:      "local November timestamp belongs to UTC October",
+			timestamp: instant(t, "2026-11-01T07:00:00+08:00"),
+			wantMonth: "2026-10-01T00:00:00Z",
+			wantError: false,
+		},
+		{
+			name:      "first supported year has a valid January boundary",
+			timestamp: instant(t, "0001-01-02T12:00:00Z"),
+			wantMonth: "0001-01-01T00:00:00Z",
+			wantError: false,
+		},
+		{
+			name:      "missing timestamp is rejected",
+			timestamp: time.Time{},
+			wantError: true,
+		},
+		{
+			name:      "year beyond the transport range is rejected",
+			timestamp: time.Date(10_000, 1, 1, 0, 0, 0, 0, time.UTC),
+			wantError: true,
+		},
 	}
-	if _, err := accounting.BillingMonth(october.Add(time.Hour), november, nil); err == nil {
-		t.Fatal("A usage month must be a canonical UTC month boundary")
-	}
-	if _, err := accounting.BillingMonth(october, november, []time.Time{october.Add(time.Hour)}); err == nil {
-		t.Fatal("A closed month must be a canonical UTC month boundary")
-	}
-	if _, err := accounting.BillingMonth(october, time.Time{}, nil); err == nil {
-		t.Fatal("Missing durable receipt time must fail")
-	}
-	lastMonth := instant(t, "9999-12-01T00:00:00Z")
-	if _, err := accounting.BillingMonth(lastMonth, lastMonth, []time.Time{lastMonth}); err == nil {
-		t.Fatal("Routing past the last representable year must fail")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := accounting.UTCMonth(tt.timestamp)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("UTCMonth(%s) error = nil; want an error", tt.timestamp)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("UTCMonth(%s) error = %v; want nil", tt.timestamp, err)
+			}
+			if !got.Equal(instant(t, tt.wantMonth)) {
+				t.Errorf("UTCMonth(%s) = %s; want %s", tt.timestamp, got, tt.wantMonth)
+			}
+			if got.Location() != time.UTC {
+				t.Errorf("UTCMonth(%s) location = %s; want UTC", tt.timestamp, got.Location())
+			}
+		})
 	}
 }
 
-// An add-on purchased at UTC month end bills the full price in that month and
-// later months, regardless of its local offset, with no charge in earlier months.
-func TestAddonFullMonthlyCharge(t *testing.T) {
-	purchase := instant(t, "2026-11-01T07:59:59+08:00")
-	for _, fixture := range []struct {
-		month string
-		want  int64
+// UsageMonth accepts a half-open interval within one UTC month, including an end
+// at the next month's boundary; empty, reversed, crossing, or missing times fail.
+func TestUsageMonth(t *testing.T) {
+	tests := []struct {
+		name      string
+		start     string
+		end       string
+		wantMonth string
+		wantError bool
 	}{
-		{"2026-09-01T00:00:00Z", 0}, {"2026-10-01T00:00:00Z", 2_000}, {"2026-11-01T00:00:00Z", 2_000},
-	} {
-		got, err := accounting.AddonCharge(purchase, instant(t, fixture.month), 2_000)
-		if err != nil || got != fixture.want {
-			t.Fatalf("Add-on month %s: got %d, %v; want %d", fixture.month, got, err, fixture.want)
-		}
+		{
+			name:      "offset interval ends exactly at the next UTC month",
+			start:     "2026-11-01T07:00:00+08:00",
+			end:       "2026-11-01T08:00:00+08:00",
+			wantMonth: "2026-10-01T00:00:00Z",
+			wantError: false,
+		},
+		{
+			name:      "consumption in the first supported month is valid",
+			start:     "0001-01-02T12:00:00Z",
+			end:       "0001-01-02T13:00:00Z",
+			wantMonth: "0001-01-01T00:00:00Z",
+			wantError: false,
+		},
+		{
+			name:      "equal start and end are rejected",
+			start:     "2026-11-01T07:00:00+08:00",
+			end:       "2026-11-01T07:00:00+08:00",
+			wantError: true,
+		},
+		{
+			name:      "end before start is rejected",
+			start:     "2026-11-01T07:00:00+08:00",
+			end:       "2026-11-01T06:59:59+08:00",
+			wantError: true,
+		},
+		{
+			name:      "one microsecond past the next UTC month is rejected",
+			start:     "2026-11-01T07:00:00+08:00",
+			end:       "2026-11-01T08:00:00.000001+08:00",
+			wantError: true,
+		},
+		{
+			name:      "missing end is rejected",
+			start:     "2026-11-01T07:00:00+08:00",
+			end:       "",
+			wantError: true,
+		},
 	}
-	if _, err := accounting.AddonCharge(purchase, instant(t, "2026-10-02T00:00:00Z"), 2_000); err == nil {
-		t.Fatal("A billing date that is not a month boundary must fail")
-	}
-	if _, err := accounting.AddonCharge(purchase, instant(t, "2026-10-01T00:00:00Z"), -1); err == nil {
-		t.Fatal("A negative add-on price must fail")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := accounting.UsageMonth(instant(t, tt.start), instant(t, tt.end))
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("UsageMonth(%q, %q) error = nil; want an error", tt.start, tt.end)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("UsageMonth(%q, %q) error = %v; want nil", tt.start, tt.end, err)
+			}
+			if !got.Equal(instant(t, tt.wantMonth)) {
+				t.Errorf("UsageMonth(%q, %q) = %s; want %s", tt.start, tt.end, got, tt.wantMonth)
+			}
+			if got.Location() != time.UTC {
+				t.Errorf("UsageMonth(%q, %q) location = %s; want UTC", tt.start, tt.end, got.Location())
+			}
+		})
 	}
 }
 
-// The first supported calendar month equals Go's zero time but must still route
-// and bill correctly when derived from a valid non-zero consumption timestamp.
-func TestFirstRepresentableMonth(t *testing.T) {
-	start := instant(t, "0001-01-02T12:00:00Z")
-	month, err := accounting.UsageMonth(start, start.Add(time.Hour))
-	if err != nil || !month.Equal(instant(t, "0001-01-01T00:00:00Z")) {
-		t.Fatalf("First-year January must be a valid usage month: %s, %v", month, err)
+// BillingMonth preserves an open usage month and routes closed months to the
+// first eligible open month; malformed inputs and exhausted calendar years fail.
+func TestBillingMonth(t *testing.T) {
+	tests := []struct {
+		name         string
+		usageMonth   string
+		receivedAt   string
+		closedMonths []string
+		wantMonth    string
+		wantError    bool
+	}{
+		{
+			name:         "late usage retains its original open month",
+			usageMonth:   "2026-10-01T00:00:00Z",
+			receivedAt:   "2026-11-01T01:00:00Z",
+			closedMonths: nil,
+			wantMonth:    "2026-10-01T00:00:00Z",
+			wantError:    false,
+		},
+		{
+			name:         "closed October routes late usage to open November",
+			usageMonth:   "2026-10-01T00:00:00Z",
+			receivedAt:   "2026-11-01T01:00:00Z",
+			closedMonths: []string{"2026-10-01T00:00:00Z"},
+			wantMonth:    "2026-11-01T00:00:00Z",
+			wantError:    false,
+		},
+		{
+			name:         "closed October and November route usage to December",
+			usageMonth:   "2026-10-01T00:00:00Z",
+			receivedAt:   "2026-11-01T01:00:00Z",
+			closedMonths: []string{"2026-10-01T00:00:00Z", "2026-11-01T00:00:00Z"},
+			wantMonth:    "2026-12-01T00:00:00Z",
+			wantError:    false,
+		},
+		{
+			name:         "future usage never bills into an earlier receipt month",
+			usageMonth:   "2026-11-01T00:00:00Z",
+			receivedAt:   "2026-10-01T01:00:00Z",
+			closedMonths: nil,
+			wantMonth:    "2026-11-01T00:00:00Z",
+			wantError:    false,
+		},
+		{
+			name:         "closed usage month advances even when receipt is in that month",
+			usageMonth:   "2026-10-01T00:00:00Z",
+			receivedAt:   "2026-10-01T01:00:00Z",
+			closedMonths: []string{"2026-10-01T00:00:00Z"},
+			wantMonth:    "2026-11-01T00:00:00Z",
+			wantError:    false,
+		},
+		{
+			name:         "closed January in year one routes to February",
+			usageMonth:   "0001-01-01T00:00:00Z",
+			receivedAt:   "0001-01-02T12:00:00Z",
+			closedMonths: []string{"0001-01-01T00:00:00Z"},
+			wantMonth:    "0001-02-01T00:00:00Z",
+			wantError:    false,
+		},
+		{
+			name:         "usage month without a canonical boundary is rejected",
+			usageMonth:   "2026-10-01T01:00:00Z",
+			receivedAt:   "2026-11-01T00:00:00Z",
+			closedMonths: nil,
+			wantError:    true,
+		},
+		{
+			name:         "closed month without a canonical boundary is rejected",
+			usageMonth:   "2026-10-01T00:00:00Z",
+			receivedAt:   "2026-11-01T00:00:00Z",
+			closedMonths: []string{"2026-10-01T01:00:00Z"},
+			wantError:    true,
+		},
+		{
+			name:         "missing durable receipt time is rejected",
+			usageMonth:   "2026-10-01T00:00:00Z",
+			receivedAt:   "",
+			closedMonths: nil,
+			wantError:    true,
+		},
+		{
+			name:         "routing beyond the last supported month is rejected",
+			usageMonth:   "9999-12-01T00:00:00Z",
+			receivedAt:   "9999-12-01T00:00:00Z",
+			closedMonths: []string{"9999-12-01T00:00:00Z"},
+			wantError:    true,
+		},
 	}
-	billingMonth, err := accounting.BillingMonth(month, start, []time.Time{month})
-	if err != nil || !billingMonth.Equal(instant(t, "0001-02-01T00:00:00Z")) {
-		t.Fatalf("Closed first-year January must route to February: %s, %v", billingMonth, err)
-	}
-	if cents, err := accounting.AddonCharge(start, month, 2_000); err != nil || cents != 2_000 {
-		t.Fatalf("A first-year January purchase must charge its month: %d, %v", cents, err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			closedMonths := make([]time.Time, len(tt.closedMonths))
+			for i, month := range tt.closedMonths {
+				closedMonths[i] = instant(t, month)
+			}
+			got, err := accounting.BillingMonth(instant(t, tt.usageMonth), instant(t, tt.receivedAt), closedMonths)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("BillingMonth(%q, %q, %v) error = nil; want an error", tt.usageMonth, tt.receivedAt, tt.closedMonths)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("BillingMonth(%q, %q, %v) error = %v; want nil", tt.usageMonth, tt.receivedAt, tt.closedMonths, err)
+			}
+			if !got.Equal(instant(t, tt.wantMonth)) {
+				t.Errorf("BillingMonth(%q, %q, %v) = %s; want %s", tt.usageMonth, tt.receivedAt, tt.closedMonths, got, tt.wantMonth)
+			}
+		})
 	}
 }
 
-// Parse timestamp fixtures with their explicit offsets, preserving the same instant.
+// AddonCharge bills the full monthly price from the UTC purchase month onward,
+// including year one, and rejects a noncanonical billing month or negative price.
+func TestAddonCharge(t *testing.T) {
+	tests := []struct {
+		name         string
+		purchasedAt  string
+		billingMonth string
+		priceCents   int64
+		wantCents    int64
+		wantError    bool
+	}{
+		{
+			name:         "month before purchase has no charge",
+			purchasedAt:  "2026-11-01T07:59:59+08:00",
+			billingMonth: "2026-09-01T00:00:00Z",
+			priceCents:   2_000,
+			wantCents:    0,
+			wantError:    false,
+		},
+		{
+			name:         "purchase at UTC October end incurs the full October charge",
+			purchasedAt:  "2026-11-01T07:59:59+08:00",
+			billingMonth: "2026-10-01T00:00:00Z",
+			priceCents:   2_000,
+			wantCents:    2_000,
+			wantError:    false,
+		},
+		{
+			name:         "month after purchase also incurs the full charge",
+			purchasedAt:  "2026-11-01T07:59:59+08:00",
+			billingMonth: "2026-11-01T00:00:00Z",
+			priceCents:   2_000,
+			wantCents:    2_000,
+			wantError:    false,
+		},
+		{
+			name:         "purchase in year one incurs that month's full charge",
+			purchasedAt:  "0001-01-02T12:00:00Z",
+			billingMonth: "0001-01-01T00:00:00Z",
+			priceCents:   2_000,
+			wantCents:    2_000,
+			wantError:    false,
+		},
+		{
+			name:         "billing date after the month boundary is rejected",
+			purchasedAt:  "2026-11-01T07:59:59+08:00",
+			billingMonth: "2026-10-02T00:00:00Z",
+			priceCents:   2_000,
+			wantError:    true,
+		},
+		{
+			name:         "negative monthly price is rejected",
+			purchasedAt:  "2026-11-01T07:59:59+08:00",
+			billingMonth: "2026-10-01T00:00:00Z",
+			priceCents:   -1,
+			wantError:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := accounting.AddonCharge(instant(t, tt.purchasedAt), instant(t, tt.billingMonth), tt.priceCents)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("AddonCharge(%q, %q, %d) error = nil; want an error", tt.purchasedAt, tt.billingMonth, tt.priceCents)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("AddonCharge(%q, %q, %d) error = %v; want nil", tt.purchasedAt, tt.billingMonth, tt.priceCents, err)
+			}
+			if got != tt.wantCents {
+				t.Errorf("AddonCharge(%q, %q, %d) = %d cents; want %d cents", tt.purchasedAt, tt.billingMonth, tt.priceCents, got, tt.wantCents)
+			}
+		})
+	}
+}
+
+// Parse explicit timestamp fixtures; an empty string deliberately represents a
+// missing timestamp so rejection cases keep their input visible in the table.
 func instant(t *testing.T, value string) time.Time {
 	t.Helper()
+	if value == "" {
+		return time.Time{}
+	}
 	timestamp, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Invalid timestamp fixture %q: %v", value, err)
 	}
 	return timestamp
 }
