@@ -8,11 +8,34 @@ RUN ?=
 SUITE ?= $(if $(strip $(RUN)),go,all)
 export SERVICE RUN SUITE
 
+SCENARIO ?= assignment
+ACTION ?= run
+MODE ?= fast
+ADVANCE ?= 0
+SOURCE ?= platform-simulator
+STATE ?= /state/run.json
+SANDBOXES ?= 1
+INTERVAL ?= 1h
+BATCH_SIZE ?= 100
+DELAY ?= 0s
+TIMEOUT ?= 15s
+RETRY_MIN ?= 1s
+RETRY_MAX ?= 30s
+MAX_ATTEMPTS ?= 0
+DUPLICATES ?= 0
+LOSE_RESPONSE ?= 0
+REVERSE ?= 0
+SIM_API_URL ?= http://api:8080
+SCENARIO_FILE ?= $(if $(filter custom,$(SCENARIO)),/scenarios/custom-scenario.json,)
+export SCENARIO ACTION MODE ADVANCE SOURCE STATE SANDBOXES INTERVAL BATCH_SIZE
+export DELAY TIMEOUT RETRY_MIN RETRY_MAX MAX_ATTEMPTS DUPLICATES LOSE_RESPONSE
+export REVERSE SIM_API_URL SCENARIO_FILE
+
 # Pass a selected service as a single shell argument.
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs
+.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs simulate simulate-help
 
 help:
 	@printf '%s\n' \
@@ -36,10 +59,13 @@ help:
 	  'api-test Start the API and run HTTP integration tests' \
 	  'inbox-test Run PostgreSQL repository tests in private schemas' \
 	  'docs     Start Scalar documentation and the API for browser requests' \
+	  'simulate Run or resume platform usage; MODE=step releases one step' \
+	  'simulate-help Show all simulator options' \
 	  '' \
 	  'Service commands apply to all services when SERVICE is omitted.' \
 	  'Database commands always target postgres; start it with make up first.' \
 	  'Example: make up SERVICE=postgres' \
+	  'Example: make simulate SCENARIO=assignment MODE=step' \
 	  'Example: make test RUN="^TestUsageBatchesHappyPath$$"'
 
 services:
@@ -47,6 +73,21 @@ services:
 
 docs:
 	@$(MAKE) up SERVICE=docs
+
+simulate-help:
+	@$(COMPOSE) build simulator
+	@$(COMPOSE) run --rm --no-deps simulator platform-simulator --help
+
+simulate:
+	@$(COMPOSE) build simulator
+	@$(COMPOSE) run --rm --no-deps simulator platform-simulator \
+	  "--action=$$ACTION" "--scenario=$$SCENARIO" "--mode=$$MODE" \
+	  "--advance=$$ADVANCE" "--source=$$SOURCE" "--state=$$STATE" \
+	  "--sandboxes=$$SANDBOXES" "--interval=$$INTERVAL" "--file=$$SCENARIO_FILE" \
+	  "--api-url=$$SIM_API_URL" "--batch-size=$$BATCH_SIZE" "--delay=$$DELAY" \
+	  "--timeout=$$TIMEOUT" "--retry-min=$$RETRY_MIN" "--retry-max=$$RETRY_MAX" \
+	  "--max-attempts=$$MAX_ATTEMPTS" "--duplicates=$$DUPLICATES" \
+	  "--lose-response=$$LOSE_RESPONSE" "--reverse=$$REVERSE"
 
 check-service:
 	@set -eu; \

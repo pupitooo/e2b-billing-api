@@ -1,0 +1,36 @@
+{
+  "name": "custom-example",
+  "steps": [
+    {
+      "name": "first-minute",
+      "events": [
+        {
+          "event_id": "custom-acme-minute-001",
+          "schema_version": 1,
+          "customer_id": "acme",
+          "sandbox_id": "acme-sandbox-001",
+          "metric": "cpu_seconds",
+          "period_start": "2026-10-10T12:00:00Z",
+          "period_end": "2026-10-10T12:01:00Z",
+          "units": 60
+        }
+      ]
+    },
+    {
+      "name": "second-minute",
+      "barrier": "Continue with ADVANCE=1 when ready to release the second measurement.",
+      "events": [
+        {
+          "event_id": "custom-acme-minute-002",
+          "schema_version": 1,
+          "customer_id": "acme",
+          "sandbox_id": "acme-sandbox-001",
+          "metric": "cpu_seconds",
+          "period_start": "2026-10-10T12:01:00Z",
+          "period_end": "2026-10-10T12:02:00Z",
+          "units": 0
+        }
+      ]
+    }
+  ]
+}

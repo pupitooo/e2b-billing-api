@@ -1,6 +1,18 @@
 name: e2b-local
 
 services:
+  simulator:
+    build: .
+    init: true
+    restart: unless-stopped
+    # Startup prepares the CLI container; only an explicit command creates usage.
+    command: ["platform-simulator", "--action=idle"]
+    environment:
+      TZ: UTC
+    volumes:
+      - simulator_data:/state
+      - ./docs/simulator:/scenarios:ro
+
   api:
     build: .
     restart: unless-stopped
@@ -110,3 +122,4 @@ services:
 
 volumes:
   postgres_data:
+  simulator_data:

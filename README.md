@@ -1,6 +1,6 @@
 # E2B Billing API
 
-Billing service for the E2B assignment, built with Go and PostgreSQL. It provides an HTTP API, an independently managed worker runtime, versioned database migrations, a usage inbox, and an accounting model with the assignment's initial catalog.
+Billing service for the E2B assignment, built with Go and PostgreSQL. It provides an HTTP API, an independently managed worker runtime, versioned database migrations, a usage inbox, an accounting model with the assignment's initial catalog, and a restartable platform simulator.
 
 The project uses the selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected). The [architecture comparison](docs/brainstorming/architecture-options.md) records the design rationale.
 
@@ -139,7 +139,7 @@ Start all implemented services:
 make up
 ```
 
-`make up` starts PostgreSQL, the API, worker, and Scalar documentation and waits for readiness. It does not apply database migrations. The API verifies its database connection on startup; ingestion returns `503` until the inbox migration has been applied. The worker lifecycle scaffold runs independently of the API and PostgreSQL.
+`make up` starts PostgreSQL, the API, worker, Scalar documentation, and the simulator container and waits for readiness. The simulator waits for an explicit `make simulate` command before creating usage. Startup does not apply database migrations. The API verifies its database connection on startup; ingestion returns `503` until the inbox migration has been applied. The worker lifecycle scaffold runs independently of the API and PostgreSQL.
 
 `make up`, `make docs`, `make restart`, and `make ps` print the actual browser addresses of running HTTP services. Use `make links` to show them again.
 
@@ -158,8 +158,8 @@ make up
 | `make logs SERVICE=postgres` | Show the last 100 PostgreSQL log lines. |
 | `make restart SERVICE=postgres` | Restart PostgreSQL and wait for readiness. |
 | `make stop` | Stop services while retaining containers and data. |
-| `make down` | Remove containers and the network while retaining database data. |
-| `make services` | List available service names: `api`, `docs`, `worker`, and `postgres`. |
+| `make down` | Remove containers and the network while retaining database and sender data. |
+| `make services` | List available service names: `api`, `docs`, `postgres`, `simulator`, and `worker`. |
 | `make help` | Show all available commands. |
 
 PostgreSQL uses the pinned `postgres:18.6-alpine` image, UTC timestamps, and a named volume. Its port is published on `127.0.0.1`. Database data survives `make stop`, `make restart`, and `make down`.
@@ -252,6 +252,157 @@ uses code `inbox_unavailable` with `Retry-After: 1`, without exposing SQL detail
 Retain events and retry the same identities and content after backoff. A `503`
 or a lost response may occur after commit; idempotence makes unchanged retries
 safe. See the [OpenAPI specification](docs/api/openapi.yaml) for the full contract.
+
+## Platform simulator
+
+The separate Go executable [cmd/platform-simulator](cmd/platform-simulator/main.go)
+creates synthetic measurement increments and sends them through the actual
+`POST /usage/batches` interface. It supplies no prices or monetary charges.
+The named `simulator_data` volume retains the plan, stable identities, release
+cursor, and delivery receipts across commands and container restarts.
+
+Start the API after [applying migrations](#initialize-the-database):
+
+```sh
+make up SERVICE=api
+make simulate SCENARIO=assignment MODE=step
+make simulate SCENARIO=assignment MODE=step
+make simulate ACTION=status
+```
+
+The first command releases the two October 10 measurements; the second releases
+the two October 20 measurements. Each `MODE=step` invocation releases at most
+one step. `MODE=fast` (the default) releases the current phase at once, stopping
+at the same barrier before late October. No command waits for the real calendar
+to reach the fixture dates, and faster delivery never changes consumption times.
+
+After October accounting and invoice issuance, explicitly release late usage:
+
+```sh
+make simulate ADVANCE=1 MODE=step
+make simulate MODE=step
+```
+
+These commands deliver Acme's October 30 measurement and then November 3.
+`make simulate ADVANCE=1 MODE=fast` releases both together. The barrier records
+operator intent; the simulator cannot check invoice or accounting completion.
+The current implementation covers transport only: accounting, credit, invoice
+operations, and spend-status polling remain subsequent work. HTTP `202`
+confirms the whole batch's durable inbox receipt, not financial processing.
+
+The default scenario reproduces these exact hourly totals:
+
+| Consumption hour (UTC) | Acme `cpu_seconds` | Cyberdyne `cpu_seconds` |
+| --- | ---: | ---: |
+| October 10, 2026, 12:00 | 100000000 | 123456789 |
+| October 20, 2026, 12:00 | 200000000 | 200000000 |
+| October 30, 2026, 12:00 (late) | 50000000 | — |
+| November 3, 2026, 12:00 | 100000000 | — |
+
+### Generate, pause, resume, and replay
+
+```sh
+make simulate ACTION=generate MODE=step
+make simulate ACTION=status
+make simulate ACTION=send
+make simulate ACTION=replay BATCH_SIZE=1 REVERSE=1
+```
+
+`generate` saves a step without contacting billing, so generation and delivery
+can be controlled separately. `send` drains only previously released pending
+measurements. `replay` resends all released measurements, including confirmed
+ones, with unchanged identities and content. It releases no future steps.
+An ordinary `run` after an interrupted delivery first drains its existing
+pending buffer without advancing the scenario; invoke it again to continue.
+Status reports released steps, generated, pending and delivered measurements,
+HTTP attempt count, the next barrier, and the last delivery error.
+
+The complete plan is saved before sending, and each released step is persisted
+before its first request. Each receipt uses a synced atomic file replacement.
+An OS file lock permits one writer per state file; read-only status remains
+available during retries. Ctrl+C or a killed process releases the lock.
+Timeouts, lost responses, `429`, and server errors retain
+measurements and retry with increasing delay and jitter, honoring `Retry-After`.
+Other responses, including `409` and invalid acknowledgements, stop with the
+buffer retained for investigation. Default retries continue until interrupted;
+`MAX_ATTEMPTS` can bound attempts per batch, including deliberate duplicates.
+
+The guarantee begins after successful storage and assumes the sender volume
+survives. Disk loss is outside this local simulator's guarantee. Keep
+`simulator_data` together with its database: if PostgreSQL is reset while sender
+receipts remain, use `ACTION=replay` to restore released events to the inbox.
+Deleting only sender state and changing identities can add consumption again.
+
+### Controls and fault scenarios
+
+| Make parameter | Default | Effect |
+| --- | --- | --- |
+| `SCENARIO` | `assignment` | `assignment`, `lost-response`, `duplicates`, or `custom`. |
+| `ACTION` | `run` | `run`, `generate`, `send`, `status`, or `replay`. |
+| `MODE`, `ADVANCE` | `fast`, `0` | Release a phase or one step; explicitly pass a barrier. |
+| `SOURCE`, `STATE` | `platform-simulator`, `/state/run.json` | Stable namespace and persistent run file. |
+| `SANDBOXES`, `INTERVAL` | `1`, `1h` | Split hourly assignment totals exactly across sandboxes and intervals. |
+| `BATCH_SIZE`, `DELAY` | `100`, `0s` | Events per batch and delay between successful batches. |
+| `TIMEOUT` | `15s` | Timeout of each network attempt. |
+| `RETRY_MIN`, `RETRY_MAX` | `1s`, `30s` | Initial and maximum backoff; `Retry-After` remains a minimum. |
+| `MAX_ATTEMPTS` | `0` | Zero means retry until interrupted; positive values stop with pending data. |
+| `DUPLICATES`, `LOSE_RESPONSE`, `REVERSE` | `0`, `0`, `0` | Extra identical copies, one ignored success per saved run, or reversed delivery. |
+| `SIM_API_URL` | `http://api:8080` | Billing base URL from inside the simulator container. |
+| `SCENARIO_FILE` | `/scenarios/custom-scenario.json` for `custom` | Operator scenario mounted from `docs/simulator/`. |
+
+```sh
+make simulate SCENARIO=lost-response MODE=step
+make simulate ACTION=replay SCENARIO=duplicates BATCH_SIZE=1
+```
+
+The fault names reuse the assignment plan and saved identities. `lost-response`
+ignores the first valid `202` once per saved run; its retry exercises acceptance
+after a commit whose acknowledgement was lost. `duplicates` sends one extra
+identical copy per batch. Once all released events are confirmed, use `replay`
+to send them again. To demonstrate downtime, stop the API, release a step and
+observe pending retries, then restart the API from another terminal:
+
+```sh
+make stop SERVICE=api
+make simulate MODE=step
+# In another terminal:
+make up SERVICE=api
+```
+
+The service must already be initialized and running before delivery; simulator
+commands deliberately do not start a stopped API. `make simulate-help` lists
+the executable's flags. With a local Go toolchain, the same executable runs as
+`go run ./cmd/platform-simulator --api-url=http://127.0.0.1:8081 --state=/tmp/e2b-sender/run.json`.
+The file lock requires Linux or macOS, as provided by the Compose container.
+
+### Custom scenarios and measurement splitting
+
+Edit the tracked [custom scenario example](docs/simulator/custom-scenario.json)
+or add a local JSON file in the same directory. Each step has a unique `name`,
+an optional operator `barrier`, and an `events` array with every measurement
+field explicitly supplied except `source`, which comes from `SOURCE`.
+Unknown fields, null or missing event values, invalid measurements, and repeated
+event identities are rejected before delivery. Explicit zero units are valid.
+
+```sh
+make simulate SCENARIO=custom SOURCE=custom-example STATE=/state/custom.json MODE=step
+make simulate SCENARIO=custom SOURCE=custom-example STATE=/state/custom.json ADVANCE=1
+```
+
+Every later `run` or `generate` must match the saved plan, including source,
+identities, timestamps, splitting, and units. To explore another plan, select a
+different state file and a distinct source intentionally; it creates additional
+measurements for those customers. Use an isolated database for independent
+experiments. `send`, `status`, and `replay` use the saved plan directly.
+
+`INTERVAL` must divide one hour and lie between `1m` and `1h`; `SANDBOXES` is
+between 1 and 1000, and the resulting scenario is limited to 10000 events.
+Division distributes the integer remainder without changing any hourly total.
+Each event represents an increment for its sandbox and interval, never a
+cumulative counter. Both API limits (1000 events and 1 MiB per request) are
+respected even when long identifiers require smaller batches. Snapshot storage
+is intended for small reproducible scenarios; it is not a measured load capacity
+or a production metering implementation.
 
 ## API documentation
 
@@ -452,6 +603,7 @@ To extend the schema, add the next numbered SQL file and a corresponding version
 
 - `cmd/billing-api/`: application entry point and server setup.
 - `cmd/billing-worker/`: standalone worker startup, configuration, and signal handling.
+- `cmd/platform-simulator/`: separate platform CLI entry point.
 - `internal/`: private application packages, with `*_test.go` package tests next to the code.
 - `migrations/`: numbered SQL migrations and the explicit PostgreSQL migration runner.
 - `tests/api/`: HTTP integration tests against a running API, enabled with the `integration` build tag.
@@ -498,6 +650,13 @@ start the compiled executable without an API or database dependency, verify its
 health probe, send SIGTERM, and require a clean exit with heartbeat cleanup. They
 also reject invalid startup configuration. Run them through `make test`, or
 filter with `make test RUN='^TestWorkerProcessLifecycle$'`.
+
+Simulator unit tests verify exact fixture totals, splitting, barriers, durable
+recovery, file locking after a killed process, safe retries, and retained errors.
+The [simulator HTTP acceptance tests](tests/api/simulator_test.go) launch the
+separate executable against the running API, inspect committed PostgreSQL rows,
+and remove only their owned producer namespaces. Run them with
+`make test RUN=Simulator`; they also run automatically in `make test` and CI.
 
 With Go 1.27 or later installed locally, the same test can target a running API directly:
 
