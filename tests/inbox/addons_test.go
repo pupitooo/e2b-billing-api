@@ -4,7 +4,9 @@ package inbox_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
 	"e2b/billing-api/internal/billing"
@@ -13,6 +15,8 @@ import (
 // TestPurchaseAddon snapshots full monthly prices and preserves retry identity;
 // separate cases explicitly declare conflicts, closure state, and final count.
 func TestPurchaseAddon(t *testing.T) {
+	t.Run("replay after catalog change and closing", testAddonReplayAfterClosing)
+	t.Run("stored IDs survive readable format", testStoredAddonIdentities)
 	cases := []struct {
 		name      string
 		customer  string
@@ -41,11 +45,10 @@ func TestPurchaseAddon(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			purchase := billing.AddonPurchase{SubscriptionID: "purchase", AddonName: tc.addon, PurchasedAt: parseBillingTime(t, tc.purchased)}
-			actual, err := store.PurchaseAddon(ctx, tc.customer, purchase)
+			purchase := billing.AddonPurchase{AddonName: tc.addon, PurchasedAt: parseBillingTime(t, tc.purchased)}
+			actual, err := store.PurchaseAddon(ctx, tc.customer, "purchase", purchase)
 			if err == nil && tc.repeatID != "" {
-				purchase.SubscriptionID = tc.repeatID
-				_, err = store.PurchaseAddon(ctx, tc.customer, purchase)
+				_, err = store.PurchaseAddon(ctx, tc.customer, tc.repeatID, purchase)
 			}
 			if !errors.Is(err, tc.wantError) {
 				t.Fatalf("PurchaseAddon(customer=%s addon=%s date=%s repeat=%s): error=%v want %v", tc.customer, tc.addon, tc.purchased, tc.repeatID, err, tc.wantError)
@@ -67,23 +70,50 @@ func TestPurchaseAddon(t *testing.T) {
 // TestAddonAPI verifies the public purchase response, including the price and
 // UTC activation month; validation cases cannot create a subscription.
 func TestAddonAPI(t *testing.T) {
+	t.Run("readable subscription IDs", testReadableAddonIdentities)
+	t.Run("resource idempotency", func(t *testing.T) {
+		testResourceIdempotency(t, resourceEndpoint{
+			path: "/customers/acme/addons", idField: "subscription_id",
+			body:        `{"addon_name":"concurrency_pack","purchased_at":"2026-10-05T00:00:00Z"}`,
+			changedBody: `{"addon_name":"concurrency_pack","purchased_at":"2026-10-06T00:00:00Z"}`,
+			legacyBody:  `{"subscription_id":"caller-id","addon_name":"concurrency_pack","purchased_at":"2026-10-05T00:00:00Z"}`,
+			wantPrices:  3, wantSubscriptions: 1, wantVersion: 1,
+		})
+	})
 	cases := []struct {
 		name       string
 		body       string
+		key        string
 		wantStatus int
 		wantBody   string
 	}{
-		{name: "assignment purchase", body: `{"subscription_id":"acme-pack","addon_name":"concurrency_pack","purchased_at":"2026-10-05T00:00:00Z"}`, wantStatus: 200, wantBody: `{"subscription_id":"acme-pack","customer_id":"acme","addon_name":"concurrency_pack","monthly_price_cents":2000,"purchased_at":"2026-10-05T00:00:00Z","start_month":"2026-10-01"}`},
-		{name: "missing purchase time", body: `{"subscription_id":"acme-pack","addon_name":"concurrency_pack"}`, wantStatus: 422},
-		{name: "missing add-on", body: `{"subscription_id":"acme-pack","addon_name":"unknown","purchased_at":"2026-10-05T00:00:00Z"}`, wantStatus: 404},
+		{key: "acme-pack", name: "assignment purchase with customer and addon identity", body: `{"addon_name":"concurrency_pack","purchased_at":"2026-10-05T00:00:00Z"}`, wantStatus: 200, wantBody: `{"subscription_id":"subscription/acme/concurrency_pack","customer_id":"acme","addon_name":"concurrency_pack","monthly_price_cents":2000,"purchased_at":"2026-10-05T00:00:00Z","start_month":"2026-10-01"}`},
+		{key: "acme-pack", name: "missing purchase time", body: `{"addon_name":"concurrency_pack"}`, wantStatus: 422},
+		{key: "acme-pack", name: "missing add-on", body: `{"addon_name":"unknown","purchased_at":"2026-10-05T00:00:00Z"}`, wantStatus: 404},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			response := financialRequest(t, financialHandler(t), "POST", "/customers/acme/addons", tc.body)
+			response := financialRequest(t, financialHandler(t), "POST", "/customers/acme/addons", tc.body, tc.key)
 			if response.Code != tc.wantStatus {
 				t.Fatalf("POST addons(%s): status=%d body=%s want %d", tc.body, response.Code, response.Body, tc.wantStatus)
 			}
-			if tc.wantBody != "" && response.Body.String() != tc.wantBody+"\n" {
+			var actual map[string]any
+			if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code == 200 {
+				id, ok := actual["subscription_id"].(string)
+				if !ok || id == "" || id == tc.key {
+					t.Fatalf("POST addons: generated subscription_id=%v; want nonempty ID distinct from key %q", actual["subscription_id"], tc.key)
+				}
+			}
+			expected := map[string]any{}
+			if tc.wantBody != "" {
+				if err := json.Unmarshal([]byte(tc.wantBody), &expected); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.wantBody != "" && !reflect.DeepEqual(actual, expected) {
 				t.Fatalf("POST addons: body=%s want %s", response.Body, tc.wantBody)
 			}
 		})

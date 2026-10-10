@@ -60,6 +60,7 @@ services:
         {
           "url": "/reference/openapi.yaml",
           "layout": "modern",
+          "operationTitleSource": "path",
           "theme": "default",
           "withDefaultFonts": false,
           "showDeveloperTools": "never",
@@ -69,6 +70,7 @@ services:
     volumes:
       # Directory mounts preserve access when editors atomically replace files.
       - ./docs/api:/etc/caddy:ro
+      - ./docs/diagrams/api-endpoints:/etc/api-endpoints:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 5s

@@ -25,6 +25,10 @@
 !/docs/brainstorming/architecture-options.md
 !/docs/diagrams/
 /docs/diagrams/*
+!/docs/diagrams/api-endpoints/
+/docs/diagrams/api-endpoints/*
+!/docs/diagrams/api-endpoints/api-endpoints.mmd
+!/docs/diagrams/api-endpoints/api-endpoints.png
 !/docs/diagrams/closing-workflow/
 /docs/diagrams/closing-workflow/*
 !/docs/diagrams/closing-workflow/closing-workflow.mmd

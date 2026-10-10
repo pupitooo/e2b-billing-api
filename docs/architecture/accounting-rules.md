@@ -106,14 +106,78 @@ Sandbox and batch IDs do not create rounding boundaries. Preserve gross ticks
 separately from credit. `booked_charge_cents` remains a rounded gross projection,
 not a credit debit or a net invoice amount.
 
+## Accounting resource identities
+
+New `rated_usage_groups.group_id` values use `grp_<positive decimal number>`;
+new `credit_entries.credit_entry_id` values use `crd_<positive decimal number>`.
+The two independent PostgreSQL `bigint` sequences start at one, persist across
+restarts, and allocate distinct numbers across concurrent API and worker instances.
+They do not cycle. Exhaustion fails the financial transaction without changing
+balances, projections, rating links, or inbox completion. The existing primary
+keys remain the database integrity constraint; allocation needs no extra lookup
+for ID collisions or random regeneration.
+
+Sequence allocation is not rolled back, so failed transactions can leave gaps.
+IDs are identifiers, not row counts or a guaranteed ordering of committed actions.
+Uniqueness applies within each database's sequence namespace; independent database
+copies do not share allocation. Do not reset or cycle an active sequence.
+
+The worker finds an existing group by
+`(customer_id, price_version_id, usage_month, billing_month)` under the customer
+lock. It reuses that group's stored ID, including earlier hash IDs, and allocates
+a number only for a new group. Credit grants check the customer and operation
+identity before allocating a ledger entry. Identical retries allocate no new
+entry. Usage debits retain their existing internal `operation_id` derivation from
+`(source, event_id)`; the separate `credit_entry_id` identifies the ledger row.
+
+Migration `012_accounting_id_sequences.sql` adds the owned sequences without
+rewriting any IDs, financial amounts, references, or frozen invoices. If earlier
+rows already contain canonical `grp_` or `crd_` decimal IDs within the supported
+sequence range, the migration starts allocation after the highest reserved number.
+Apply the migration before starting the updated API and worker.
+
 ## Price insertion contract
+
+Billing generates price resource IDs and derives new subscription IDs from the
+structured `(customer_id, addon_name)` identity using
+`subscription/<customer_id>/<addon_name>`. Each component is independently
+percent-encoded as a URL path segment, preserving separators, case, percent signs,
+and UTF-8 bytes without ambiguity. The two existing 256-byte input limits yield a
+maximum of 1550 ASCII bytes for the generated ID. Existing IDs and persisted
+results retain their original values. The caller supplies an independent
+JSON `idempotency_key` for prices, add-ons, credit grants, and spend-limit changes. The
+append-only `api_idempotency_operations` table records the scope, key, normalized
+original request, successful result, and creation time. The price scope is global
+for `/prices`; the add-on scope includes the customer. Keys are case-sensitive
+visible ASCII tokens of at most 256 bytes and are retained indefinitely.
+
+A transaction-scoped advisory lock serializes the scope/key before reading
+history; hash collisions only serialize unrelated commands. The composite primary
+key determines identity. Financial writes and result recording commit together.
+A failed command reserves no key; unchanged retries return the stored result after
+process restarts, activation, catalog changes, or closing. Changed values conflict.
+Credit grants retain their keys in the ledger under `grant/<key>`, while limit
+changes retain them in `spend_limit_operations.idempotency_key`. A retry of an
+older limit command preserves any newer configuration.
+
+Existing seed and persisted resource IDs are preserved; the migration does not
+invent keys for commands previously accepted through the old interface.
 
 New ordinary price versions must have `effective_from` at or after the server's
 insertion instant, sampled after the exclusive catalog lock is acquired and the
-identity is checked. Equality is accepted; future activation can be scheduled.
+scoped request key is checked. Equality is accepted; future activation can be scheduled.
+`POST /prices` also accepts an explicit `effective_from: null` to activate at
+that server instant, converted to UTC and truncated to microsecond precision.
+The application supplies the resolved timestamp to PostgreSQL and returns it
+in the response; stored prices remain finite and non-null. Omitting the field
+is still invalid. This does not create an undated baseline.
 A past instant returns HTTP `422`, `invalid_command`, field `effective_from`,
-without a catalog or financial write. An unchanged existing identity succeeds
+without a catalog or financial write. An unchanged existing request key succeeds
 on retry even after activation; changed content still returns `409`.
+Retries with `null` reuse the stored activation time when the request key, customer,
+metric, and amount match, even if the original request supplied an explicit
+timestamp. An explicit retry timestamp must equal the stored instant. A retry
+never samples a new activation time or rewrites an existing price.
 
 Keep the catalog lock and rated-history protection. Waiting for the lock can
 make a previously future instant invalid, so request arrival time is not the

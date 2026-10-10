@@ -10,11 +10,11 @@ import (
 func registerAddonRoutes(mux *http.ServeMux, store *billing.Store, timeout time.Duration) {
 	mux.HandleFunc("POST /customers/{customer_id}/addons", func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
-			SubscriptionID string `json:"subscription_id"`
+			IdempotencyKey string `json:"idempotency_key"`
 			AddonName      string `json:"addon_name"`
 			PurchasedAt    string `json:"purchased_at"`
 		}
-		if !commandJSON(w, r, &input, []string{"subscription_id", "addon_name", "purchased_at"}) {
+		if !commandJSON(w, r, &input, []string{"idempotency_key", "addon_name", "purchased_at"}) {
 			return
 		}
 
@@ -26,7 +26,7 @@ func registerAddonRoutes(mux *http.ServeMux, store *billing.Store, timeout time.
 
 		ctx, cancel := financialContext(r, timeout)
 		defer cancel()
-		subscription, err := store.PurchaseAddon(ctx, r.PathValue("customer_id"), billing.AddonPurchase{SubscriptionID: input.SubscriptionID, AddonName: input.AddonName, PurchasedAt: purchased})
+		subscription, err := store.PurchaseAddon(ctx, r.PathValue("customer_id"), input.IdempotencyKey, billing.AddonPurchase{AddonName: input.AddonName, PurchasedAt: purchased})
 		financialResult(w, subscription, err)
 	})
 }

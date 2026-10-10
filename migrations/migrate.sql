@@ -85,4 +85,22 @@ SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 9) AS apply_0
     INSERT INTO schema_migrations (version, name) VALUES (9, 'processed_usage_closing');
 \endif
 
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 10) AS apply_010 \gset
+\if :apply_010
+    \ir 010_api_idempotency.sql
+    INSERT INTO schema_migrations (version, name) VALUES (10, 'api_idempotency');
+\endif
+
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 11) AS apply_011 \gset
+\if :apply_011
+    \ir 011_spend_limit_idempotency_key.sql
+    INSERT INTO schema_migrations (version, name) VALUES (11, 'spend_limit_idempotency_key');
+\endif
+
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 12) AS apply_012 \gset
+\if :apply_012
+    \ir 012_accounting_id_sequences.sql
+    INSERT INTO schema_migrations (version, name) VALUES (12, 'accounting_id_sequences');
+\endif
+
 COMMIT;

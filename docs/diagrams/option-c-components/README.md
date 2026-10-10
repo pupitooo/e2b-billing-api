@@ -10,7 +10,7 @@ Option C is the implemented Go API, PostgreSQL inbox and separate Go accounting 
 
 The platform owns metering, a durable sender buffer and the reaction to a spend limit. The assignment simulator runs separately and persists stable measurements before delivery. The Go API and accounting worker always run in separate processes and Compose services, sharing one PostgreSQL database. There is no API-to-worker HTTP call; the inbox supplies their asynchronous boundary.
 
-The two storage blocks are logical groups of tables in that database. The inbox holds receipt identity, original measurement, first receipt time and processing state. Financial tables hold customers, dated prices, recurring purchases, exact credit history, gross monthly spend, closed months, immutable invoices and frozen groups. The [implemented ERD](../../architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001009) describes all 16 tables after migrations 001–009.
+The two storage blocks are logical groups of tables in that database. The inbox holds receipt identity, original measurement, first receipt time and processing state. Financial tables hold customers, dated prices, recurring purchases, exact credit history, gross monthly spend, closed months, immutable invoices and frozen groups. The [implemented ERD](../../architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001012) describes all 17 tables after migrations 001–012.
 
 ## Receipt and accounting transactions
 

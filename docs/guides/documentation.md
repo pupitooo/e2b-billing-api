@@ -14,6 +14,12 @@ MkDocs navigation and browser-side search, and proxies `/reference/` to the
 internal `api-docs` service. Scalar keeps the three-panel `modern` layout and
 embedded request client. Its bundled JavaScript, configuration and specification
 stay under `/reference/`; browser API calls use the same-origin `/api` proxy.
+The reference groups endpoints by URL prefix, with category names `Customers`,
+`Prices`, `Usage`, and `Healthz`. Scalar uses endpoint paths in sidebar navigation and search;
+operation summaries describe their purpose in the endpoint details.
+Scalar's introduction embeds the [API endpoint diagram](api-reference.md#api-endpoints-and-callers).
+The `api-docs` service mounts only that diagram's directory and serves its PNG
+and Mermaid source through explicit routes under `/reference/diagrams/api-endpoints/`.
 
 Both Make targets start the same portal and its API/PostgreSQL dependencies.
 They do not migrate the database or start the worker. Guides are still readable
@@ -25,6 +31,9 @@ The portal binds documentation read-only. Edits to selected Markdown, assets,
 and navigation rebuild the site and refresh the browser automatically. Scalar
 needs a browser refresh after OpenAPI changes. Restart `docs` after changing its
 runtime scripts, publication hooks, or Caddy routing; rebuild it when the pinned images change.
+Restart `api-docs` after changing Scalar's Caddy routing. Run `make docs` after
+changing its Compose mounts or `API_REFERENCE_CONFIG` so that the container is
+recreated with the new mounts and reference settings.
 
 ## Upgrade from the former Scalar-only docs service
 

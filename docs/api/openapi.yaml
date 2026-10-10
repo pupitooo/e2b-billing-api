@@ -3,85 +3,39 @@ info:
   title: E2B Billing API
   version: 0.5.0
   description: |
-    The usage endpoint validates and atomically commits measurements to the
-    PostgreSQL inbox before returning 202. Identical event retries succeed
-    without changing stored receipt or accounting state; changed content
-    conflicts. Acceptance confirms durable receipt, while accounting remains
-    asynchronous in the standalone worker. Unsupported customers, schemas,
-    metrics, or crossing intervals are retained with a processing error.
-    A missing valid price at consumption time is a P0 catalog incident:
-    the receipt retains P0 missing_valid_price and produces no financial effect.
+    Receive sandbox usage, manage prices, credit and spend limits, and issue monthly invoices.
+    See the [API guide](/guides/api-reference/) for request and retry rules.
+
+    ## API endpoints and callers
+
+    [![Implemented API endpoints and callers](/reference/diagrams/api-endpoints/api-endpoints.png)](/reference/diagrams/api-endpoints/api-endpoints.png)
+
+    [Diagram guide and Mermaid source](/guides/api-reference/#api-endpoints-and-callers)
 servers:
   - url: /api
     description: Same-origin API proxy provided by the local Scalar service
 tags:
-  - name: Billing
-    description: Financial commands and customer projections
+  - name: Customers
+    description: Customer credit, add-ons, spend limits, and invoices under /customers
+  - name: Prices
+    description: Default and customer-specific price versions under /prices
   - name: Usage
     description: Measurements supplied by the sandbox platform
-  - name: Health
+  - name: Healthz
     description: HTTP server availability
 paths:
   /usage/batches:
     post:
       operationId: postUsageBatches
       tags: [Usage]
-      summary: Commit a usage batch to the inbox
+      summary: Submit usage batch
       x-implementation-status: implemented
       description: |
-        Parse one uncompressed UTF-8 JSON document, validate its envelope and
-        every measurement, and commit the whole batch in one inbox transaction.
-        Return 202 only after a successful synchronous PostgreSQL commit.
-
-        The body is limited to 1048576 bytes and 1–1000 events. Member names are
-        case-sensitive; unknown and duplicate members, malformed UTF-8, and
-        unpaired UTF-16 escapes are rejected. Identifiers and an optional
-        batch_id are limited to 256 UTF-8 bytes each. Required event fields must
-        be explicitly supplied and non-null, including units when its value is
-        zero. Version and units use integer tokens without fractional or
-        exponent notation; decoding outside int32/int64 ranges returns 400.
-
-        Timestamps use RFC 3339 with an explicit offset, valid calendar values,
-        UTC years 1000–9999, and at most six fractional digits. Interval ordering
-        compares instants. Identifiers are preserved; instants normalize to UTC.
-        Positive schema versions and nonblank metrics are structurally accepted;
-        customer existence, schema version 1, and historical prices are checked
-        asynchronously by the accounting worker. A receipt must fit one UTC
-        month and one applicable price version; unsupported input is retained
-        with processing_error and contributes no financial effect.
-        Provision each metric's dated price before generating its first usage.
-        A missing valid price sets P0 missing_valid_price in processing_error;
-        after commit, accounting logs priority=P0 with the receipt identity,
-        customer, metric, and original consumption time. Repair the historical price through controlled SQL
-        and explicitly release the investigated receipt to resume accounting.
-        Adding a price or retrying this endpoint does not clear that error.
-
-        Identify measurements by (source, event_id) and accept a whole batch
-        atomically, including repeated identities within the incoming batch.
-        Identical content succeeds across retries and batch boundaries without
-        another insert or a changed received_at. Changed measurement content
-        for an existing identity returns 409 and rolls back new events in the
-        batch. Billing supplies the first received_at from its UTC clock.
-        Compare schema_version, customer_id, sandbox_id, metric, period_start,
-        period_end, and units as domain values; timestamp offsets representing
-        the same instant are identical. Reordered events and different batch
-        boundaries do not change event identity. Batch identifiers are optional
-        producer metadata, are not stored, and do not participate in comparison.
-        Accounting remains asynchronous and is not implied by acceptance.
-
-        Admission is bounded per API instance (32 concurrent batches by
-        default). When full, return 503 before application body parsing;
-        retain the original events for retry. Database work, including waiting
-        for a pool connection, has a configurable deadline (10 seconds by
-        default), also honoring request cancellation. Admission exhaustion,
-        unavailable storage, or a failed commit returns 503 with
-        Retry-After: 1. A 503 or a lost response can leave the commit outcome
-        unknown: retain events and retry the same identities and content after
-        backoff. Identical retries are safe even after successful accounting.
-        A 409 requires investigation; unchanged retries cannot resolve it.
+        Store a usage batch atomically for asynchronous accounting.
+        Identical `(source, event_id)` retries succeed; changed content rejects the whole batch.
+        See [usage requests and retries](/guides/api-reference/#usage-requests).
       requestBody:
         required: true
-        description: A nonempty batch of explicit measurement values.
         content:
           application/json:
             schema:
@@ -103,11 +57,7 @@ paths:
                       units: 100000000
       responses:
         '202':
-          description: |
-            Every new measurement is durably committed; existing identical
-            measurements are preserved, including their original received_at,
-            processed_at, and processing_error. No partial batch is accepted.
-            Accounting completion is not implied.
+          description: The whole batch is durably received; accounting is asynchronous.
           content:
             application/json:
               schema:
@@ -115,10 +65,7 @@ paths:
               example:
                 status: accepted
         '400':
-          description: |
-            Malformed or ambiguous JSON, incorrect JSON types, or numeric
-            tokens outside the representable int32/int64 ranges. No batch is
-            accepted. Correct the request before retrying.
+          description: Invalid or ambiguous JSON. No events accepted.
           content:
             application/json:
               schema:
@@ -129,7 +76,7 @@ paths:
                   message: The object contains a duplicate field.
                   field: events[0]
         '413':
-          description: The body exceeds 1048576 bytes. Split the batch before retrying.
+          description: Body exceeds 1_048_576 bytes. Split the batch.
           content:
             application/json:
               schema:
@@ -139,10 +86,7 @@ paths:
                   code: request_too_large
                   message: The request body must not exceed 1048576 bytes.
         '415':
-          description: |
-            Content-Type must be application/json with optional UTF-8 charset.
-            Content-Encoding must be omitted or identity; compression is not
-            supported. Correct the headers and encoding before retrying.
+          description: Use uncompressed application/json with optional UTF-8 charset.
           content:
             application/json:
               schema:
@@ -152,11 +96,7 @@ paths:
                   code: unsupported_media_type
                   message: Use application/json with UTF-8 encoding.
         '422':
-          description: |
-            A required field is absent/null or a value violates the batch or
-            measurement contract. No partial batch is accepted. Correct the
-            reported value before retrying; zero units must be explicit.
-            An instant whose UTC year is outside 1000–9999 is invalid.
+          description: Missing or invalid measurement values. No events accepted.
           content:
             application/json:
               schema:
@@ -175,12 +115,7 @@ paths:
                       message: must have a UTC year between 1000 and 9999
                       field: events[0].period_start
         '409':
-          description: |
-            Different measurement content for one (source, event_id), either
-            already stored or repeated inside this request. Original rows are
-            preserved and every new row in the batch is rolled back. The
-            response identifies the conflicting key, without exposing its
-            stored content. Retain the input for investigation.
+          description: Changed content for a (source, event_id). No events accepted; investigate the conflict.
           content:
             application/json:
               schema:
@@ -192,16 +127,10 @@ paths:
                   source: platform-simulator
                   event_id: acme-cpu-000001
         '503':
-          description: |
-            The API's concurrent batch budget is exhausted, or inbox storage is
-            unavailable, timed out, canceled, or failed during commit, including
-            a missing schema before explicit migrations. Admission rejection
-            happens before application body parsing and writes no events. The
-            commit outcome may be unknown. Retain events and retry unchanged
-            identities/content after backoff; storage details are not exposed.
+          description: Admission or storage unavailable. Outcome may be unknown; retry unchanged events after Retry-After.
           headers:
             Retry-After:
-              description: Minimum delay in seconds before retrying; value is 1.
+              description: Minimum retry delay in seconds.
               schema:
                 type: string
                 const: '1'
@@ -218,45 +147,63 @@ paths:
     post:
       operationId: createPriceVersion
       tags:
-      - Billing
-      summary: Append an immutable price version
-      description: Append a default (null customer_id) or customer override. Consumption time selects the
-        latest eligible override before falling back to default. Reuse price_version_id with identical content
-        after a lost response. Changed identity content, a duplicate effective instant, or a change invalidating
-        any already rated receipt returns 409. A new effective_from before the server insertion instant
-        returns 422 with invalid_command and field effective_from, even without rated history.
-        The server samples this instant after acquiring the catalog lock. Equality is accepted;
-        scheduling in the future is supported. Identical retries bypass this time check after activation.
-        Commands are serialized against rating under a catalog advisory lock. The reference implementation
-        scans affected rated history; this is not a demonstrated large-volume administrative path. Every
-        field is explicit; timestamps normalize to UTC. effective_from is required and non-null;
-        there is no undated baseline. Provision an applicable price before the metric's first usage.
-        Historical seed data and investigated missing-price repairs use controlled operator SQL,
-        preserving rated history; they do not bypass this restriction through the HTTP API. This command
-        does not automatically clear usage processing errors.
+      - Prices
+      summary: Add price version
+      description: |
+        Add an immutable default or customer-specific price, effective now or in the future.
+        Supply idempotency_key in the JSON body; billing generates price_version_id.
+        Keys are scoped to this endpoint and successful results are retained indefinitely
+        in PostgreSQL, atomically with the price. Reusing a key returns the stored result
+        when the price values match; changed values return 409. Failed commands reserve
+        no key. Missing, null, or invalid string keys return 422. Duplicate fields or wrong key types return 400.
+        Supply effective_from as a timestamp or explicit null. Null selects the server's
+        current UTC time after acquiring the catalog lock, truncated to microseconds.
+        The response always contains the stored timestamp. Keep null on retries:
+        an existing request key reuses its original timestamp when all other fields match,
+        including keys initially created with an explicit timestamp. Changed
+        customer, metric, amount, or an unequal explicit timestamp returns 409.
+        Omitting effective_from returns 422.
+        See [price selection](/architecture/accounting-rules/#historical-prices-and-groups)
+        and [insertion rules](/architecture/accounting-rules/#price-insertion-contract).
       x-implementation-status: implemented
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PriceVersion'
-            example: &id001
-              price_version_id: cpu-default-december
-              customer_id: null
-              metric: cpu_seconds
-              price_per_million_cents: 7
-              effective_from: '2026-12-01T00:00:00Z'
+              $ref: '#/components/schemas/PriceVersionRequest'
+            examples:
+              scheduled:
+                summary: Schedule a future price
+                value:
+                  idempotency_key: cpu-default-december
+                  customer_id: null
+                  metric: cpu_seconds
+                  price_per_million_cents: 7
+                  effective_from: '2026-12-01T00:00:00Z'
+              immediate:
+                summary: Activate a price at the server insertion time
+                value:
+                  idempotency_key: cpu-default-immediate
+                  customer_id: null
+                  metric: cpu_seconds
+                  price_per_million_cents: 7
+                  effective_from: null
       responses:
         '200':
-          description: Committed result or current snapshot. Identical command retries succeed.
+          description: Price version stored, or original version returned on an identical retry.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PriceVersion'
-              example: *id001
+              example:
+                price_version_id: price_example_december
+                customer_id: null
+                metric: cpu_seconds
+                price_per_million_cents: 7
+                effective_from: '2026-12-01T00:00:00Z'
         '400':
-          description: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+          description: Invalid or ambiguous JSON.
           content:
             application/json:
               schema:
@@ -266,7 +213,7 @@ paths:
                   code: invalid_json
                   message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
         '404':
-          description: Customer or catalog resource does not exist.
+          description: Customer does not exist.
           content:
             application/json:
               schema:
@@ -276,8 +223,7 @@ paths:
                   code: not_found
                   message: Customer or catalog resource does not exist.
         '409':
-          description: Operation identity has different content, financial history conflicts, or closing
-            is blocked.
+          description: Price identity, effective time, or rated history conflicts.
           content:
             application/json:
               schema:
@@ -288,7 +234,7 @@ paths:
                   message: Operation identity has different content, financial history conflicts, or closing
                     is blocked.
         '413':
-          description: Command body exceeds 65536 bytes.
+          description: Body exceeds 65_536 bytes.
           content:
             application/json:
               schema:
@@ -308,7 +254,7 @@ paths:
                   code: unsupported_media_type
                   message: Use uncompressed application/json with optional UTF-8 charset.
         '422':
-          description: Explicit required field or value is invalid, including backdated effective_from.
+          description: Invalid price values or backdated effective_from.
           content:
             application/json:
               schema:
@@ -319,8 +265,7 @@ paths:
                   message: A new price must not start before its insertion time.
                   field: effective_from
         '503':
-          description: Database deadline or storage failure. Retry unchanged operation identity and content;
-            outcome may be unknown.
+          description: Storage unavailable. Outcome may be unknown; retry unchanged command after Retry-After.
           content:
             application/json:
               schema:
@@ -341,13 +286,15 @@ paths:
     post:
       operationId: grantCredit
       tags:
-      - Billing
-      summary: Grant usage-only credit
-      description: E2B grants positive whole cents, persisted as exact ticks. Reuse operation_id and all
-        content on retry; changed amount or recorded_at returns 409. Grants serialize with usage accounting,
-        apply immediately, and never rewrite earlier allocations. recorded_at is explicit audit metadata;
-        it is not a scheduled activation time. Customers do not buy credit in this assignment. No authentication
-        layer is included in the assignment.
+      - Customers
+      summary: Grant credit
+      description: |
+        Grant credit for usage charges immediately; add-ons are excluded.
+        `recorded_at` is audit metadata, not a scheduled activation time.
+        See [credit allocation](/architecture/usage-to-invoice/#6-credits-gross-charge-allocated-credit-and-balance).
+        Supply idempotency_key in the JSON body; keys are scoped to this customer and endpoint.
+        Unchanged retries return the original command result; changed content returns 409.
+        Missing, null, or invalid string keys return 422. Duplicate fields or wrong key types return 400.
       x-implementation-status: implemented
       parameters:
       - name: customer_id
@@ -362,19 +309,19 @@ paths:
             schema:
               $ref: '#/components/schemas/CreditGrant'
             example: &creditGrantExample
-              operation_id: welcome-acme
+              idempotency_key: welcome-acme
               amount_cents: 2500
               recorded_at: '2026-10-01T00:00:00Z'
       responses:
         '200':
-          description: Committed result or current snapshot. Identical command retries succeed.
+          description: Credit granted, or original grant returned on an identical retry.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreditGrant'
               example: *creditGrantExample
         '400':
-          description: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+          description: Invalid or ambiguous JSON.
           content:
             application/json:
               schema:
@@ -384,7 +331,7 @@ paths:
                   code: invalid_json
                   message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
         '404':
-          description: Customer or catalog resource does not exist.
+          description: Customer does not exist.
           content:
             application/json:
               schema:
@@ -394,8 +341,7 @@ paths:
                   code: not_found
                   message: Customer or catalog resource does not exist.
         '409':
-          description: Operation identity has different content, financial history conflicts, or closing
-            is blocked.
+          description: Operation identity already has different grant content.
           content:
             application/json:
               schema:
@@ -406,7 +352,7 @@ paths:
                   message: Operation identity has different content, financial history conflicts, or closing
                     is blocked.
         '413':
-          description: Command body exceeds 65536 bytes.
+          description: Body exceeds 65_536 bytes.
           content:
             application/json:
               schema:
@@ -426,7 +372,7 @@ paths:
                   code: unsupported_media_type
                   message: Use uncompressed application/json with optional UTF-8 charset.
         '422':
-          description: Explicit required field or value is invalid.
+          description: Missing or invalid command values.
           content:
             application/json:
               schema:
@@ -436,8 +382,7 @@ paths:
                   code: invalid_command
                   message: Explicit required field or value is invalid.
         '503':
-          description: Database deadline or storage failure. Retry unchanged operation identity and content;
-            outcome may be unknown.
+          description: Storage unavailable. Outcome may be unknown; retry unchanged command after Retry-After.
           content:
             application/json:
               schema:
@@ -458,12 +403,11 @@ paths:
     get:
       operationId: getCredit
       tags:
-      - Billing
-      summary: Read exact remaining credit
-      description: 'Return a single database snapshot of exact balance, account version, and committed pending/error
-        receipt counts. Receipt acceptance is asynchronous: pending_events can be positive after 202. Investigate
-        processing_errors instead of assuming all accepted input was accounted for. No cent rounding changes
-        the balance.'
+      - Customers
+      summary: Get credit balance
+      description: |
+        Read the exact remaining credit and pending/error receipt counts.
+        The balance reflects processed usage. See [credit allocation](/architecture/usage-to-invoice/#6-credits-gross-charge-allocated-credit-and-balance).
       x-implementation-status: implemented
       parameters:
       - name: customer_id
@@ -473,7 +417,7 @@ paths:
           $ref: '#/components/schemas/Identifier'
       responses:
         '200':
-          description: Committed result or current snapshot. Identical command retries succeed.
+          description: Current credit balance and accounting status.
           content:
             application/json:
               schema:
@@ -485,7 +429,7 @@ paths:
                 pending_events: 0
                 processing_errors: 0
         '404':
-          description: Customer or catalog resource does not exist.
+          description: Customer does not exist.
           content:
             application/json:
               schema:
@@ -495,7 +439,7 @@ paths:
                   code: not_found
                   message: Customer or catalog resource does not exist.
         '422':
-          description: Invalid customer identifier or UTC month.
+          description: Invalid customer identifier.
           content:
             application/json:
               schema:
@@ -506,8 +450,7 @@ paths:
                   message: Use nonblank Unicode without NUL, at most 256 UTF-8 bytes.
                   field: customer_id
         '503':
-          description: Database deadline or storage failure. Retry unchanged operation identity and content;
-            outcome may be unknown.
+          description: Storage unavailable. Retry the read after Retry-After.
           content:
             application/json:
               schema:
@@ -528,14 +471,17 @@ paths:
     post:
       operationId: purchaseAddon
       tags:
-      - Billing
-      summary: Purchase a recurring monthly add-on
-      description: Snapshot the catalog monthly price at purchase. Bill its full price from the UTC purchase
-        month onward, including month-end purchases. Credit never pays add-ons. One subscription per customer/add-on
-        is supported; quantities, cancellation, and proration are outside the assignment. Reuse subscription_id
-        and unchanged content after a lost response. Changed content or a second identity for an existing
-        subscription returns 409. A new purchase cannot start at or before an already closing or closed month; retry
-        of an existing purchase still succeeds.
+      - Customers
+      summary: Purchase add-on
+      description: |
+        Start a recurring add-on at its current catalog price, charged in full from the purchase month.
+        Supply idempotency_key in the JSON body; billing derives subscription_id from the customer and add-on name.
+        Keys are scoped to this endpoint and customer. Successful results are retained
+        indefinitely in PostgreSQL, atomically with the purchase. An unchanged retry
+        returns the original subscription even after catalog changes or invoice closing.
+        Changed add-on or purchase time under the same key returns 409. Failed commands
+        reserve no key. Missing, null, or invalid string keys return 422. Duplicate fields or wrong key types return 400.
+        See [add-on billing rules](/architecture/accounting-rules/#utc-months-limits-add-ons-and-late-usage).
       x-implementation-status: implemented
       parameters:
       - name: customer_id
@@ -550,25 +496,25 @@ paths:
             schema:
               $ref: '#/components/schemas/AddonPurchase'
             example:
-              subscription_id: acme-concurrency
+              idempotency_key: acme-concurrency
               addon_name: concurrency_pack
               purchased_at: '2026-10-05T00:00:00Z'
       responses:
         '200':
-          description: Committed result or current snapshot. Identical command retries succeed.
+          description: Subscription created, or original subscription returned on an identical retry.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Subscription'
               example:
-                subscription_id: acme-concurrency
+                subscription_id: subscription/acme/concurrency_pack
                 customer_id: acme
                 addon_name: concurrency_pack
                 monthly_price_cents: 2000
                 purchased_at: '2026-10-05T00:00:00Z'
                 start_month: '2026-10-01'
         '400':
-          description: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+          description: Invalid or ambiguous JSON.
           content:
             application/json:
               schema:
@@ -578,7 +524,7 @@ paths:
                   code: invalid_json
                   message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
         '404':
-          description: Customer or catalog resource does not exist.
+          description: Customer or add-on does not exist.
           content:
             application/json:
               schema:
@@ -588,8 +534,7 @@ paths:
                   code: not_found
                   message: Customer or catalog resource does not exist.
         '409':
-          description: Operation identity has different content, financial history conflicts, or closing
-            is blocked.
+          description: Subscription conflicts or purchase month is already closing or closed.
           content:
             application/json:
               schema:
@@ -600,7 +545,7 @@ paths:
                   message: Operation identity has different content, financial history conflicts, or closing
                     is blocked.
         '413':
-          description: Command body exceeds 65536 bytes.
+          description: Body exceeds 65_536 bytes.
           content:
             application/json:
               schema:
@@ -620,7 +565,7 @@ paths:
                   code: unsupported_media_type
                   message: Use uncompressed application/json with optional UTF-8 charset.
         '422':
-          description: Explicit required field or value is invalid.
+          description: Missing or invalid command values.
           content:
             application/json:
               schema:
@@ -630,8 +575,7 @@ paths:
                   code: invalid_command
                   message: Explicit required field or value is invalid.
         '503':
-          description: Database deadline or storage failure. Retry unchanged operation identity and content;
-            outcome may be unknown.
+          description: Storage unavailable. Outcome may be unknown; retry unchanged command after Retry-After.
           content:
             application/json:
               schema:
@@ -652,12 +596,15 @@ paths:
     post:
       operationId: setSpendLimit
       tags:
-      - Billing
-      summary: Set or remove the customer spend limit
-      description: Supply a nonnegative limit_cents or explicit null for unlimited. Zero is reached even
-        without spend. Changes apply immediately under the account lock. Replay of an old unchanged operation
-        returns its original command result and does not undo newer configuration; changed identity content
-        returns 409. Read status after changing configuration.
+      - Customers
+      summary: Set spend limit
+      description: |
+        Set the monthly usage spend limit immediately, or use `null` to remove it.
+        See [limit rules](/architecture/accounting-rules/#utc-months-limits-add-ons-and-late-usage)
+        and [command retries](/guides/api-reference/#command-retries).
+        Supply idempotency_key in the JSON body; keys are scoped to this customer and endpoint.
+        Unchanged retries return the original command result; changed content returns 409.
+        Missing, null, or invalid string keys return 422. Duplicate fields or wrong key types return 400.
       x-implementation-status: implemented
       parameters:
       - name: customer_id
@@ -672,20 +619,20 @@ paths:
             schema:
               $ref: '#/components/schemas/SpendLimitChange'
             example:
-              operation_id: october-limit
+              idempotency_key: october-limit
               limit_cents: 1500
       responses:
         '200':
-          description: Committed result or current snapshot. Identical command retries succeed.
+          description: Limit updated, or original command result returned without changing newer configuration.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SpendLimitChange'
               example:
-                operation_id: october-limit
+                idempotency_key: october-limit
                 limit_cents: 1500
         '400':
-          description: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+          description: Invalid or ambiguous JSON.
           content:
             application/json:
               schema:
@@ -695,7 +642,7 @@ paths:
                   code: invalid_json
                   message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
         '404':
-          description: Customer or catalog resource does not exist.
+          description: Customer does not exist.
           content:
             application/json:
               schema:
@@ -705,8 +652,7 @@ paths:
                   code: not_found
                   message: Customer or catalog resource does not exist.
         '409':
-          description: Operation identity has different content, financial history conflicts, or closing
-            is blocked.
+          description: Operation identity already has different limit content.
           content:
             application/json:
               schema:
@@ -717,7 +663,7 @@ paths:
                   message: Operation identity has different content, financial history conflicts, or closing
                     is blocked.
         '413':
-          description: Command body exceeds 65536 bytes.
+          description: Body exceeds 65_536 bytes.
           content:
             application/json:
               schema:
@@ -737,7 +683,7 @@ paths:
                   code: unsupported_media_type
                   message: Use uncompressed application/json with optional UTF-8 charset.
         '422':
-          description: Explicit required field or value is invalid.
+          description: Missing or invalid command values.
           content:
             application/json:
               schema:
@@ -747,8 +693,7 @@ paths:
                   code: invalid_command
                   message: Explicit required field or value is invalid.
         '503':
-          description: Database deadline or storage failure. Retry unchanged operation identity and content;
-            outcome may be unknown.
+          description: Storage unavailable. Outcome may be unknown; retry unchanged command after Retry-After.
           content:
             application/json:
               schema:
@@ -769,13 +714,12 @@ paths:
     get:
       operationId: getCurrentLimitStatus
       tags:
-      - Billing
-      summary: Read monthly spend limit status
-      description: Read the current UTC month selected from the server clock. Compare exact original-month
-        gross usage before credit, excluding add-ons. Raising a limit can clear status; a new month selects
-        fresh gross spend. All measured usage remains billable after reaching the limit. Pending/error counts
-        expose asynchronous freshness and include all committed receipts for the customer. This projection
-        does not prove completeness of platform measurements.
+      - Customers
+      summary: Get current month limit status
+      description: |
+        Check processed usage against the limit for the current UTC month, before credit and excluding add-ons.
+        Pending/error counts indicate accounting freshness; the caller enforces the limit.
+        See [limit rules](/architecture/accounting-rules/#utc-months-limits-add-ons-and-late-usage).
       x-implementation-status: implemented
       parameters:
       - name: customer_id
@@ -785,7 +729,7 @@ paths:
           $ref: '#/components/schemas/Identifier'
       responses:
         '200':
-          description: Committed result or current snapshot. Identical command retries succeed.
+          description: Current UTC month usage, limit status, and accounting freshness.
           content:
             application/json:
               schema:
@@ -800,7 +744,7 @@ paths:
                 pending_events: 0
                 processing_errors: 0
         '404':
-          description: Customer or catalog resource does not exist.
+          description: Customer does not exist.
           content:
             application/json:
               schema:
@@ -810,7 +754,7 @@ paths:
                   code: not_found
                   message: Customer or catalog resource does not exist.
         '422':
-          description: Invalid customer identifier or UTC month.
+          description: Invalid customer identifier.
           content:
             application/json:
               schema:
@@ -821,8 +765,7 @@ paths:
                   message: Use nonblank Unicode without NUL, at most 256 UTF-8 bytes.
                   field: customer_id
         '503':
-          description: Database deadline or storage failure. Retry unchanged operation identity and content;
-            outcome may be unknown.
+          description: Storage unavailable. Retry the read after Retry-After.
           content:
             application/json:
               schema:
@@ -843,14 +786,12 @@ paths:
     get:
       operationId: getMonthlyLimitStatus
       tags:
-      - Billing
-      summary: Read monthly spend limit status
-      description: Read an explicit UTC usage month with the currently configured limit. This is not a historical
-        snapshot of past limit configuration. Compare exact original-month gross usage before credit, excluding
-        add-ons. Raising a limit can clear status; a new month selects fresh gross spend. All measured usage
-        remains billable after reaching the limit. Pending/error counts expose asynchronous freshness and
-        include all committed receipts for the customer. This projection does not prove completeness of
-        platform measurements.
+      - Customers
+      summary: Get monthly limit status
+      description: |
+        Check a specified UTC month's processed usage against the currently configured limit.
+        Credit and add-ons are excluded; pending/error counts indicate accounting freshness.
+        See [limit rules](/architecture/accounting-rules/#utc-months-limits-add-ons-and-late-usage).
       x-implementation-status: implemented
       parameters:
       - name: customer_id
@@ -865,7 +806,7 @@ paths:
           $ref: '#/components/schemas/BillingMonth'
       responses:
         '200':
-          description: Committed result or current snapshot. Identical command retries succeed.
+          description: Requested UTC month usage, current limit status, and accounting freshness.
           content:
             application/json:
               schema:
@@ -880,7 +821,7 @@ paths:
                 pending_events: 0
                 processing_errors: 0
         '404':
-          description: Customer or catalog resource does not exist.
+          description: Customer does not exist.
           content:
             application/json:
               schema:
@@ -901,8 +842,7 @@ paths:
                   message: Use a UTC calendar month as YYYY-MM.
                   field: month
         '503':
-          description: Database deadline or storage failure. Retry unchanged operation identity and content;
-            outcome may be unknown.
+          description: Storage unavailable. Retry the read after Retry-After.
           content:
             application/json:
               schema:
@@ -923,35 +863,12 @@ paths:
     post:
       operationId: issueMonthlyInvoice
       tags:
-      - Billing
-      summary: Close a UTC month and issue its immutable invoice
-      description: >-
-        The fixed billing period is a whole UTC calendar month, with one immutable invoice per
-        customer/month. The request accepts only a YYYY-MM month, with no closing-day or usage-cutoff parameter.
-        A new closure requires server UTC time at or after the first instant of the following month.
-        Ongoing or future months return 422 with invalid_command and field month before any financial changes.
-        January becomes eligible exactly at 00:00:00Z on 1 February. Closing uses one transaction and the
-        customer account lock. Only usage accounting committed before acquisition of that lock is included
-        through rated_usage_groups. Closing never processes pending usage or waits for the inbox to drain.
-        Pending and quarantined usage in the target month do not block valid chronological issuance, even
-        if accepted before the closing request.
-        An in-flight worker holding the account lock must finish before closing acquires it. Workers
-        acquiring the lock after the committed closure preserve an original month later than the latest
-        closure. Usage from the latest closed month or an earlier month routes strictly after that closure
-        and at or after its receipt month, including skipped earlier empty months. Retain historical prices and original-month
-        gross spend. Separate billing groups have separate rounding boundaries. Snapshot buyer details,
-        freeze groups, store the closed month and invoice, and advance the customer-specific number and
-        state version atomically. A pre-commit failure rolls back the entire closing attempt; a retry
-        can include newly processed groups. A lost committed response is resolved by the same customer/month
-        identity: retry returns the original immutable snapshot and never consumes credit again. Storage
-        deadlines return 503 when a response can be delivered. A first invoice cannot skip an earlier original
-        usage month already present in usage_inbox or earlier unclosed rated groups. This indexed existence
-        check does not process usage. Each subsequent new invoice requires the immediately preceding month
-        closed. Missing predecessors, skipped earlier data or incompatible closed history return 409 without
-        financial effects. Empty months are supported; no separate first-month configuration is required.
-        An operator invokes closing explicitly; scheduling and document delivery are not implemented.
-        USD group presentation uses cumulative half-up cents and an aggregate credit line derived from
-        rounded gross minus rounded net. Add-ons are charged in full, including the purchase month.
+      - Customers
+      summary: Issue monthly invoice
+      description: |
+        Close an ended UTC month and issue its immutable invoice using already processed usage.
+        Pending usage does not delay closing; retries return the same invoice.
+        See [closing order and late usage](/architecture/usage-to-invoice/#invoice-generation-workflow).
       x-implementation-status: implemented
       parameters:
       - name: customer_id
@@ -969,7 +886,7 @@ paths:
               month: 2026-10
       responses:
         '200':
-          description: Committed result or current snapshot. Identical command retries succeed.
+          description: Invoice issued, or original immutable invoice returned on retry.
           content:
             application/json:
               schema:
@@ -995,7 +912,7 @@ paths:
                 - kind: addon
                   description: concurrency_pack
                   amount_cents: 2000
-                  subscription_id: acme-concurrency
+                  subscription_id: subscription/acme/concurrency_pack
                 - kind: credit
                   description: Used credit
                   amount_cents: -1200
@@ -1004,7 +921,7 @@ paths:
                 credit_used_ticks: '1200000000'
                 issued_at: '2026-11-01T00:00:00Z'
         '400':
-          description: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+          description: Invalid or ambiguous JSON.
           content:
             application/json:
               schema:
@@ -1014,7 +931,7 @@ paths:
                   code: invalid_json
                   message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
         '404':
-          description: Customer or catalog resource does not exist.
+          description: Customer does not exist.
           content:
             application/json:
               schema:
@@ -1024,8 +941,7 @@ paths:
                   code: not_found
                   message: Customer or catalog resource does not exist.
         '409':
-          description: Operation identity has different content, financial history conflicts, or closing
-            is blocked.
+          description: An earlier month must be closed first, or closed history conflicts. No financial changes.
           content:
             application/json:
               schema:
@@ -1036,7 +952,7 @@ paths:
                   message: Operation identity has different content, financial history conflicts, or closing
                     is blocked.
         '413':
-          description: Command body exceeds 65536 bytes.
+          description: Body exceeds 65_536 bytes.
           content:
             application/json:
               schema:
@@ -1056,8 +972,7 @@ paths:
                   code: unsupported_media_type
                   message: Use uncompressed application/json with optional UTF-8 charset.
         '422':
-          description: Invalid required field or month that has not ended in UTC. Premature closing
-            leaves receipts and financial state unchanged; retry after the month ends.
+          description: Invalid request or UTC month has not ended. No financial changes.
           content:
             application/json:
               schema:
@@ -1068,8 +983,7 @@ paths:
                   field: month
                   message: Only completed UTC calendar months can be closed.
         '503':
-          description: Database deadline or storage failure. Retry unchanged operation identity and content;
-            outcome may be unknown.
+          description: Storage unavailable. Outcome may be unknown; retry unchanged command after Retry-After.
           content:
             application/json:
               schema:
@@ -1090,11 +1004,10 @@ paths:
     get:
       operationId: getMonthlyInvoice
       tags:
-      - Billing
-      summary: Read an issued invoice snapshot
-      description: Read immutable invoice lines, buyer identity, exact gross/credit ticks, and total cents.
-        Returns 404 until issuance. Subsequent usage, grants, price versions, add-on catalog changes, or
-        buyer edits cannot modify this snapshot.
+      - Customers
+      summary: Get monthly invoice
+      description: |
+        Retrieve the stored invoice for a UTC month, including buyer details and line items.
       x-implementation-status: implemented
       parameters:
       - name: customer_id
@@ -1109,7 +1022,7 @@ paths:
           $ref: '#/components/schemas/BillingMonth'
       responses:
         '200':
-          description: Committed result or current snapshot. Identical command retries succeed.
+          description: Stored immutable invoice.
           content:
             application/json:
               schema:
@@ -1135,7 +1048,7 @@ paths:
                 - kind: addon
                   description: concurrency_pack
                   amount_cents: 2000
-                  subscription_id: acme-concurrency
+                  subscription_id: subscription/acme/concurrency_pack
                 - kind: credit
                   description: Used credit
                   amount_cents: -1200
@@ -1144,7 +1057,7 @@ paths:
                 credit_used_ticks: '1200000000'
                 issued_at: '2026-11-01T00:00:00Z'
         '404':
-          description: Customer or catalog resource does not exist.
+          description: Customer or invoice does not exist.
           content:
             application/json:
               schema:
@@ -1165,8 +1078,7 @@ paths:
                   message: Use a UTC calendar month as YYYY-MM.
                   field: month
         '503':
-          description: Database deadline or storage failure. Retry unchanged operation identity and content;
-            outcome may be unknown.
+          description: Storage unavailable. Retry the read after Retry-After.
           content:
             application/json:
               schema:
@@ -1186,23 +1098,43 @@ paths:
   /healthz:
     get:
       operationId: getHealth
-      tags: [Health]
-      summary: Check HTTP server availability
+      tags: [Healthz]
+      summary: Check health
       x-implementation-status: implemented
-      description: Returns an empty 200 response; does not check PostgreSQL.
+      description: |
+        Check HTTP availability without querying PostgreSQL.
       responses:
         '200':
-          description: The HTTP server is available; the response body is empty.
+          description: HTTP server available; empty body.
 components:
   schemas:
+    IdempotencyKey:
+      type: string
+      minLength: 1
+      maxLength: 256
+      pattern: '^[!-~]+$'
+      description: |
+        Case-sensitive operation key supplied in the JSON body and reused unchanged
+        across retries. Use 1 through 256 visible ASCII characters without whitespace.
+        A UUID is suitable. This key is separate from resource IDs.
+      example: 550e8400-e29b-41d4-a716-446655440000
+    SubscriptionIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 1550
+      description: |
+        New IDs use subscription/<customer_id>/<addon_name> with each component
+        percent-encoded as a URL path segment. For example, a slash inside a component
+        becomes %2F and a literal percent sign becomes %25. Components preserve case
+        and their original UTF-8 bytes. The maximum generated length is 1550 ASCII
+        bytes when both 256-byte components require escaping. Earlier IDs are
+        preserved verbatim, including stored operation responses and invoice lines.
+      example: subscription/acme/concurrency_pack
     Identifier:
       type: string
       minLength: 1
       maxLength: 256
-      description: |
-        Preserved text containing at least one non-whitespace character, valid
-        Unicode, and no NUL. The actual maximum is 256 UTF-8 bytes, including
-        leading/trailing whitespace; maxLength also bounds its character count.
+      description: Preserved verbatim; at most 256 UTF-8 bytes.
       allOf:
         - pattern: '^[^\u0000]*$'
         - pattern: '[^\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]'
@@ -1213,7 +1145,7 @@ components:
       properties:
         batch_id:
           $ref: '#/components/schemas/Identifier'
-          description: Optional producer metadata; not stored and not used for deduplication.
+          description: Producer metadata; not stored or used for deduplication.
         events:
           type: array
           minItems: 1
@@ -1224,44 +1156,30 @@ components:
       type: string
       format: date-time
       pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$'
-      description: |
-        Valid RFC 3339 instant with an explicit offset and at most six
-        fractional digits. The corresponding UTC year must be 1000–9999.
-        The minimum instant is 1000-01-01T00:00:00Z. Bounds apply after UTC
-        conversion: a local year of 1000 can be invalid if its offset moves
-        the instant into 0999, while a local year of 0999 can be valid if
-        its offset moves the instant into 1000.
+      description: UTC year must be 1000–9999 after offset conversion.
     UsageEvent:
       type: object
       additionalProperties: false
-      description: |
-        Measured increment over [period_start, period_end). The end must follow
-        the start as an instant. Fields must be explicit and non-null. Units
-        are neither a cumulative counter nor a monetary amount.
+      description: Resource increment over [period_start, period_end), not a cumulative counter.
       required: [source, event_id, schema_version, customer_id, sandbox_id, metric, period_start, period_end, units]
       properties:
         source:
           $ref: '#/components/schemas/Identifier'
-          description: Stable producer namespace preserved across restarts and retries.
+          description: Producer namespace.
         event_id:
           $ref: '#/components/schemas/Identifier'
-          description: Identity unique within source; preserved with content on retries.
+          description: Deduplication key within source.
         schema_version:
           type: integer
           format: int32
           minimum: 1
           maximum: 2147483647
-          description: Positive contract version encoded as an integer token.
         customer_id:
           $ref: '#/components/schemas/Identifier'
         sandbox_id:
           $ref: '#/components/schemas/Identifier'
         metric:
           $ref: '#/components/schemas/Identifier'
-          description: >-
-            Resource identifier retained without a catalog foreign key at receipt.
-            The accounting worker selects historical prices from the metric catalog;
-            missing valid prices quarantine usage without financial effects.
         period_start:
           $ref: '#/components/schemas/ConsumptionTime'
           description: Inclusive start of consumption.
@@ -1273,7 +1191,6 @@ components:
           format: int64
           minimum: 0
           maximum: 9223372036854775807
-          description: Explicit increment encoded as an integer token; zero is valid.
     AcceptedResponse:
       type: object
       additionalProperties: false
@@ -1282,7 +1199,6 @@ components:
         status:
           type: string
           enum: [accepted]
-          description: Durable inbox receipt; accounting is asynchronous.
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -1298,16 +1214,16 @@ components:
               enum: [invalid_json, invalid_batch, request_too_large, unsupported_media_type, event_conflict, inbox_unavailable]
             message:
               type: string
-              description: Human-readable description; clients should use code for classification.
+              description: Diagnostic text; use code for error handling.
             field:
               type: string
-              description: Optional location, such as events[0].units.
+              description: Invalid field path, such as events[0].units.
             source:
               $ref: '#/components/schemas/Identifier'
-              description: Producer namespace of a conflicting event; present on 409.
+              description: Conflicting producer namespace.
             event_id:
               $ref: '#/components/schemas/Identifier'
-              description: Conflicting identity within source; present on 409.
+              description: Conflicting event identity within source.
     ConflictResponse:
       allOf:
         - $ref: '#/components/schemas/ErrorResponse'
@@ -1345,6 +1261,36 @@ components:
             field:
               type: string
 
+    PriceVersionRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - idempotency_key
+      - customer_id
+      - metric
+      - price_per_million_cents
+      - effective_from
+      properties:
+        idempotency_key:
+          $ref: '#/components/schemas/IdempotencyKey'
+        customer_id:
+          description: Use null for the default price.
+          oneOf:
+          - $ref: '#/components/schemas/Identifier'
+          - type: 'null'
+        metric:
+          $ref: '#/components/schemas/Identifier'
+        price_per_million_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
+        effective_from:
+          description: Explicit timestamp or null for the server insertion time. Required even when null.
+          oneOf:
+          - $ref: '#/components/schemas/ConsumptionTime'
+          - type: 'null'
+
     PriceVersion:
       type: object
       additionalProperties: false
@@ -1356,8 +1302,11 @@ components:
       - effective_from
       properties:
         price_version_id:
+          readOnly: true
+          description: Opaque identity generated internally by billing.
           $ref: '#/components/schemas/Identifier'
         customer_id:
+          description: Use null for the default price.
           oneOf:
           - $ref: '#/components/schemas/Identifier'
           - type: 'null'
@@ -1370,21 +1319,18 @@ components:
           maximum: 9223372036854775807
         effective_from:
           $ref: '#/components/schemas/ConsumptionTime'
-          description: Required finite effective instant. New HTTP versions must start at or after the server
-            insertion instant sampled under the catalog lock. Equality is valid. Identical retries
-            remain valid after activation. No null or undated baseline is supported; provision
-            the price before the first consumption time it must cover.
+          description: Stored start of price validity; always a concrete UTC timestamp, including null requests.
 
     CreditGrant:
       type: object
       additionalProperties: false
       required:
-      - operation_id
+      - idempotency_key
       - amount_cents
       - recorded_at
       properties:
-        operation_id:
-          $ref: '#/components/schemas/Identifier'
+        idempotency_key:
+          $ref: '#/components/schemas/IdempotencyKey'
         amount_cents:
           type: integer
           format: int64
@@ -1408,7 +1354,7 @@ components:
         credit_balance_ticks:
           type: string
           pattern: ^[0-9]+$
-          description: Exact nonnegative ticks; one cent is 1000000 ticks.
+          description: One cent is 1_000_000 ticks.
         state_version:
           type: integer
           format: int64
@@ -1421,18 +1367,18 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: Quarantined receipt count, including P0 missing_valid_price catalog incidents.
+          description: Receipts requiring investigation.
 
     AddonPurchase:
       type: object
       additionalProperties: false
       required:
-      - subscription_id
+      - idempotency_key
       - addon_name
       - purchased_at
       properties:
-        subscription_id:
-          $ref: '#/components/schemas/Identifier'
+        idempotency_key:
+          $ref: '#/components/schemas/IdempotencyKey'
         addon_name:
           $ref: '#/components/schemas/Identifier'
         purchased_at:
@@ -1450,7 +1396,9 @@ components:
       - start_month
       properties:
         subscription_id:
-          $ref: '#/components/schemas/Identifier'
+          readOnly: true
+          description: Readable identity derived internally from the customer and add-on name; existing IDs are preserved.
+          $ref: '#/components/schemas/SubscriptionIdentifier'
         customer_id:
           $ref: '#/components/schemas/Identifier'
         addon_name:
@@ -1470,17 +1418,17 @@ components:
       type: string
       pattern: ^[1-9][0-9]{3}-(0[1-9]|1[0-2])$
       example: 2026-10
-      description: Canonical UTC calendar month; years 1000 through 9999.
+      description: UTC calendar month.
 
     SpendLimitChange:
       type: object
       additionalProperties: false
       required:
-      - operation_id
+      - idempotency_key
       - limit_cents
       properties:
-        operation_id:
-          $ref: '#/components/schemas/Identifier'
+        idempotency_key:
+          $ref: '#/components/schemas/IdempotencyKey'
         limit_cents:
           type:
           - integer
@@ -1529,7 +1477,7 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: Quarantined receipt count, including P0 missing_valid_price catalog incidents.
+          description: Receipts requiring investigation.
 
     InvoiceLine:
       type: object
@@ -1566,7 +1514,7 @@ components:
           type: string
           pattern: ^[0-9]+$
         subscription_id:
-          $ref: '#/components/schemas/Identifier'
+          $ref: '#/components/schemas/SubscriptionIdentifier'
 
     Invoice:
       type: object
@@ -1625,5 +1573,3 @@ components:
       properties:
         month:
           $ref: '#/components/schemas/BillingMonth'
-          description: For a new closure, the whole UTC calendar month must have ended according to the
-            server clock. An already issued invoice remains available on an identical retry.

@@ -41,17 +41,17 @@
         "method": "POST",
         "path": "/customers/acme/credits",
         "body": {
-          "operation_id": "welcome",
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z"
+          "recorded_at": "2026-10-01T00:00:00Z",
+          "idempotency_key": "welcome"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "welcome",
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z"
+          "recorded_at": "2026-10-01T00:00:00Z",
+          "idempotency_key": "welcome"
         }
       },
       "fault": {
@@ -64,7 +64,7 @@
         "method": "POST",
         "path": "/customers/acme/addons",
         "body": {
-          "subscription_id": "acme-pack",
+          "idempotency_key": "acme-pack",
           "addon_name": "concurrency_pack",
           "purchased_at": "2026-10-05T00:00:00Z"
         }
@@ -75,7 +75,8 @@
           "monthly_price_cents": 2000,
           "start_month": "2026-10-01"
         }
-      }
+      },
+      "capture": "created-acme-pack"
     },
     {
       "name": "Cyberdyne sets USD 15 monthly limit",
@@ -83,15 +84,15 @@
         "method": "POST",
         "path": "/customers/cyberdyne/spend-limit",
         "body": {
-          "operation_id": "october-limit",
-          "limit_cents": 1500
+          "limit_cents": 1500,
+          "idempotency_key": "october-limit"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "october-limit",
-          "limit_cents": 1500
+          "limit_cents": 1500,
+          "idempotency_key": "october-limit"
         }
       }
     },

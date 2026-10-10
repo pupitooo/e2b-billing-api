@@ -133,3 +133,19 @@ the real HTTP router and worker. Separate named cases cover two `503` replies wi
 `Retry-After`, an unavailable endpoint followed by a new process, and a lost committed
 grant followed by a new process. All financial mutations and observations use public
 HTTP APIs. Existing transport tests preserve inbox, barrier, replay, and buffering checks.
+
+## Generated resource IDs and request keys
+
+Price, add-on, credit, and spend-limit requests declare
+`request.body.idempotency_key`. The sender transmits the original JSON body
+unchanged across retries and checkpoint resumes. No key header is generated.
+Existing checkpoints with the former request layout need a new state file; the
+plan comparison prevents silently resuming a changed request. Request
+bodies omit resource IDs. Creation responses can be captured; a later expectation
+uses `{{capture.<name>.price_version_id}}` or
+`{{capture.<name>.subscription_id}}` to verify references to the generated resource.
+Financial inputs and expected amounts remain literal. The price-version scenario
+sets `want.usage_line_order` to `price_version_id` for its single-month, single-metric
+invoice: it orders only the expected leading usage lines by the captured IDs, then
+still checks complete array order and every amount. Other expectations keep their
+original array order.

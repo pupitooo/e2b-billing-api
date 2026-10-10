@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/accounting"
 	"e2b/billing-api/internal/billing"
 	"e2b/billing-api/internal/inbox"
 	"e2b/billing-api/internal/usage"
@@ -68,12 +67,12 @@ func TestCreatePrice(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			price := accounting.PriceVersion{ID: "new-version", CustomerID: tc.customer, Metric: "cpu_seconds", EffectiveFrom: parseBillingTime(t, tc.effective), PricePerMillionCents: tc.price}
-			gotErr := store.CreatePrice(ctx, price)
+			price := billing.PriceInput{CustomerID: tc.customer, Metric: "cpu_seconds", EffectiveFrom: parseBillingTime(t, tc.effective), PricePerMillionCents: tc.price}
+			_, gotErr := store.CreatePrice(ctx, "new-version", price)
 			if gotErr == nil && tc.repeatTime != "" {
 				serverTime = parseBillingTime(t, tc.repeatTime)
 				price.PricePerMillionCents = tc.repeatPrice
-				gotErr = store.CreatePrice(ctx, price)
+				_, gotErr = store.CreatePrice(ctx, "new-version", price)
 			}
 
 			if (gotErr != nil) != tc.wantError {

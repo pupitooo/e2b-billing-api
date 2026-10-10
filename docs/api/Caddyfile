@@ -26,6 +26,16 @@
 		file_server
 	}
 
+	# Publish only the diagram and editable source referenced by the introduction.
+	@endpoint_source path /diagrams/api-endpoints/api-endpoints.mmd
+	header @endpoint_source Content-Type "text/plain; charset=utf-8"
+	@endpoint_diagram path /diagrams/api-endpoints/api-endpoints.png /diagrams/api-endpoints/api-endpoints.mmd
+	handle @endpoint_diagram {
+		uri strip_prefix /diagrams/api-endpoints
+		root * /etc/api-endpoints
+		file_server
+	}
+
 	handle /health {
 		respond "OK" 200
 	}

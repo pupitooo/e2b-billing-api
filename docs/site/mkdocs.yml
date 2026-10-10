@@ -62,6 +62,8 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/pupitooo/e2b-billing-api
   published_assets:
+    - diagrams/api-endpoints/api-endpoints.mmd
+    - diagrams/api-endpoints/api-endpoints.png
     - diagrams/closing-workflow/closing-workflow.mmd
     - diagrams/closing-workflow/closing-workflow.png
     - diagrams/data-model/data-model.mmd

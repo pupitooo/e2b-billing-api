@@ -78,12 +78,12 @@ func TestCloseMonth(t *testing.T) {
 			store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
 			transport := inbox.NewPostgres(pool, time.Second)
 			if tc.creditCents > 0 {
-				if err := store.GrantCredit(ctx, tc.customer, billing.CreditGrant{OperationID: "welcome", AmountCents: tc.creditCents, RecordedAt: parseBillingTime(t, "2026-10-01T00:00:00Z")}); err != nil {
+				if err := store.GrantCredit(ctx, tc.customer, billing.CreditGrant{IdempotencyKey: "welcome", AmountCents: tc.creditCents, RecordedAt: parseBillingTime(t, "2026-10-01T00:00:00Z")}); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if tc.purchaseTime != "" {
-				if _, err := store.PurchaseAddon(ctx, tc.customer, billing.AddonPurchase{SubscriptionID: "pack", AddonName: "concurrency_pack", PurchasedAt: parseBillingTime(t, tc.purchaseTime)}); err != nil {
+				if _, err := store.PurchaseAddon(ctx, tc.customer, "pack", billing.AddonPurchase{AddonName: "concurrency_pack", PurchasedAt: parseBillingTime(t, tc.purchaseTime)}); err != nil {
 					t.Fatal(err)
 				}
 			}

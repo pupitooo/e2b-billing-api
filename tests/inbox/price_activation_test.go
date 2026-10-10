@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/accounting"
 	"e2b/billing-api/internal/billing"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,16 +17,19 @@ import (
 // clock. Validation uses the instant after locking, with no writes on rejection.
 func testPriceLockWait(t *testing.T) {
 	cases := []struct {
-		name          string
-		arrivalTime   string
-		insertionTime string
-		effectiveFrom string
-		wantError     bool
-		wantField     string
-		wantVersions  int
+		name              string
+		arrivalTime       string
+		insertionTime     string
+		effectiveFrom     string
+		useCurrentTime    bool
+		wantEffectiveFrom string
+		wantError         bool
+		wantField         string
+		wantVersions      int
 	}{
 		{name: "activation becomes past while waiting", arrivalTime: "2026-11-01T00:00:00Z", insertionTime: "2026-11-01T00:00:02Z", effectiveFrom: "2026-11-01T00:00:01Z", wantError: true, wantField: "effective_from", wantVersions: 3},
 		{name: "exact instant after waiting remains valid", arrivalTime: "2026-11-01T00:00:00Z", insertionTime: "2026-11-01T00:00:02Z", effectiveFrom: "2026-11-01T00:00:02Z", wantVersions: 4},
+		{name: "automatic activation uses the clock after waiting", arrivalTime: "2026-11-01T00:00:00Z", insertionTime: "2026-11-01T00:00:02.123456789Z", useCurrentTime: true, wantEffectiveFrom: "2026-11-01T00:00:02.123456Z", wantVersions: 4},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -52,10 +54,21 @@ func testPriceLockWait(t *testing.T) {
 			var clock atomic.Value
 			clock.Store(parseBillingTime(t, tc.arrivalTime))
 			store := billing.NewStoreWithClock(writer, func() time.Time { return clock.Load().(time.Time) })
-			price := accounting.PriceVersion{ID: "activation-wait", Metric: "cpu_seconds", PricePerMillionCents: 7, EffectiveFrom: parseBillingTime(t, tc.effectiveFrom)}
+			price := billing.PriceInput{Metric: "cpu_seconds", PricePerMillionCents: 7}
+			if !tc.useCurrentTime {
+				price.EffectiveFrom = parseBillingTime(t, tc.effectiveFrom)
+			}
 			result := make(chan error, 1)
 
-			go func() { result <- store.CreatePrice(ctx, price) }()
+			go func() {
+				if tc.useCurrentTime {
+					_, err := store.CreatePriceNow(ctx, "activation-wait", price)
+					result <- err
+					return
+				}
+				_, err := store.CreatePrice(ctx, "activation-wait", price)
+				result <- err
+			}()
 			waitForRowLock(t, pool, "price-activation-wait")
 			clock.Store(parseBillingTime(t, tc.insertionTime))
 			if err := lock.Commit(ctx); err != nil {
@@ -72,6 +85,16 @@ func testPriceLockWait(t *testing.T) {
 					t.Fatalf("CreatePrice(%+v) error=%v; want field=%s", price, gotErr, tc.wantField)
 				}
 			}
+			if tc.wantEffectiveFrom != "" {
+				var stored time.Time
+				if err := pool.QueryRow(ctx, "SELECT effective_from FROM price_versions WHERE price_version_id=(SELECT response_payload->>'ID' FROM api_idempotency_operations WHERE operation_scope='prices' AND idempotency_key=$1)", "activation-wait").Scan(&stored); err != nil {
+					t.Fatal(err)
+				}
+				if got := stored.UTC().Format(time.RFC3339Nano); got != tc.wantEffectiveFrom {
+					t.Errorf("CreatePriceNow(%+v) after lock wait effective_from=%s; want %s", price, got, tc.wantEffectiveFrom)
+				}
+			}
+
 			var versions, ratings, entries int
 			if err := pool.QueryRow(ctx, "SELECT (SELECT count(*) FROM price_versions),(SELECT count(*) FROM usage_ratings),(SELECT count(*) FROM credit_entries)").Scan(&versions, &ratings, &entries); err != nil {
 				t.Fatal(err)

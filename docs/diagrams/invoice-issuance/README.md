@@ -1,6 +1,6 @@
 # Implemented monthly invoice issuance
 
-This is the detailed explanation of the [simplified invoice generation workflow](../closing-workflow/closing-workflow.png). It describes the implementation checked on **10 October 2026**. The usage-to-invoice guide embeds the simplified view and links to this detailed PNG in its caption.
+This is the detailed explanation of the [simplified invoice generation workflow](../closing-workflow/closing-workflow.png). The usage-to-invoice guide embeds the simplified view and links to this detailed PNG in its caption.
 
 ![Implemented monthly invoice issuance](invoice-issuance.png)
 
@@ -86,8 +86,8 @@ A lost reply or commit error can leave the caller uncertain whether a transactio
 
 ## Relationship to the simplified drawing
 
-The simplified and detailed diagrams reflect the processed-usage-only contract
-effective on 10 October 2026. The detailed view retains gross/net rounding, JSON
+The simplified and detailed diagrams reflect the processed-usage-only contract.
+The detailed view retains gross/net rounding, JSON
 snapshot fields, numbering, atomic writes, validation and error paths. Regression
 coverage includes zero/partial/full worker progress, both worker/closing lock
 orders, immutable retries, quarantine recovery, UTC boundaries, migration and

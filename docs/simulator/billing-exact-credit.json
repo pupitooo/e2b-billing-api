@@ -24,9 +24,9 @@
         "method": "POST",
         "path": "/customers/acme/credits",
         "body": {
-          "operation_id": "one-cent",
           "amount_cents": 1,
-          "recorded_at": "2026-10-01T00:00:00Z"
+          "recorded_at": "2026-10-01T00:00:00Z",
+          "idempotency_key": "one-cent"
         }
       },
       "want": {

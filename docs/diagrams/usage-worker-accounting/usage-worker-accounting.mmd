@@ -8,7 +8,6 @@ config:
     rankSpacing: 24
     useMaxWidth: false
 ---
-%% Implementation checked on 10 October 2026.
 %% Selection is outside the financial transaction; concurrent workers may select the same receipt.
 %% The account lock precedes the shared price-catalog lock and the inbox row lock.
 %% Every success-path write below commits together, including processed_at.

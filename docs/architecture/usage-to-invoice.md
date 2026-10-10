@@ -228,7 +228,7 @@ The SQL table is `rated_usage_groups`. Its unique key is:
 
 | Column | What it stores |
 | --- | --- |
-| `group_id` | The stable group identity used by rating links and credit debits. |
+| `group_id` | The stable group identity used by rating links and credit debits. New IDs use `grp_<number>` from a persistent database sequence. |
 | `customer_id`, `price_version_id`, `metric` | The owner and pricing meaning of the group. |
 | `usage_month` | The first day of the original consumption month, derived in UTC. |
 | `billing_month` | The first day of the invoice period that includes the charge; it cannot precede the original month. |
@@ -279,6 +279,11 @@ The current schema represents credit in three places:
 | `credit_entries` | Which grant or debit changed the account, and why? |
 | `customer_billing_state.credit_balance_ticks` | How much exact credit is available now? |
 | `rated_usage_groups.allocated_credit_ticks` | How much exact credit must this group retain for its future invoice? |
+
+New ledger row IDs use `crd_<number>` from a separate persistent database sequence.
+Existing group and ledger IDs remain unchanged. Sequence gaps after rollback are
+normal; retry identity is determined by business keys. See the
+[accounting identity rules](accounting-rules.md#accounting-resource-identities).
 
 The ledger contains `credit_entry_id`, `customer_id`, a stable `operation_id`, optional `group_id`, a signed `amount_ticks`, and `recorded_at`. A grant is positive and has no group; a debit is negative and links to a group owned by the same customer. Zero debits are omitted. Records are append-only, and `(customer_id, operation_id)` is unique so retrying one operation cannot grant or consume credit twice.
 
