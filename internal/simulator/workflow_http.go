@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const maxWorkflowResponseBytes = 1 << 20
+
 type WorkflowRequest struct {
 	Method string          `json:"method"`
 	Path   string          `json:"path"`
@@ -84,7 +86,7 @@ func (r *workflowRunner) observeStep(ctx context.Context, step WorkflowStep) (wo
 }
 
 func transientWorkflowStatus(actual, expected int) bool {
-	return actual != expected && (actual == 408 || actual == 429 || actual >= 500)
+	return actual != expected && (actual == http.StatusRequestTimeout || actual == http.StatusTooManyRequests || actual >= http.StatusInternalServerError)
 }
 
 func (r *workflowRunner) recordStepFailure(step WorkflowStep, attempt int, err error) error {
@@ -99,11 +101,11 @@ func (r *workflowRunner) recordStepFailure(step WorkflowStep, attempt int, err e
 }
 
 func workflowBackoff(delay, maximum time.Duration) time.Duration {
-	if delay >= maximum/2 {
+	if delay >= maximum/retryBackoffMultiplier {
 		return maximum
 	}
 
-	return delay * 2
+	return delay * retryBackoffMultiplier
 }
 
 func (r *workflowRunner) request(ctx context.Context, step WorkflowStep) (workflowResponse, error) {
@@ -120,12 +122,12 @@ func (r *workflowRunner) request(ctx context.Context, step WorkflowStep) (workfl
 		return workflowResponse{}, err
 	}
 	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+	data, err := io.ReadAll(io.LimitReader(response.Body, maxWorkflowResponseBytes+1))
 	if err != nil {
 		return workflowResponse{}, err
 	}
 
-	if len(data) > 1<<20 {
+	if len(data) > maxWorkflowResponseBytes {
 		return workflowResponse{}, fmt.Errorf("workflow response exceeds one MiB")
 	}
 
@@ -151,7 +153,7 @@ func (r *workflowRunner) injectResponseLoss() error {
 }
 
 func (r *workflowRunner) shouldLoseResponse(step WorkflowStep, status int) bool {
-	if step.Request.Method != "POST" || (status != 200 && status != 202) || r.state.LostSteps[r.state.NextStep] {
+	if step.Request.Method != "POST" || (status != http.StatusOK && status != http.StatusAccepted) || r.state.LostSteps[r.state.NextStep] {
 		return false
 	}
 

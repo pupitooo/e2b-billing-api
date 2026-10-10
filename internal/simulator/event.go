@@ -11,6 +11,8 @@ import (
 	"e2b/billing-api/internal/usage"
 )
 
+const maxIdentifierBytes = 256
+
 // Event is the explicit HTTP measurement, without billing-owned metadata.
 type Event struct {
 	Source        string    `json:"source"`
@@ -35,7 +37,7 @@ func (e Event) validate() error {
 	}
 
 	for _, value := range []string{e.Source, e.EventID, e.CustomerID, e.SandboxID, e.Metric} {
-		if len(value) > 256 {
+		if len(value) > maxIdentifierBytes {
 			return fmt.Errorf("event %q: identifiers must fit in 256 UTF-8 bytes", e.EventID)
 		}
 	}

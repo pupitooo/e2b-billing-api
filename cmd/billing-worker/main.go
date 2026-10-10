@@ -15,6 +15,8 @@ import (
 	"e2b/billing-api/internal/worker"
 )
 
+const workerPoolMaxConns = 2
+
 type config struct {
 	pollInterval    time.Duration
 	batchTimeout    time.Duration
@@ -52,7 +54,7 @@ func run(args []string, getenv func(string) string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	startup, cancel := context.WithTimeout(ctx, cfg.batchTimeout)
-	pool, err := inbox.OpenPool(startup, getenv("DATABASE_URL"), inbox.PoolLimits{MaxConns: 2, MinConns: 0})
+	pool, err := inbox.OpenPool(startup, getenv("DATABASE_URL"), inbox.PoolLimits{MaxConns: workerPoolMaxConns, MinConns: 0})
 	cancel()
 	if err != nil {
 		logger.Error("Initialize accounting database", "error", err)

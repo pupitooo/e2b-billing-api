@@ -15,6 +15,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const (
+	transactionRollbackTimeout = 5 * time.Second
+	decimalRadix               = 10
+
+	// The namespace is shared with migrations; this key identifies catalog access.
+	catalogLockNamespace = 65_102
+	catalogLockKey       = 2
+)
+
 var (
 	ErrNotFound = errors.New("billing resource not found")
 	ErrConflict = errors.New("operation conflicts with financial history")
@@ -45,7 +54,7 @@ func (s *Store) transact(ctx context.Context, action func(pgx.Tx) error) error {
 	}
 
 	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cleanup, cancel := context.WithTimeout(context.Background(), transactionRollbackTimeout)
 		defer cancel()
 		_ = tx.Rollback(cleanup)
 	}()
@@ -78,7 +87,7 @@ func lockAccount(ctx context.Context, tx pgx.Tx, customer string) (accounting.Am
 
 // amount rejects corrupt database values rather than silently rounding them.
 func amount(ticks string) (accounting.Amount, error) {
-	value, ok := new(big.Int).SetString(ticks, 10)
+	value, ok := new(big.Int).SetString(ticks, decimalRadix)
 	if !ok {
 		return accounting.Amount{}, fmt.Errorf("invalid integer ticks: %q", ticks)
 	}
@@ -94,12 +103,12 @@ func identity(prefix string, parts ...string) string {
 
 // catalogLock serializes price insertion against rating and historical checks.
 func catalogLock(ctx context.Context, tx pgx.Tx, exclusive bool) error {
-	command := "SELECT pg_advisory_xact_lock_shared(65102, 2)"
+	command := "SELECT pg_advisory_xact_lock_shared($1, $2)"
 	if exclusive {
-		command = "SELECT pg_advisory_xact_lock(65102, 2)"
+		command = "SELECT pg_advisory_xact_lock($1, $2)"
 	}
 
-	_, err := tx.Exec(ctx, command)
+	_, err := tx.Exec(ctx, command, catalogLockNamespace, catalogLockKey)
 
 	return err
 }

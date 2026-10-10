@@ -32,7 +32,7 @@ func Rate(event usage.Event, versions []PriceVersion) (Rating, error) {
 		return Rating{}, err
 	}
 
-	if event.SchemaVersion != 1 {
+	if event.SchemaVersion != usage.SchemaVersionV1 {
 		return Rating{}, fmt.Errorf("unsupported usage schema version: %d", event.SchemaVersion)
 	}
 

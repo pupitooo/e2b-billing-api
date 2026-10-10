@@ -11,6 +11,11 @@ import (
 	"unicode/utf8"
 )
 
+const (
+	maxWorkflowBytes       = 4 << 20
+	maxWorkflowSourceBytes = maxIdentifierBytes
+)
+
 // Workflow is a public-API scenario with visible inputs and literal assertions.
 // It knows transport and expected results; it performs no billing calculation.
 type Workflow struct {
@@ -52,12 +57,12 @@ func LoadWorkflow(path string) (Workflow, error) {
 		return Workflow{}, err
 	}
 	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, (4<<20)+1))
+	data, err := io.ReadAll(io.LimitReader(file, maxWorkflowBytes+1))
 	if err != nil {
 		return Workflow{}, err
 	}
 
-	if len(data) > 4<<20 {
+	if len(data) > maxWorkflowBytes {
 		return Workflow{}, fmt.Errorf("workflow exceeds four MiB")
 	}
 
@@ -162,7 +167,7 @@ func validateWorkflowOptions(o WorkflowOptions) error {
 
 func validWorkflowSource(source string) bool {
 	return strings.TrimSpace(source) != "" && utf8.ValidString(source) &&
-		!strings.ContainsRune(source, 0) && len(source) <= 256
+		!strings.ContainsRune(source, 0) && len(source) <= maxWorkflowSourceBytes
 }
 
 func validateWorkflowTransport(o WorkflowOptions) error {
