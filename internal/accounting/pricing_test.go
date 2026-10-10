@@ -49,6 +49,7 @@ func TestRate(t *testing.T) {
 		wantUsageMonth           string
 		wantChargeTicks          string
 		wantError                bool
+		wantErrorMessage         string
 	}{
 		{
 			name:                     "Acme October usage selects its customer override",
@@ -111,15 +112,28 @@ func TestRate(t *testing.T) {
 			wantError:                false,
 		},
 		{
-			name:          "default price change inside the interval is rejected",
-			customerID:    "cyberdyne",
-			metric:        "cpu_seconds",
-			schemaVersion: 1,
-			periodStart:   "2026-10-14T23:30:00Z",
-			periodEnd:     "2026-10-15T00:30:00Z",
-			units:         1_000,
-			prices:        prices,
-			wantError:     true,
+			name:             "default price change inside the interval is rejected",
+			customerID:       "cyberdyne",
+			metric:           "cpu_seconds",
+			schemaVersion:    1,
+			periodStart:      "2026-10-14T23:30:00Z",
+			periodEnd:        "2026-10-15T00:30:00Z",
+			units:            1_000,
+			prices:           prices,
+			wantError:        true,
+			wantErrorMessage: "usage interval crosses a price version boundary",
+		},
+		{
+			name:             "one microsecond across the price change is rejected",
+			customerID:       "cyberdyne",
+			metric:           "cpu_seconds",
+			schemaVersion:    1,
+			periodStart:      "2026-10-14T23:59:00Z",
+			periodEnd:        "2026-10-15T00:00:00.000001Z",
+			units:            1_000_000,
+			prices:           prices,
+			wantError:        true,
+			wantErrorMessage: "usage interval crosses a price version boundary",
 		},
 		{
 			name:                     "price change at the excluded interval end preserves the old price",
@@ -249,15 +263,58 @@ func TestRate(t *testing.T) {
 			wantError:     true,
 		},
 		{
-			name:          "usage spanning UTC months is rejected",
-			customerID:    "cyberdyne",
-			metric:        "cpu_seconds",
-			schemaVersion: 1,
-			periodStart:   "2026-10-31T23:30:00Z",
-			periodEnd:     "2026-11-01T00:30:00Z",
-			units:         1,
-			prices:        prices,
-			wantError:     true,
+			name:             "usage spanning UTC months is rejected",
+			customerID:       "cyberdyne",
+			metric:           "cpu_seconds",
+			schemaVersion:    1,
+			periodStart:      "2026-10-31T23:30:00Z",
+			periodEnd:        "2026-11-01T00:30:00Z",
+			units:            1,
+			prices:           prices,
+			wantError:        true,
+			wantErrorMessage: "usage interval must fit within one UTC month",
+		},
+		{
+			name:             "two-minute interval spanning UTC months is rejected",
+			customerID:       "acme",
+			metric:           "cpu_seconds",
+			schemaVersion:    1,
+			periodStart:      "2026-10-31T23:59:00Z",
+			periodEnd:        "2026-11-01T00:01:00Z",
+			units:            100_000_000,
+			prices:           prices,
+			wantError:        true,
+			wantErrorMessage: "usage interval must fit within one UTC month",
+		},
+		{
+			name:                     "interval ending exactly at the UTC month boundary retains October",
+			customerID:               "acme",
+			metric:                   "cpu_seconds",
+			schemaVersion:            1,
+			periodStart:              "2026-10-31T23:59:00Z",
+			periodEnd:                "2026-11-01T00:00:00Z",
+			units:                    100_000_000,
+			prices:                   prices,
+			wantPriceID:              "acme-oct",
+			wantPricePerMillionCents: 4,
+			wantUsageMonth:           "2026-10-01T00:00:00Z",
+			wantChargeTicks:          "400000000",
+			wantError:                false,
+		},
+		{
+			name:                     "interval starting exactly at the UTC month boundary belongs to November",
+			customerID:               "acme",
+			metric:                   "cpu_seconds",
+			schemaVersion:            1,
+			periodStart:              "2026-11-01T00:00:00Z",
+			periodEnd:                "2026-11-01T00:01:00Z",
+			units:                    100_000_000,
+			prices:                   prices,
+			wantPriceID:              "acme-oct",
+			wantPricePerMillionCents: 4,
+			wantUsageMonth:           "2026-11-01T00:00:00Z",
+			wantChargeTicks:          "400000000",
+			wantError:                false,
 		},
 		{
 			name:          "usage before any applicable price is rejected",
@@ -344,8 +401,14 @@ func TestRate(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Rate(%+v, %+v) error = nil; want an error", event, tt.prices)
 				}
+
+				if tt.wantErrorMessage != "" && err.Error() != tt.wantErrorMessage {
+					t.Errorf("Rate(%+v, %+v) error = %q; want %q", event, tt.prices, err, tt.wantErrorMessage)
+				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("Rate(%+v, %+v) error = %v; want nil", event, tt.prices, err)
 			}
