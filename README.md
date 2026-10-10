@@ -4,11 +4,12 @@ Billing service for the E2B assignment, built with Go and PostgreSQL. It provide
 
 The project uses the selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected). The [architecture comparison](docs/brainstorming/architecture-options.md) records the design rationale.
 
-The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. The [financial rules](docs/architecture/accounting-rules.md) define the shared Go calculations, exact credit before rounding, and transaction/closing contract. Transactional accounting, financial APIs, and immutable monthly invoices are implemented.
+Transactional accounting, financial APIs, and immutable monthly invoices are implemented. For the design and financial details, start with:
 
-The [implemented PostgreSQL ERD](docs/diagrams/implemented-data-model/implemented-data-model.png) shows all 18 tables, columns, and foreign keys through migration 007, including rating links, closing cohorts, and immutable invoice records. Its [editable Mermaid source](docs/diagrams/implemented-data-model/implemented-data-model.mmd) accompanies the preview.
-
-The [usage-to-invoice flow](docs/architecture/usage-to-invoice.md) maps usage events, rating, exact groups, credit, rounding, invoice lines, and invoices to database records, including exact tick credit and immutable invoice snapshots.
+- [Billing model — Architectural decisions and rationale](docs/architecture/billing-model.md#architectural-decisions-and-rationale): design choices and trade-offs.
+- [Billing model — Implemented PostgreSQL schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001007): the complete ERD and its editable source.
+- [Financial rules — Exact money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit): tick precision and credit allocation.
+- [Usage-to-invoice guide — One example through the entire flow](docs/architecture/usage-to-invoice.md#2-one-example-through-the-entire-flow): a measurement's path to an issued invoice.
 
 ## Local setup
 
@@ -210,18 +211,12 @@ For a valid batch, the API returns HTTP `202` with `Content-Type: application/js
 {"status":"accepted"}
 ```
 
-The handler validates the whole batch and returns `202` only after a synchronous
-PostgreSQL commit. New rows receive one explicit UTC receipt time and pending
-accounting state. The whole batch commits or rolls back; accounting remains
-asynchronous in the standalone worker.
-
-Measurements use `(source, event_id)` as identity. Identical retries succeed,
-including duplicates within a batch, regrouped batches, and different timestamp
-offsets for the same instant. Comparison includes schema version, customer,
-sandbox, metric, both interval endpoints, and units. Retries preserve original
-`received_at`, `processed_at`, and `processing_error`. Changed content returns
-`409` and rolls back all new rows in that request. The optional `batch_id` is
-accepted producer metadata; it is not stored or used for deduplication.
+The whole batch commits or rolls back; `202` confirms durable receipt, while
+accounting runs asynchronously in the worker. Keep `(source, event_id)` and event
+content unchanged on retries; changed content returns `409`. The optional
+`batch_id` is producer metadata, not a deduplication key. See the
+[usage-to-invoice guide — Usage events: what was consumed](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed)
+for stored fields and retry guarantees.
 
 Requests require uncompressed UTF-8 `application/json`, one JSON document,
 case-sensitive field names, and no unknown or duplicate members. The body limit
@@ -449,11 +444,10 @@ make restart SERVICE=worker
 make stop SERVICE=worker
 ```
 
-**Current behavior: transactional accounting.** The worker prices one accepted receipt
-per transaction, applies exact credit to usage, updates original-month gross spend,
-and commits inbox completion with the financial effects. Unsupported inputs retain
-processing errors; transient storage failures roll back for retry. It runs independently
-of the API with a bounded database pool. The heartbeat reports loop activity.
+The worker performs transactional accounting independently of the API, with a
+bounded database pool. See the [financial rules — Transaction and closing contract](docs/architecture/accounting-rules.md#transaction-and-closing-contract)
+for atomic updates and the [recovery procedure](#transactional-usage-accounting)
+for unsupported input. The heartbeat reports loop activity.
 
 The [worker loop](internal/worker/worker.go) runs one batch at a time, starts
 immediately, and continues without an idle delay when a processor reports more
@@ -493,7 +487,7 @@ does not trigger a restart. Production orchestration should monitor loop health,
 
 API and worker resource lifecycles are independent. Their PostgreSQL connections share the database with bounded pools and short
 transactions. Restarting the worker leaves committed input available for processing.
-Concurrent workers serialize financial effects under the customer account lock.
+The worker reserves two database connections per process.
 
 ## Database
 
@@ -604,15 +598,17 @@ make migrate
 make migration-status
 ```
 
-[migrations/migrate.sql](migrations/migrate.sql) is the migration entry point. It acquires a transaction-scoped advisory lock, applies pending migrations, and records each version in `schema_migrations`. Schema changes and version records commit together; a SQL error aborts the transaction. Repeating the command skips applied versions, including when several runners start concurrently.
+[migrations/migrate.sql](migrations/migrate.sql) applies only pending versions,
+including on existing Docker volumes. Schema changes and version records commit
+atomically; concurrent runners are serialized. Restarting a container does not
+apply migrations. See the [billing model — Initial data and migrations](docs/architecture/billing-model.md#initial-data-and-migrations)
+for migration contents, seed values, and repeat-run behavior.
 
-Migration [001_usage_inbox.sql](migrations/001_usage_inbox.sql) creates the inbox and its partial index for pending, error-free input. Migrations are explicitly invoked, so they also run against an existing Docker volume; restarting the container does not apply them.
+Before upgrading legacy cent-based credit records, follow the
+[financial rules — Migration and verification](docs/architecture/accounting-rules.md#migration-and-verification),
+including the check for incompatible allocations that would stop migration 004.
 
-Migration [002_billing_model.sql](migrations/002_billing_model.sql) creates the accounting tables. [003_assignment_seed.sql](migrations/003_assignment_seed.sql) loads Acme, Cyberdyne, the historical prices, and `concurrency_pack`. Account balances start at zero with no spend limit. The seed is versioned and runs once; repeating `make migrate` preserves existing data.
-
-Migration [004_exact_credit.sql](migrations/004_exact_credit.sql) converts credit balances, group allocations, and signed ledger amounts from whole cents to exact ticks. One cent becomes 1_000_000 ticks, preserving existing history. A legacy allocation exceeding exact gross usage stops the migration atomically; see the [migration guidance](docs/architecture/accounting-rules.md#migration-and-verification) before upgrading existing financial records.
-
-To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged. The initial migration creates the usage inbox schema.
+To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged.
 
 ## Project layout
 
@@ -759,57 +755,18 @@ go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
 
 ## Usage inbox contract
 
-This section defines the stored measurement contract:
+Each inbox row stores a non-negative usage increment over `[period_start, period_end)`,
+identified by `(source, event_id)`. Required values are supplied explicitly;
+the table has no database defaults. Identical retries preserve the stored event
+and processing state; changed content conflicts.
 
-- **Measurement:** consumption interval, metric, and non-negative integer units.
-- **Identity and ownership:** event key, schema version, customer, and sandbox.
-- **Timestamps and processing state:** explicit application values, UTC conventions, completion, and unresolved errors.
-- **Validation and retries:** application validation, content comparison, and atomic storage.
-
-Each row stores a measured increment over the half-open interval `[period_start, period_end)`, rather than a cumulative counter or a monetary charge.[^half-open-interval]
-
-[^half-open-interval]: Including the start and excluding the end gives adjacent intervals an unambiguous boundary: `[10:00, 10:05)` and `[10:05, 10:10)` meet without overlapping, and exactly `10:05` belongs only to the second interval.
-
-| Columns | Meaning |
-| --- | --- |
-| `source`, `event_id` | Composite primary key identifying one measurement across retries. |
-| `schema_version` | Positive contract version, supplied explicitly by the application. |
-| `customer_id`, `sandbox_id`, `metric` | Required ownership and metric identifiers. |
-| `period_start`, `period_end` | Consumption interval as `timestamptz`; the end must follow the start. |
-| `units` | Non-negative `bigint` holding the measured increment. |
-| `received_at` | Billing receipt time as `timestamptz`, supplied explicitly by the application. |
-| `processed_at` | Completion timestamp; `NULL` for unprocessed input. |
-| `processing_error` | Error detail for unresolved input; cannot coexist with a completion timestamp. |
-
-Every required inbox field must be supplied explicitly; the table has no database defaults. PostgreSQL sessions use UTC.
-
-The composite primary key prevents repeated `(source, event_id)` rows. The
-[PostgreSQL repository](internal/inbox/postgres.go) inserts with conflict
-detection, then compares stored content in a fresh READ COMMITTED statement.
-All writers sort keys before acquiring locks, preventing deadlocks between
-overlapping batches in opposite input order. Identical measurements are read
-without updating receipt or accounting state; different content aborts the
-transaction. The database enforces required values, positive schema versions,
-non-negative units, increasing endpoints, and consistent processing state.
-Text content, customer existence, and supported metrics are not validated by
-the database. The application validates text and finite timestamp precision.
-
-The [Go event model](internal/usage/event.go) provides standalone application
-validation of measurement values: identifiers must contain a non-whitespace
-character, use valid UTF-8, and contain no NUL characters; schema versions must
-be positive and units non-negative. Interval endpoints must be supplied, have
-UTC years from 1000 through 9999, use at most microsecond precision, and increase
-when compared as instants. Finer timestamp precision is rejected to avoid losing
-measurement content when it is later stored in PostgreSQL. Customer existence
-and supported version or metric registries are separate concerns.
-
-The [event tests](internal/usage/event_test.go) cover required values, integer
-boundaries, Unicode whitespace, timestamp precision, and intervals across time
-zones and UTC month boundaries. Run them with `make go-test RUN=EventValidate`.
-The HTTP parser now invokes this validator after checking JSON field presence,
-including the distinction between omitted units and valid zero units. It reports
-the first invalid value with its event index and field name; no partial batch is
-acknowledged. Only successful repository commit produces an acknowledgement.
+See the [usage-to-invoice guide — Usage events: what was consumed](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed)
+for columns, timestamp bounds, and receipt semantics, and the
+[billing model — Tables and relationships](docs/architecture/billing-model.md#tables-and-relationships)
+for database integrity and catalog relationships. The
+[OpenAPI specification](docs/api/openapi.yaml) defines request validation.
+The [Go event model](internal/usage/event.go) implements measurement validation;
+run its tests with `make go-test RUN=EventValidate`.
 
 ## Architecture and HTTP interfaces
 
@@ -837,24 +794,23 @@ Keep the architecture diagram's Mermaid source and PNG in sync when changing it.
 
 ## Transactional usage accounting
 
-The standalone worker rates one receipt per transaction under the customer's account lock.
-Historical pricing, cumulative group rounding, exact usage-only credit, original-month gross spend,
-and inbox completion commit together. Concurrent workers and identical replay cannot charge twice.
-Migration `005_accounting_processing.sql` adds immutable closed-month records for late-usage routing.
+The worker accounts for accepted usage asynchronously. Financial effects and
+inbox completion commit together; database failures roll back for retry.
+See the [financial rules — Transaction and closing contract](docs/architecture/accounting-rules.md#transaction-and-closing-contract)
+for locking, atomicity, and closing guarantees, and the
+[usage-to-invoice guide — Historical rating](docs/architecture/usage-to-invoice.md#4-rating-the-cost-under-the-historical-price)
+for pricing and supported interval boundaries.
 
-Unsupported customers, schemas, prices, and intervals are retained with `processing_error`.
-Missing a valid price at consumption time is a **P0 catalog incident**. The receipt stores
-`P0 missing_valid_price: ...`, keeps `processed_at` NULL, and has no financial effect.
-After this error commits, the worker emits an ERROR JSON log with `priority=P0`,
-`error_code=missing_valid_price`, source/event identity, customer, metric, and original
-`period_start`. Invoice closing uses the same reporting path. Other pending receipts
-continue processing; an unresolved error in a closing cohort still blocks that invoice.
+Unsupported input remains in `usage_inbox.processing_error` until explicitly
+released. A missing valid price is a **P0 catalog incident**, reported in worker
+JSON logs with `priority=P0` and `error_code=missing_valid_price`; it blocks an
+invoice if the receipt belongs to its closing cohort. Follow the
+[financial rules — Catalog provisioning and P0 recovery](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery)
+for the complete diagnostic and recovery contract.
 
-Database failures roll back for retry. To recover a missing-price incident, immediately
-provision the correct catalog version through `POST /prices`, with `effective_from` on or
-before the affected consumption time. Then explicitly release the investigated receipt.
-Appending a price or replaying the usage request does not clear an existing error.
-Other unsupported input follows the same explicit release procedure after its cause is fixed:
+To recover, correct the cause first. For a missing price, append the appropriate
+version through `POST /prices`, with `effective_from` covering the original
+consumption time. Then explicitly release only the investigated receipt:
 
 ```sql
 UPDATE usage_inbox SET processing_error = NULL
@@ -862,80 +818,65 @@ WHERE source = 'investigated-source' AND event_id = 'investigated-event'
   AND processed_at IS NULL;
 ```
 
-A receipt must fit within one UTC month and one applicable price version; units are never
-spread across boundaries by assumption. Accounting retains exact ticks and rounds only
-cumulative groups. The worker reserves two database connections per process.
+Adding a price or replaying the usage request does not clear a processing error.
 
 ### Price versions
 
-`POST /prices` appends an immutable price version using its stable `price_version_id`.
-Supply `customer_id: null` for the default, or a customer ID for an override. An identical
-retry succeeds; changed content, duplicate effective instants, and retroactive changes
-that invalidate already rated usage return `409`. Pending usage can use newly added historical
-prices. See the [OpenAPI reference](docs/api/openapi.yaml) for explicit fields and examples.
-
-Every price requires an explicit finite `effective_from`; an undated baseline is not supported.
-Migration `003_assignment_seed.sql` supplies the assignment's original prices beginning on
-1 October 2026, including the default change on 15 October. Register and price each additional
-metric before the platform generates its first usage, with an effective start covering that usage.
-This provisioning contract is an operational responsibility; the inbox durably accepts input
-before asynchronous catalog validation. A configured zero price is valid and differs from a
-missing valid price. See the [catalog provisioning and P0 recovery contract](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery).
+`POST /prices` appends a price version with a stable `price_version_id` and explicit
+`effective_from`. Set `customer_id: null` for a default or supply a customer ID
+for an override. Provision metrics and prices before metering starts.
+See the [financial rules — Historical prices and groups](docs/architecture/accounting-rules.md#historical-prices-and-groups)
+for selection rules and the [Catalog provisioning and P0 recovery chapter](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery)
+for provisioning requirements. Request fields and conflict responses are in the
+[OpenAPI reference](docs/api/openapi.yaml).
 
 ### Credit
 
-E2B calls `POST /customers/{customer_id}/credits` with an explicit operation ID, positive
-`amount_cents`, and audit `recorded_at`. Grants apply immediately under the account lock;
-unchanged retries succeed and changed content returns `409`. Credit pays new usage only.
-`GET /customers/{customer_id}/credit` exposes exact `credit_balance_ticks` and committed
-pending/error counts. One cent is 1_000_000 ticks; receipt acceptance can precede accounting.
+Use `POST /customers/{customer_id}/credits` to grant credit with a stable operation
+ID and `GET /customers/{customer_id}/credit` to read the exact balance and
+accounting progress. Credit pays usage only. See the
+[financial rules — Exact money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit)
+for tick units, allocation order, and later grants, and the
+[usage-to-invoice guide — Credit before rounding](docs/architecture/usage-to-invoice.md#what-credit-before-rounding-means)
+for a worked example.
 
 ### Add-on purchases
 
-`POST /customers/{customer_id}/addons` uses a stable `subscription_id` and snapshots the
-monthly catalog price. The full charge starts in the UTC purchase month, including purchases
-at month end, and recurs on subsequent invoices. One subscription per customer and add-on is
-supported. Identical retries return the original snapshot; duplicate subscriptions and new
-purchases that would change a closed month return `409`. Credit never pays add-ons.
+`POST /customers/{customer_id}/addons` purchases a recurring add-on with a stable
+`subscription_id` and snapshots its monthly price. Credit does not pay add-ons.
+See the [financial rules — UTC months, limits, add-ons, and late usage](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage)
+for full-month charges and the [billing model — Tables and relationships](docs/architecture/billing-model.md#tables-and-relationships)
+for subscription ownership and price snapshots.
 
 ### Spend limits and platform queries
 
-Apply migration 006, then use `POST /customers/{customer_id}/spend-limit` with a stable
-operation ID and nonnegative `limit_cents`, or explicit `null` for unlimited. Replaying
-an older operation preserves a newer limit. `GET /customers/{customer_id}/limit-status`
-selects the server's current UTC month; `GET /customers/{customer_id}/months/{month}/limit-status`
-selects an explicit `YYYY-MM` usage month with the current configuration. Status compares
-exact gross usage before credit, excludes add-ons, and exposes pending/error counts.
-Reaching a limit does not discard or stop accounting for measured usage.
+Use `POST /customers/{customer_id}/spend-limit` with a stable operation ID and
+`limit_cents`, or explicit `null` for unlimited. Read the current UTC month with
+`GET /customers/{customer_id}/limit-status`, or an explicit `YYYY-MM` month with
+`GET /customers/{customer_id}/months/{month}/limit-status`. Status includes
+accounting progress; reaching a limit does not stop accounting.
+See the [financial rules — UTC months, limits, add-ons, and late usage](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage)
+for limit semantics and the [usage-to-invoice guide — Why the limit uses gross charges](docs/architecture/usage-to-invoice.md#why-the-limit-uses-gross-charges)
+for the rationale and example.
 
 ### Monthly invoices
 
-The [fixed billing contract](docs/architecture/accounting-rules.md#fixed-calendar-month-contract)
-is one immutable invoice per customer for a whole UTC calendar month. A chosen
-generation or delivery day cannot shift the period's boundaries. January's invoice
-generated on 20 February still covers January. The [scheduling proposals](docs/architecture/accounting-rules.md#invoice-generation-and-delivery-proposal)
-compare generation on the first day with generation on a selected customer day.
+Call `POST /customers/{customer_id}/invoices` with an explicit `YYYY-MM` month
+such as `2026-10`, in increasing month order. Only completed UTC calendar months
+can be closed; an ongoing or future month returns `422`. An empty month is valid.
+Retrying returns the same immutable invoice and number;
+`GET /customers/{customer_id}/invoices/{month}` reads that snapshot.
 
-Apply migration 007, then call `POST /customers/{customer_id}/invoices` with an explicit
-`month` such as `2026-10`. Issue months in increasing order. An empty month is valid.
-The customer/month identifies this operation; retry returns the same invoice and number.
-`GET /customers/{customer_id}/invoices/{month}` reads the immutable snapshot.
+See the [financial rules — Fixed calendar-month contract](docs/architecture/accounting-rules.md#fixed-calendar-month-contract)
+for period boundaries, the [usage-to-invoice guide — Invoice generation workflow](docs/architecture/usage-to-invoice.md#invoice-generation-workflow)
+for closing phases and retries, and the [Late usage chapter](docs/architecture/usage-to-invoice.md#10-late-usage-why-there-are-two-distinct-periods)
+for input received after closing. Processing errors in the closing cohort block
+issuance; use the [recovery procedure](#transactional-usage-accounting) before retrying.
 
-Closing first stores its committed pending receipt cohort. Errors block issuance; a deadline
-leaves resumable closing work. Retry after correcting an input's supported catalog and
-explicitly releasing its processing error. New accepted receipts outside that cohort route
-to another open month, even with an older receipt timestamp. Buyer details, lines, exact
-audit ticks, group freezes, closure, and the customer's next number commit together.
-Issuance never consumes credit again. Later grants and consumption cannot change an issued
-invoice. A new purchase cannot affect a closing or closed month. Operators trigger invoices
-explicitly through the API; an automatic calendar scheduler remains an extension.
-
-The API accepts only a `YYYY-MM` month. A new closure requires the whole month to
-have ended according to the server's UTC clock: January becomes eligible exactly
-at `00:00:00Z` on 1 February. An ongoing or future month returns `422` with
-`invalid_command` and field `month`, before processing receipts or changing
-financial state. Customer day settings, document delivery, and a scheduling service
-are not implemented.
+Operators trigger invoices explicitly. Automatic scheduling, customer day settings,
+and document delivery remain unimplemented; alternatives and the precise
+completed-month requirement are described in the
+[financial rules — Invoice generation and delivery (proposal)](docs/architecture/accounting-rules.md#invoice-generation-and-delivery-proposal).
 
 The [scenario style guide](docs/simulator/scenario-style.md) describes the named-step format
 used for durable platform workflows and literal expected results. Simulator transport tests
