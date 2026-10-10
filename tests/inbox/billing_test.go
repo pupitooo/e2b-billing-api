@@ -300,6 +300,7 @@ func TestProcessBatch(t *testing.T) {
 	})
 
 	testPriceBoundaryProcessing(t)
+	testProcessingBounds(t)
 
 	t.Run("late database failure rolls back all financial effects", func(t *testing.T) {
 		scenario := struct {
