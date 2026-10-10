@@ -147,7 +147,7 @@ make test
 make docs-check
 ```
 
-`make check` verifies Go formatting, whitespace, numeric literals, and static
+`make check` verifies Go formatting, whitespace, and static
 analysis. `make test` runs SQL integrity in UTC and `Asia/Shanghai`, Go package,
 repository, HTTP, and worker lifecycle tests. `make docs-check` validates the
 published documentation, links, and assets with a strict MkDocs build.
@@ -159,7 +159,8 @@ available. Keep ordinary zero values, indexing, counters, and literal test input
 and expectations readable. Review constant names manually; formatting does not
 enforce this rule. Group decimal Go literals and Markdown numbers with five or
 more digits in threes (`10_000`); calendar years and copyable language examples
-retain their required syntax.
+retain their required syntax. Review numeric grouping manually; formatting and
+automated checks do not enforce it.
 
 See [development conventions](docs/guides/development.md),
 [test suites and filters](docs/guides/testing.md), and the

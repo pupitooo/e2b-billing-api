@@ -60,8 +60,8 @@ vet_go() {
 }
 
 case "$mode" in
-  fmt) go run ./cmd/number-format -fix .; format_go -w; whitespace_go -fix; format_go -w ;;
-  fmt-check) check_format; go run ./cmd/number-format .; whitespace_go ;;
+  fmt) format_go -w; whitespace_go -fix; format_go -w ;;
+  fmt-check) check_format; whitespace_go ;;
   vet) vet_go ;;
-  check) check_format; go run ./cmd/number-format .; whitespace_go; vet_go ;;
+  check) check_format; whitespace_go; vet_go ;;
 esac
