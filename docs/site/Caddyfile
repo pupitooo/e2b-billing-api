@@ -1,0 +1,28 @@
+{
+	auto_https off
+	admin off
+}
+
+:8080 {
+	header -Server
+	header Cache-Control "no-cache"
+
+	# Scalar's relative assets resolve beneath this trailing slash.
+	handle /reference {
+		redir /reference/ 308
+	}
+
+	handle_path /reference/* {
+		reverse_proxy api-docs:8080
+	}
+
+	# Scalar browser requests share the portal origin.
+	handle_path /api/* {
+		reverse_proxy api:8080
+	}
+
+	# Forward live-reload requests as well as the rendered guides.
+	handle {
+		reverse_proxy 127.0.0.1:8000
+	}
+}

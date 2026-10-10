@@ -24,6 +24,8 @@ jobs:
           persist-credentials: false
       - name: Check Go formatting, whitespace, numeric literals, and static analysis
         run: E2B_GO_CHECKS_DOCKER=1 make check
+      - name: Validate published documentation, links, and assets
+        run: make docs-check
       - name: Start PostgreSQL
         run: make up SERVICE=postgres
       - name: Run SQL, Go package, HTTP, and worker lifecycle tests

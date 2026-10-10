@@ -135,7 +135,7 @@ make down
 ## 3. Fresh assignment environment and seed inspection
 
 Select a second unused project and initialize it explicitly. `make up` starts the
-API, worker, Scalar documentation, and idle simulator after the database migration.
+API, worker, documentation portal, Scalar API reference, and idle simulator after the database migration.
 Starting the idle simulator must create no usage.
 
 ```sh
@@ -146,14 +146,14 @@ make up
 make ps
 acceptance_api=http://127.0.0.1:28081
 curl --fail-with-body "$acceptance_api/healthz"
-curl --fail-with-body http://127.0.0.1:28082/openapi.yaml \
+curl --fail-with-body http://127.0.0.1:28082/reference/openapi.yaml \
   > "$acceptance_evidence/openapi-served.yaml"
 cmp docs/api/openapi.yaml "$acceptance_evidence/openapi-served.yaml"
 ```
 
-Expect healthy PostgreSQL, API, worker, and docs; the simulator runs idle. Health
+Expect healthy PostgreSQL, API, worker, docs, and api-docs; the simulator runs idle. Health
 HTTP `200` verifies the API process. The seed query and financial reads verify
-database access. Open Scalar at `http://127.0.0.1:28082/`, check its reference, and
+database access. Open Scalar at `http://127.0.0.1:28082/reference/`, check its reference, and
 use its embedded request client for `GET /customers/acme/credit`; expect HTTP `200`
 and an empty account. Browser requests go through the same docs service's proxy.
 
@@ -213,8 +213,8 @@ and `completed=N steps=24`, with `N` matching the row below. GET steps marked
 `await` poll until their expected state is observed. A nonzero `processing_errors`
 is a failure for this valid scenario. Do not replace polling with a fixed sleep.
 An ERROR worker log with `priority=P0` and `error_code=missing_valid_price` identifies
-a missing eligible catalog version. Use the [controlled SQL repair](../../README.md#controlled-historical-price-repair),
-then explicitly release the receipt using the [recovery procedure](../../README.md#transactional-usage-accounting).
+a missing eligible catalog version. Use the [controlled SQL repair](../guides/accounting-recovery.md#controlled-historical-price-repair),
+then explicitly release the receipt using the [recovery procedure](../guides/accounting-recovery.md#investigate-and-release-a-receipt).
 Ordinary `POST /prices` rejects new backdated versions; invoice issuance never
 repairs or processes the receipt.
 The assignment seed's effective starts remain unchanged; additional metrics must
@@ -550,7 +550,7 @@ make up
 ```
 
 Verify the empty Acme account as in section 3. Submit these requests through
-Scalar's embedded client at `http://127.0.0.1:28082/`, or send the identical JSON
+Scalar's embedded client at `http://127.0.0.1:28082/reference/`, or send the identical JSON
 with `curl` to `$acceptance_api`. Save responses and status codes in the evidence
 directory. The customer path in every financial request is `/customers/acme`.
 
@@ -602,7 +602,7 @@ Review the [submission overview](../architecture/submission-overview.md),
 [selected architecture and workload assumptions](../brainstorming/architecture-options.md),
 [usage-to-invoice flow](../architecture/usage-to-invoice.md),
 [financial rules](../architecture/accounting-rules.md), and
-[operational README](../../README.md#architecture-and-http-interfaces). Record:
+[interface ownership](../architecture/submission-overview.md#interfaces-and-ownership). Record:
 
 - Why the separate platform sends durable, idempotent increments into PostgreSQL
   and why asynchronous accounting uses customer locks and explicit commit boundaries.

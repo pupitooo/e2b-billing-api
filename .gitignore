@@ -87,3 +87,25 @@
 !.env.example
 node_modules/
 .DS_Store
+
+# Published documentation portal and extracted operational guides.
+!/docs/index.md
+!/docs/api/index.md
+!/docs/site/
+/docs/site/*
+!/docs/site/mkdocs.yml
+!/docs/site/hooks.py
+!/docs/site/Caddyfile
+!/docs/site/Dockerfile
+!/docs/site/serve.sh
+!/docs/guides/local-development.md
+!/docs/guides/runtime-configuration.md
+!/docs/guides/database-operations.md
+!/docs/guides/development.md
+!/docs/guides/testing.md
+!/docs/guides/accounting-recovery.md
+!/docs/guides/documentation.md
+!/docs/architecture/capacity-and-measurements.md
+!/docs/simulator/transport-scenarios.md
+!/docs/diagrams/index.md
+!/docs/site/test_publication.py

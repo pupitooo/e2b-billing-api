@@ -37,7 +37,7 @@ export REVERSE SIM_API_URL SCENARIO_FILE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs simulate simulate-help fmt fmt-check vet check install-hooks
+.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs api-docs docs-check simulate simulate-help fmt fmt-check vet check install-hooks
 
 help:
 	@printf '%s\n' \
@@ -60,7 +60,9 @@ help:
 	  'db-test  Run SQL integrity tests in both time zones' \
 	  'api-test Start the API and run HTTP integration tests' \
 	  'inbox-test Run PostgreSQL repository tests in private schemas' \
-	  'docs     Start Scalar documentation and the API for browser requests' \
+	  'docs     Start the Markdown guides, Scalar reference, and API' \
+	  'api-docs Start the portal and print the Scalar reference link' \
+	  'docs-check Validate published guides, links, and assets without services' \
 	  'simulate Run or resume platform usage; MODE=step releases one step' \
 	  'simulate-help Show all simulator options' \
 	  'fmt      Format Go source, whitespace, and decimal numeric literals' \
@@ -94,8 +96,13 @@ install-hooks:
 	@git config --local core.hooksPath .githooks
 	@printf '%s\n' 'Pre-commit Go checks enabled for this clone.'
 
-docs:
+docs api-docs:
 	@$(MAKE) up SERVICE=docs
+
+docs-check:
+	@$(COMPOSE) build docs
+	@$(COMPOSE) run --rm --no-deps --entrypoint mkdocs docs build --strict --config-file /source/site/mkdocs.yml
+	@$(COMPOSE) run --rm --no-deps --entrypoint python docs /source/site/test_publication.py
 
 simulate-help:
 	@$(COMPOSE) build simulator
@@ -162,7 +169,8 @@ links:
 	      printf 'API health: http://%s/healthz\n' "$$address" ;; \
 	    docs) \
 	      address="$$($(COMPOSE) port docs 8080)"; \
-	      printf 'API documentation: http://%s/\n' "$$address" ;; \
+	      printf 'Documentation portal: http://%s/\n' "$$address"; \
+	      printf 'API reference: http://%s/reference/\n' "$$address" ;; \
 	  esac; \
 	done
 

@@ -158,7 +158,7 @@ Treat the missing catalog as an immediate P0 repair: append the correct price
 through controlled operator SQL, with an explicit start covering the original measurement.
 The historical protection still rejects a version that invalidates already rated
 usage. After the repair, an operator explicitly clears the investigated receipt's
-error using the [recovery procedure](../../README.md#transactional-usage-accounting).
+error using the [recovery procedure](../guides/accounting-recovery.md#investigate-and-release-a-receipt).
 Adding a price or repeating the usage request does not automatically release it.
 The next attempt accounts for the original receipt exactly once and follows the
 existing open-month routing. Every non-null processing error excludes the receipt
