@@ -190,6 +190,8 @@ See [development conventions](docs/guides/development.md),
 [test suites and filters](docs/guides/testing.md), and the
 [final acceptance procedure](docs/guides/final-acceptance-testing.md).
 The [documentation index](docs/index.md) links all published guides.
+The [test-quality and mutation audit](docs/guides/test-mutation-audit.md) records
+selected deliberate defects, missing assertions and the added regression scenarios.
 
 ## System contracts
 

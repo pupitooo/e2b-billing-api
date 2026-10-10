@@ -405,4 +405,33 @@ BEGIN
 END;
 $tests$;
 
+
+-- Sequence numbers start at one; rejecting zero must not change account state.
+UPDATE customer_billing_state SET next_invoice_number = 1 WHERE customer_id = 'billing-model-acme';
+SELECT pg_temp.assert_result(scenario => 'minimum invoice sequence is valid',
+ input_sql => $$SELECT next_invoice_number FROM customer_billing_state WHERE customer_id = 'billing-model-acme'$$,
+ want_result => '{"next_invoice_number":1}'::jsonb);
+SELECT pg_temp.assert_rejection(scenario => 'zero invoice sequence is rejected',
+ input_sql => $$UPDATE customer_billing_state SET next_invoice_number = 0 WHERE customer_id = 'billing-model-acme'$$,
+ want_sqlstate => '23514');
+SELECT pg_temp.assert_rejection(scenario => 'negative invoice sequence is rejected',
+ input_sql => $$UPDATE customer_billing_state SET next_invoice_number = -1 WHERE customer_id = 'billing-model-acme'$$,
+ want_sqlstate => '23514');
+
+-- Each rejected insert leaves the closed month available for the adjacent valid invoice.
+INSERT INTO closed_billing_months VALUES ('billing-model-acme', '2026-10-01', '2026-11-01T00:00:00Z');
+SELECT pg_temp.assert_rejection(scenario => 'negative invoice total is rejected',
+ input_sql => $$INSERT INTO invoices VALUES ('billing-model-acme','2026-10-01','AUDIT-0001',-1,'{}')$$,
+ want_sqlstate => '23514');
+SELECT pg_temp.assert_rejection(scenario => 'invoice snapshot cannot be an array',
+ input_sql => $$INSERT INTO invoices VALUES ('billing-model-acme','2026-10-01','AUDIT-0001',0,'[]')$$,
+ want_sqlstate => '23514');
+SELECT pg_temp.assert_rejection(scenario => 'invoice snapshot cannot be JSON null',
+ input_sql => $$INSERT INTO invoices VALUES ('billing-model-acme','2026-10-01','AUDIT-0001',0,'null')$$,
+ want_sqlstate => '23514');
+INSERT INTO invoices VALUES ('billing-model-acme','2026-10-01','AUDIT-0001',0,'{}');
+SELECT pg_temp.assert_result(scenario => 'zero invoice total and object snapshot are valid',
+ input_sql => $$SELECT total_cents,snapshot FROM invoices WHERE customer_id='billing-model-acme' AND billing_month='2026-10-01'$$,
+ want_result => '{"total_cents":0,"snapshot":{}}'::jsonb);
+
 ROLLBACK;

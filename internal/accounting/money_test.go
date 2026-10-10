@@ -220,6 +220,10 @@ func TestAmountTicks(t *testing.T) {
 			wantTicks:     "0",
 		},
 		{
+			name:   "overwriting a nonzero word cannot change the amount or its value copy",
+			amount: ticks(t, "500000"), mutateTicksTo: 1, wantTicks: "500000",
+		},
+		{
 			name:          "returned integer is independent of the amount",
 			amount:        ticks(t, "500000"),
 			mutateTicksTo: 0,

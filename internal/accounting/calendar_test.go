@@ -29,6 +29,11 @@ func TestUTCMonth(t *testing.T) {
 			wantError: false,
 		},
 		{
+			name:      "last supported UTC instant remains valid",
+			timestamp: instant(t, "9999-12-31T23:59:59.999999Z"),
+			wantMonth: "9999-12-01T00:00:00Z", wantError: false,
+		},
+		{
 			name:      "missing timestamp is rejected",
 			timestamp: time.Time{},
 			wantError: true,
@@ -300,6 +305,12 @@ func TestBillingMonth(t *testing.T) {
 			receivedAt:   "1000-01-01T00:00:00Z",
 			closedMonths: []string{"0999-12-01T00:00:00Z"},
 			wantError:    true,
+		},
+		{
+			name:       "closed November can still route into December of year 9999",
+			usageMonth: "9999-11-01T00:00:00Z", receivedAt: "9999-11-02T00:00:00Z",
+			closedMonths: []string{"9999-11-01T00:00:00Z"},
+			wantMonth:    "9999-12-01T00:00:00Z", wantError: false,
 		},
 		{
 			name:         "last supported month remains valid while open",

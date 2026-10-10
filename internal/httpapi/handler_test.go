@@ -199,9 +199,27 @@ func TestHandlerServeHTTP(t *testing.T) {
 				wantStatus: http.StatusAccepted,
 			},
 			{
+				name:       "batch identifier at the exact ASCII byte limit",
+				body:       changeBatch(t, func(b map[string]any) { b["batch_id"] = strings.Repeat("x", 256) }),
+				wantStatus: 202,
+			},
+			{
+				name:       "batch identifier at the exact Unicode byte limit",
+				body:       changeBatch(t, func(b map[string]any) { b["batch_id"] = strings.Repeat("ž", 128) }),
+				wantStatus: 202,
+			},
+			{
 				name:       "valid surrogate pair",
 				body:       strings.Replace(validUsageBatch, "test-event", `\ud83d\ude80`, 1),
 				wantStatus: http.StatusAccepted,
+			},
+			{
+				name: "lowest valid surrogate pair",
+				body: strings.Replace(validUsageBatch, "test-event", `\ud800\udc00`, 1), wantStatus: 202,
+			},
+			{
+				name: "highest valid surrogate pair",
+				body: strings.Replace(validUsageBatch, "test-event", `\udbff\udfff`, 1), wantStatus: 202,
 			},
 			{
 				name:       "escaped literal surrogate text",
@@ -437,6 +455,16 @@ func TestHandlerServeHTTP(t *testing.T) {
 				wantErrorField: "",
 				wantStatus:     400,
 				wantErrorCode:  "invalid_json",
+			},
+			{
+				name:           "unpaired lowest low surrogate",
+				body:           strings.Replace(validUsageBatch, "test-event", `\udc00`, 1),
+				wantErrorField: "", wantStatus: 400, wantErrorCode: "invalid_json",
+			},
+			{
+				name:           "unpaired highest high surrogate",
+				body:           strings.Replace(validUsageBatch, "test-event", `\udbff`, 1),
+				wantErrorField: "", wantStatus: 400, wantErrorCode: "invalid_json",
 			},
 			{
 				name:           "unpaired high surrogate",

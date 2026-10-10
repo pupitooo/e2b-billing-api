@@ -181,4 +181,9 @@ SELECT pg_temp.assert_result(
     $want$::jsonb
 );
 
+UPDATE usage_inbox SET schema_version = 1 WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001';
+SELECT pg_temp.assert_result(scenario => 'minimum positive schema version is valid', input_sql => $$SELECT schema_version FROM usage_inbox WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'$$, want_result => '{"schema_version":1}'::jsonb);
+SELECT pg_temp.assert_rejection(scenario => 'zero schema version is rejected', input_sql => $$UPDATE usage_inbox SET schema_version = 0 WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'$$, want_sqlstate => '23514');
+SELECT pg_temp.assert_rejection(scenario => 'negative schema version is rejected', input_sql => $$UPDATE usage_inbox SET schema_version = -1 WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'$$, want_sqlstate => '23514');
+
 ROLLBACK;

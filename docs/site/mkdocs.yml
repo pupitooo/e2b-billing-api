@@ -43,6 +43,7 @@ nav:
       - Scenario style: simulator/scenario-style.md
   - Development:
       - Tests and filters: guides/testing.md
+      - Test quality and mutation audit: guides/test-mutation-audit.md
       - Acceptance procedure: guides/final-acceptance-testing.md
       - Conventions: guides/development.md
       - Documentation: guides/documentation.md
@@ -62,6 +63,8 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/pupitooo/e2b-billing-api
   published_assets:
+    - guides/test-mutation-audit.json
+    - guides/gui-test-regressions.patch
     - diagrams/api-endpoints/api-endpoints.mmd
     - diagrams/api-endpoints/api-endpoints.png
     - diagrams/closing-workflow/closing-workflow.mmd
