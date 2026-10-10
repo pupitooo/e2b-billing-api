@@ -19,7 +19,7 @@
       }
     },
     {
-      "name": "append historical default before any affected rating",
+      "name": "schedule a new default before activation",
       "request": {
         "method": "POST",
         "path": "/prices",
@@ -129,10 +129,11 @@
         }
       },
       "want": {
-        "status": 409,
+        "status": 422,
         "body": {
           "error": {
-            "code": "billing_conflict"
+            "code": "invalid_command",
+            "field": "effective_from"
           }
         }
       }
@@ -151,10 +152,11 @@
         }
       },
       "want": {
-        "status": 409,
+        "status": 422,
         "body": {
           "error": {
-            "code": "billing_conflict"
+            "code": "invalid_command",
+            "field": "effective_from"
           }
         }
       }

@@ -26,12 +26,14 @@ import (
 // TestBillingSimulatorExecutable runs each readable JSON workflow through a
 // separate CLI, real HTTP router, worker, and private seeded PostgreSQL schema.
 // The files keep every public input beside its literal invoice/credit expectation.
-// Each scenario supplies a server clock after its fixed billing periods end.
+// Invoice clocks follow completed periods; price commands declare their own
+// insertion times when a scenario schedules versions before historical usage.
 func TestBillingSimulatorExecutable(t *testing.T) {
 	cases := []struct {
 		name                string
 		file                string
 		invoiceTime         string
+		priceCommandTimes   []string
 		unavailableRequests int32
 		wantCompleted       int
 	}{
@@ -40,14 +42,14 @@ func TestBillingSimulatorExecutable(t *testing.T) {
 		{name: "exact sub-cent credit", file: "billing-exact-credit", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 6},
 		{name: "credit exhaustion and a full recurring add-on", file: "billing-credit-exhaustion", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 9},
 		{name: "platform reads and resets monthly limit status", file: "billing-limit-status", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 15},
-		{name: "default versions and customer override", file: "billing-price-versions", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 8},
-		{name: "ambiguous price interval blocks closing", file: "billing-price-boundary", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 5},
-		{name: "ambiguous month interval blocks closing", file: "billing-month-boundary", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 5},
+		{name: "default versions and customer override", file: "billing-price-versions", invoiceTime: "2026-12-01T00:00:00Z", priceCommandTimes: []string{"2026-10-01T00:00:00Z", "2026-10-01T00:00:00Z", "2026-12-01T00:00:00Z", "2026-12-01T00:00:00Z"}, wantCompleted: 8},
+		{name: "ambiguous price interval is quarantined without blocking closing", file: "billing-price-boundary", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 5},
+		{name: "ambiguous month interval is quarantined without blocking closing", file: "billing-month-boundary", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 5},
 		{name: "HTTP outage recovers without financial drift", file: "billing-assignment", invoiceTime: "2026-12-01T00:00:00Z", unavailableRequests: 2, wantCompleted: 24},
 	}
 	for _, scenario := range cases {
 		t.Run(scenario.name, func(t *testing.T) {
-			address := billingSimulatorAPI(t, scenario.unavailableRequests, parseBillingTime(t, scenario.invoiceTime))
+			address := billingSimulatorAPI(t, scenario.unavailableRequests, parseBillingTime(t, scenario.invoiceTime), scenario.priceCommandTimes...)
 			binary := billingSimulatorBinary(t)
 			state := filepath.Join(t.TempDir(), "workflow.json")
 			arguments := billingSimulatorArguments(scenario.file, state, address)
@@ -116,11 +118,16 @@ func TestBillingSimulatorExecutable(t *testing.T) {
 // billingSimulatorAPI provides a real seeded account and worker isolated from
 // application data. Optional gateway failures happen before any command executes.
 // The declared server clock keeps fixed invoice fixtures independent of today's date.
-func billingSimulatorAPI(t *testing.T, unavailableRequests int32, invoiceTime time.Time) string {
+func billingSimulatorAPI(t *testing.T, unavailableRequests int32, invoiceTime time.Time, priceCommandTimes ...string) string {
 	t.Helper()
 	pool := billingDatabase(t)
 	store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
 	handler := httpapi.NewHandler(inbox.NewPostgres(pool, time.Second), 5*time.Second, 8, store)
+	var priceClock atomic.Value
+	priceClock.Store(invoiceTime)
+	priceStore := billing.NewStoreWithClock(pool, func() time.Time { return priceClock.Load().(time.Time) })
+	priceHandler := httpapi.NewHandler(inbox.NewPostgres(pool, time.Second), 5*time.Second, 8, priceStore)
+	var priceCommands atomic.Int32
 	var remaining atomic.Int32
 	remaining.Store(unavailableRequests)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +136,17 @@ func billingSimulatorAPI(t *testing.T, unavailableRequests int32, invoiceTime ti
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			io.WriteString(w, `{"error":{"code":"billing_unavailable"}}`)
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/prices" && len(priceCommandTimes) > 0 {
+			index := int(priceCommands.Add(1)) - 1
+			if index >= len(priceCommandTimes) {
+				t.Errorf("Unexpected price command %d; declared times=%v", index, priceCommandTimes)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			priceClock.Store(parseBillingTime(t, priceCommandTimes[index]))
+			priceHandler.ServeHTTP(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)

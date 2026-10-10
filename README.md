@@ -7,7 +7,7 @@ The project uses the selected [option C architecture](docs/brainstorming/archite
 Transactional accounting, financial APIs, and immutable monthly invoices are implemented. For the design and financial details, start with:
 
 - [Billing model — Architectural decisions and rationale](docs/architecture/billing-model.md#architectural-decisions-and-rationale): design choices and trade-offs.
-- [Billing model — Implemented PostgreSQL schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001007): the complete ERD and its editable source.
+- [Billing model — Implemented PostgreSQL schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001008): the complete ERD and its editable source.
 - [Financial rules — Exact money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit): tick precision and credit allocation.
 - [Usage-to-invoice guide — One example through the entire flow](docs/architecture/usage-to-invoice.md#2-one-example-through-the-entire-flow): a measurement's path to an issued invoice.
 
@@ -753,6 +753,35 @@ go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
 
 [CI](.github/workflows/ci.yml) runs `make check` before `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check includes Go formatting and static analysis, SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
 
+## System contracts
+
+Document system requirements directly, without attributing them to a person's
+requests or decisions. Changes to accounting, transport guarantees, or lifecycle
+boundaries must update this register and the linked contract in the same change.
+Keep proposed extensions separate from current requirements. If a proposed change
+conflicts with the assignment, report the conflict immediately and agree on its
+resolution before implementing the conflicting behavior or adopting it as a contract.
+
+| Contract | Required behavior | Basis and detail |
+| --- | --- | --- |
+| Durable usage and retries | Preserve increments under stable `(source, event_id)` identities; `event_id` is unique throughout its `source`, across customers, sandboxes, producer instances, and restarts. Acknowledge only committed receipt; unchanged retries preserve the original input and receipt time, while changed content conflicts. The sender retains unacknowledged measurements for retry. | Distributed delivery is required by the assignment; identities and durable inbox receipt are system policies. [Usage inbox](#usage-inbox-contract), [event fields and receipt semantics](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed). |
+| API and worker lifecycle | Run the Go API and accounting worker in separate processes and containers so they can restart independently; they share PostgreSQL capacity. | System architecture. [Option C](docs/brainstorming/architecture-options.md#why-option-c-was-selected), [worker operation](#transactional-usage-accounting). |
+| Historical pricing | Rate consumption at its applicable historical customer override or default. Each price has a finite, explicit start; ordinary new versions cannot start before insertion. Preserve the seed's amounts and timestamps. Receipts must stay within one applicable price version and UTC month. | Historical prices and overrides come from the assignment; interval segmentation is a system policy. [Historical prices and groups](docs/architecture/accounting-rules.md#historical-prices-and-groups). |
+| Price insertion | For ordinary new versions, require `effective_from` at or after the server UTC instant sampled after the catalog lock and identity check. Reject earlier activation with `422`; accept future schedules and identical retries after activation. | System activation policy. [Price insertion contract](docs/architecture/accounting-rules.md#price-insertion-contract), [activation diagram](docs/diagrams/price-version-activation/price-version-activation.png). |
+| Catalog provisioning and recovery | Provision an eligible price before metering. Missing valid prices are P0 incidents: quarantine and report the receipt without financial effects; repair the dated catalog through controlled operator SQL and explicitly release the receipt. | System provisioning and recovery policy; no implied free or undated price. [Catalog contract](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery). |
+| Exact money and credit | Store exact ticks, allocate credit before rounding, and use credit for usage only. Later grants do not rewrite earlier allocations. | Usage-only credit comes from the assignment; precision and allocation order are system policies. [Exact money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit). |
+| Invoice presentation | Round cumulative groups half-up, derive displayed credit from rounded gross and net, and preserve exact audit values. Reproduce the assignment's invoice totals and balances. | Cent invoices and example results come from the assignment; the rounding method is a system policy. [Rounding and presentation](docs/architecture/accounting-rules.md#rounding-and-invoice-presentation). |
+| Fixed monthly periods | Use whole UTC calendar months and one immutable invoice per customer/month. New closures require a completed month; generation or delivery preferences cannot move its boundaries. Retries retain the original number and snapshot. | UTC calendar months and monthly customer invoices come from the assignment; completion checks and immutable retry behavior enforce the system contract. [Fixed calendar months](docs/architecture/accounting-rules.md#fixed-calendar-month-contract), [completed-month validation](docs/architecture/accounting-rules.md#invoice-generation-and-delivery-proposal). |
+| Spend limits and add-ons | Compare original-month gross usage before credit, excluding add-ons; account for all measured usage even beyond the limit. Charge the full purchased monthly add-on price from the purchase month. | Assignment rules. [Months, limits, add-ons, and late usage](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). |
+| Late usage | Preserve the consumption month for prices, limits, and audit; route usage from a closed month to the first eligible open billing month, including repaired receipts excluded from closing. Never reopen an issued invoice. | The assignment's late October example; general routing is a system policy. [Late-usage rules](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). |
+| Atomic accounting and closing | Serialize financial writes per customer. Commit each receipt's complete financial effect with inbox completion. Capture a fixed committed receipt cohort, drain it, and publish the closed month, frozen groups, snapshot, and number atomically; all quarantined receipts are durably excluded and never block issuance. | System transaction and closing policy supporting correct retries and immutable invoices. [Transaction and closing contract](docs/architecture/accounting-rules.md#transaction-and-closing-contract). |
+| Supported timestamps | Validate consumption and receipt times after UTC conversion, within years 1000 through 9999, with at most microsecond precision. | System parsing boundaries. [Usage event validation](internal/usage/event.go), [event contract](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed). |
+
+Automatic scheduling and delivery, an external invoice reference, configurable
+price denominators and alternative catalog-locking policies remain
+proposals. They do not change these contracts until their behavior and relationship
+to the assignment are resolved and documented.
+
 ## Usage inbox contract
 
 Each inbox row stores a non-negative usage increment over `[period_start, period_end)`,
@@ -803,14 +832,15 @@ for pricing and supported interval boundaries.
 
 Unsupported input remains in `usage_inbox.processing_error` until explicitly
 released. A missing valid price is a **P0 catalog incident**, reported in worker
-JSON logs with `priority=P0` and `error_code=missing_valid_price`; it blocks an
-invoice if the receipt belongs to its closing cohort. Follow the
+JSON logs with `priority=P0` and `error_code=missing_valid_price`. It quarantines the
+receipt without financial effects and never blocks invoice issuance. Follow the
 [financial rules — Catalog provisioning and P0 recovery](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery)
 for the complete diagnostic and recovery contract.
 
-To recover, correct the cause first. For a missing price, append the appropriate
-version through `POST /prices`, with `effective_from` covering the original
-consumption time. Then explicitly release only the investigated receipt:
+To recover, correct the cause first. Missing historical prices require the
+[controlled database repair](#controlled-historical-price-repair); ordinary
+`POST /prices` rejects backdated versions. Then explicitly release only the
+investigated receipt:
 
 ```sql
 UPDATE usage_inbox SET processing_error = NULL
@@ -823,12 +853,81 @@ Adding a price or replaying the usage request does not clear a processing error.
 ### Price versions
 
 `POST /prices` appends a price version with a stable `price_version_id` and explicit
-`effective_from`. Set `customer_id: null` for a default or supply a customer ID
+`effective_from` at or after the server insertion instant sampled under the
+catalog lock. A past instant returns `422` with field `effective_from`; an identical
+retry remains successful after activation. Set `customer_id: null` for a default or supply a customer ID
 for an override. Provision metrics and prices before metering starts.
 See the [financial rules — Historical prices and groups](docs/architecture/accounting-rules.md#historical-prices-and-groups)
-for selection rules and the [Catalog provisioning and P0 recovery chapter](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery)
+for selection rules, the [price insertion contract](docs/architecture/accounting-rules.md#price-insertion-contract)
+for activation and retries, and the [Catalog provisioning and P0 recovery chapter](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery)
 for provisioning requirements. Request fields and conflict responses are in the
 [OpenAPI reference](docs/api/openapi.yaml).
+
+Migration `008` adds immutable closing exclusions and backfills existing errored
+cohort members. Run `make migrate` before starting the updated API and worker;
+complete that rollout before releasing quarantined receipts.
+
+### Controlled historical price repair
+
+Initial seed data and investigated missing-price repairs are the only historical
+catalog provisioning paths. Ordinary API commands cannot backdate a version.
+The example below must be adapted to the investigated customer, metric, receipt,
+price, and original effective time. It locks the account before the catalog,
+checks the resulting catalog against every affected rated receipt, and rolls
+back if it would reprice or invalidate an interval. It does not recalculate
+charges, credit, or issued invoices. Run it through `make psql`.
+
+```sql
+BEGIN;
+SELECT customer_id FROM customer_billing_state
+WHERE customer_id = 'investigated-customer' FOR UPDATE;
+SELECT pg_advisory_xact_lock(65102, 2);
+
+INSERT INTO price_versions VALUES (
+    'investigated-price', NULL, 'investigated-metric', 5,
+    '2026-10-01T00:00:00Z'
+);
+
+DO $repair$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM usage_ratings r
+        JOIN usage_inbox i USING (source, event_id)
+        JOIN rated_usage_groups g USING (group_id)
+        LEFT JOIN LATERAL (
+            SELECT p.* FROM price_versions p
+            WHERE p.metric = i.metric
+              AND (p.customer_id IS NULL OR p.customer_id = i.customer_id)
+              AND p.effective_from <= i.period_start
+            ORDER BY (p.customer_id IS NOT NULL) DESC, p.effective_from DESC
+            LIMIT 1
+        ) chosen ON true
+        WHERE i.metric = 'investigated-metric'
+          AND (chosen.price_version_id IS DISTINCT FROM g.price_version_id
+               OR EXISTS (
+                   SELECT 1 FROM price_versions boundary
+                   WHERE boundary.metric = i.metric
+                     AND (boundary.customer_id IS NULL OR boundary.customer_id = i.customer_id)
+                     AND boundary.effective_from > i.period_start
+                     AND boundary.effective_from < i.period_end
+                     AND (chosen.customer_id IS NULL OR boundary.customer_id = chosen.customer_id)
+               ))
+    ) THEN
+        RAISE EXCEPTION 'Repair would invalidate rated history';
+    END IF;
+END;
+$repair$;
+
+UPDATE usage_inbox SET processing_error = NULL
+WHERE source = 'investigated-source' AND event_id = 'investigated-event'
+  AND customer_id = 'investigated-customer' AND processed_at IS NULL;
+COMMIT;
+```
+
+Review the transaction's affected rows before committing. Existing closing
+exclusions remain immutable after release; repaired usage retains its historical
+price and usage month but routes to an eligible open billing month.
 
 ### Credit
 
@@ -870,8 +969,9 @@ Retrying returns the same immutable invoice and number;
 See the [financial rules — Fixed calendar-month contract](docs/architecture/accounting-rules.md#fixed-calendar-month-contract)
 for period boundaries, the [usage-to-invoice guide — Invoice generation workflow](docs/architecture/usage-to-invoice.md#invoice-generation-workflow)
 for closing phases and retries, and the [Late usage chapter](docs/architecture/usage-to-invoice.md#10-late-usage-why-there-are-two-distinct-periods)
-for input received after closing. Processing errors in the closing cohort block
-issuance; use the [recovery procedure](#transactional-usage-accounting) before retrying.
+for input received after closing. All non-null processing errors are durably
+excluded from issuance. Repair and release those receipts separately; successful
+recovery bills them in an eligible open month without changing the issued invoice.
 
 Operators trigger invoices explicitly. Automatic scheduling, customer day settings,
 and document delivery remain unimplemented; alternatives and the precise

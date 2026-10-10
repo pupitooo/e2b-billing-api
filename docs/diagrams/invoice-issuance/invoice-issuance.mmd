@@ -1,0 +1,114 @@
+---
+title: Monthly invoice issuance - implemented workflow
+config:
+  layout: elk
+  flowchart:
+    wrappingWidth: 440
+    nodeSpacing: 35
+    rankSpacing: 24
+    useMaxWidth: false
+---
+%% Implementation checked on 10 October 2026. The closing-workflow provides the simplified view.
+%% Numbered boxes identify logical activities, not separate transactions or SQL statements.
+%% A and C are separate durable transactions. B commits each receipt independently.
+%% Existing invoices still pass through drainClosing before issueInvoice returns their snapshot.
+%% Dotted error arrows are representative; the README explains cleanup and ambiguous commits.
+flowchart TB
+    request["<b>1. Validate the closing input</b><br/>POST /customers/{customer_id}/invoices<br/>Input: customer_id and month in YYYY-MM<br/>Period: one complete UTC calendar month"]
+    invalid["<b>Return 422 invalid_command</b><br/>Reason: invalid customer identifier or month"]
+
+    subgraph capture["A. Capture or resume the closing cohort - one durable transaction"]
+        begin["<b>2. Begin the capture transaction</b><br/>Setting: synchronous_commit = on"]
+        lock["<b>3. Lock the customer account</b><br/>Table: customer_billing_state; FOR UPDATE"]
+        issuedA{"Invoice already exists<br/>for this customer/month?"}
+        completed{"Server UTC time at or after<br/>the next month's first instant?"}
+        history{"A closed month exists<br/>at or after the target month?"}
+        closing["<b>4. Insert the closing marker if absent</b><br/>Table: invoice_closings<br/>Identity: customer_id, billing_month<br/>Time: server UTC, truncated to microseconds"]
+        newClosing{"New closing marker inserted?"}
+        cohort["<b>5. Capture the fixed receipt cohort</b><br/>Table: invoice_closing_receipts<br/>Input: visible committed usage_inbox rows for this customer<br/>Filter: period_start before next month; processed_at IS NULL"]
+        exclusions["Persist immutable processing-error exclusions<br/>On new capture and every unfinished closing retry"]
+        commitA["<b>6. Commit the capture transaction</b><br/>New closing: marker and cohort become durable together<br/>Resume or existing invoice: preserve the stored cohort<br/>Release the account lock"]
+    end
+
+    subgraph drain["B. Drain the fixed cohort - no account lock held across receipt transactions"]
+        select["<b>7. Select one unprocessed cohort receipt</b><br/>Tables: cohort JOIN inbox<br/>Require processing_error IS NULL; exclude immutable exclusions<br/>Order: received_at, source, event_id<br/>Check request cancellation before each selection"]
+        remaining{"Unprocessed receipt found?"}
+        process["<b>8. Account for the selected receipt</b><br/>Reuse accountReceipt and the worker accounting workflow<br/>One independent durable transaction per receipt<br/>Commit accounting or quarantine; report committed P0 afterward"]
+    end
+
+    subgraph issue["C. Publish the invoice - one durable transaction"]
+        beginC["<b>9. Begin the publication transaction</b><br/>Setting: synchronous_commit = on"]
+        lockC["<b>10. Lock the customer account</b><br/>Table: customer_billing_state; FOR UPDATE"]
+        issuedC{"Invoice already exists<br/>for this customer/month?"}
+        ready{"Persist newly observed error exclusions<br/>All eligible receipts processed AND<br/>no earlier unclosed rated groups?"}
+        time["<b>11. Set the issue timestamp</b><br/>Source: server UTC clock, truncated to microseconds"]
+        buyer["<b>12. Read buyer details and the next number</b><br/>Tables: customers, customer_billing_state<br/>Fields: name, country, billing_address, next_invoice_number"]
+        header["<b>13. Build the invoice header</b><br/>Currency: USD; month: requested UTC month<br/>Number: uppercase customer ID + padded sequence<br/>Reject an exhausted sequence before publication"]
+        groups["<b>14. Load the target month's rated groups</b><br/>Table: rated_usage_groups; filter: customer and billing_month<br/>Order: usage_month, metric, price_version_id<br/>Input: units, exact gross ticks, allocated credit ticks"]
+        addons["<b>15. Load applicable add-on subscriptions</b><br/>Table: addon_subscriptions; start_month at or before target<br/>Order: addon_name, subscription_id<br/>Use each subscription's stored full monthly price"]
+        net["<b>16. Calculate each group's exact net</b><br/>Repeat steps 16-20 for each group; skip when there are none<br/>Formula: gross ticks - previously allocated credit ticks<br/>Reject credit exceeding gross; do not debit credit again"]
+        roundGross["<b>17. Round each group's gross to cents</b><br/>Rule: half-up; reject values outside signed 64-bit cents"]
+        roundNet["<b>18. Round each group's net to cents</b><br/>Rule: half-up; reject values outside signed 64-bit cents"]
+        deduction["<b>19. Derive each group's displayed credit</b><br/>Formula: rounded gross cents - rounded net cents"]
+        usageLines["<b>20. Assemble usage lines and audit totals</b><br/>One usage line per group, displaying gross cents<br/>Keep price, metric, original usage month, units and exact ticks<br/>Label earlier usage_month as late usage<br/>Sum exact gross, exact credit and displayed credit deductions"]
+        addonLines["<b>21. Append the add-on lines</b><br/>Amount: full stored monthly price in cents<br/>Credit allocated to usage does not reduce add-ons"]
+        creditLine["<b>22. Append one aggregate credit line</b><br/>Amount: negative sum of the group credit deductions<br/>Include the line even when its amount is zero"]
+        total["<b>23. Calculate and validate the invoice total</b><br/>Formula: sum all usage, add-on and credit lines<br/>Use an arbitrary-precision sum; validate the final result<br/>Required range: nonnegative signed 64-bit cents"]
+        encode["<b>24. Serialize the complete immutable snapshot</b><br/>JSON: buyer, number, month, currency, issue time,<br/>lines, total cents and exact audit totals"]
+        closed["<b>25. Mark the month closed</b><br/>Table: closed_billing_months"]
+        store["<b>26. Store the invoice snapshot</b><br/>Table: invoices; lines are stored in snapshot.lines<br/>One invoice per customer/month and customer sequence"]
+        freeze["<b>27. Link and freeze the included groups</b><br/>Table: invoiced_usage_groups<br/>Input: all rated groups for this customer/billing_month"]
+        advance["<b>28. Advance the account counters</b><br/>Table: customer_billing_state<br/>Increment next_invoice_number and state_version"]
+        commitC["<b>29. Commit the publication transaction</b><br/>Closure, snapshot, group freeze and counters publish together<br/>Release the account lock"]
+        previous["<b>Read the existing immutable snapshot</b><br/>Table: invoices<br/>Commit without constructing or numbering another invoice"]
+    end
+
+    response["<b>30. Return 200 with the committed invoice</b><br/>Identical retries return the original snapshot and number"]
+    early["<b>Roll back capture; return 422 invalid_command</b><br/>Reason: the requested UTC month has not ended<br/>No cohort capture or financial writes"]
+    conflictA["<b>Roll back capture; return 409 billing_conflict</b><br/>Reason: a closed target or later month conflicts"]
+    missing["<b>Roll back the active transaction; return 404</b><br/>Reason: customer billing account does not exist"]
+    blocked["<b>Return 409 billing_conflict</b><br/>Reason: earlier unclosed groups or eligible work not ready<br/>Preserve earlier committed capture and receipt transactions<br/>Investigate, resolve the blocker, then retry the same month"]
+    unavailable["<b>Return 503 billing_unavailable when a response is possible</b><br/>Reason: cancellation, database or calculation failure<br/>Roll back uncommitted work; retain prior durable progress<br/>Retry the same customer/month; check ambiguous commit outcomes"]
+
+    request -->|"Valid"| begin --> lock --> issuedA
+    request -.->|"Invalid"| invalid
+    lock -.->|"Missing account"| missing
+    issuedA -->|"Yes"| commitA
+    issuedA -->|"No"| completed
+    completed -->|"No"| early
+    completed -->|"Yes"| history
+    history -->|"Yes"| conflictA
+    history -->|"No"| closing --> newClosing
+    newClosing -->|"Yes"| cohort --> exclusions --> commitA
+    newClosing -->|"No: resume"| exclusions
+    commitA --> select --> remaining
+    remaining -->|"Yes"| process --> select
+    remaining -->|"No"| beginC --> lockC --> issuedC
+    lockC -.->|"Missing account"| missing
+    issuedC -->|"Yes"| previous --> response
+    issuedC -->|"No"| ready
+    ready -->|"No: roll back publication"| blocked
+    ready -->|"Yes"| time --> buyer --> header --> groups --> addons
+    addons --> net --> roundGross --> roundNet --> deduction --> usageLines
+    usageLines --> addonLines --> creditLine --> total --> encode
+    encode --> closed --> store --> freeze --> advance --> commitC --> response
+    cohort -.->|"Capture failure"| unavailable
+    select -.->|"Query failure or cancellation"| unavailable
+    process -.->|"Receipt transaction failure"| unavailable
+    total -.->|"Calculation or publication failure"| unavailable
+
+    classDef input fill:#ecfdf5,stroke:#059669,color:#064e3b
+    classDef captureStep fill:#eff6ff,stroke:#2563eb,color:#1e3a8a
+    classDef accounting fill:#f0fdfa,stroke:#0d9488,color:#134e4a
+    classDef issuance fill:#fffbeb,stroke:#d97706,color:#78350f
+    classDef error fill:#fef2f2,stroke:#dc2626,color:#7f1d1d
+    classDef success fill:#ecfdf5,stroke:#16a34a,color:#14532d
+    class request input
+    class begin,lock,closing,cohort,exclusions,commitA captureStep
+    class select,process accounting
+    class beginC,lockC,time,buyer,header,groups,addons,net,roundGross,roundNet,deduction,usageLines,addonLines,creditLine,total,encode,closed,store,freeze,advance,commitC issuance
+    class invalid,early,conflictA,missing,blocked,unavailable error
+    class previous,response success
+    style capture fill:#f8fbff,stroke:#2563eb
+    style drain fill:#f0fdfa,stroke:#0d9488
+    style issue fill:#fffbeb,stroke:#d97706

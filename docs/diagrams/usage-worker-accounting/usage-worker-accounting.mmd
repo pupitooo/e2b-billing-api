@@ -1,0 +1,82 @@
+---
+title: One usage receipt - one numbered box per activity
+config:
+  layout: elk
+  flowchart:
+    wrappingWidth: 420
+    nodeSpacing: 35
+    rankSpacing: 24
+    useMaxWidth: false
+---
+%% Implementation checked on 10 October 2026.
+%% Selection is outside the financial transaction; concurrent workers may select the same receipt.
+%% The account lock precedes the shared price-catalog lock and the inbox row lock.
+%% Every success-path write below commits together, including processed_at.
+%% Quarantine commits processing_error and any immutable closing exclusions, with no financial writes.
+%% Missing valid prices commit a P0 catalog incident before operational reporting.
+%% Bold numbered titles identify activities. Other lines describe rules or results.
+%% The numbers show logical activities, not separate transactions or SQL statements.
+flowchart TB
+    select["<b>1. Select one pending receipt</b><br/>Table: usage_inbox<br/>Filter: processed_at IS NULL; processing_error IS NULL<br/>Order: received_at, source, event_id"]
+    idle["<b>Return no work</b><br/>Reason: no pending receipt"]
+
+    subgraph transaction["One receipt transaction: locks remain held until commit or rollback"]
+        begin["<b>2. Start the transaction</b><br/>Commit setting: durable"]
+        account["<b>3. Lock the customer account</b><br/>Table: customer_billing_state<br/>Lock: FOR UPDATE"]
+        catalog["<b>4. Acquire the shared price-catalog lock</b>"]
+        reload["<b>5. Reload the pending receipt</b><br/>Table: usage_inbox<br/>Lock: FOR UPDATE"]
+        pending{"Receipt still pending?"}
+        validation["<b>6. Validate the usage event</b><br/>Rules: supported schema, valid fields and interval"]
+        usageMonth["<b>7. Determine usage_month</b><br/>Output: original UTC consumption month<br/>Rule: the interval fits within one month"]
+        price["<b>8. Select the historical price</b><br/>Time: consumption, not receipt<br/>Priority: eligible customer override, then default<br/>Rule: one applicable price for the whole interval"]
+        charge["<b>9. Calculate the exact gross charge</b><br/>Output: money ticks before credit"]
+        closures["<b>10. Read unavailable billing months</b><br/>Input: closed months and closing-cohort membership<br/>Rule: closing excludes outside-cohort and quarantined receipts"]
+        routing["<b>11. Determine billing_month</b><br/>Rule: original month when available; otherwise first eligible open month"]
+        key["<b>12. Build the stable group key</b><br/>Key fields: customer_id, price_version_id,<br/>usage_month, billing_month"]
+        credit["<b>13. Allocate available credit</b><br/>Precision: exact ticks for this new charge<br/>Output: used credit and remaining balance"]
+        cumulative["<b>14. Calculate cumulative group gross</b><br/>Formula: stored gross ticks + new gross ticks"]
+        rounding["<b>15. Round cumulative group gross to cents</b><br/>Rule: half-up<br/>Output: booked_charge_cents"]
+        group["<b>16. Store the group totals</b><br/>Table: rated_usage_groups<br/>Amounts: total units, gross ticks, allocated credit ticks, gross cents"]
+        link["<b>17. Link the receipt to its group</b><br/>Table: usage_ratings<br/>Identity: source, event_id"]
+        debit["<b>18. Record the credit debit</b><br/>Table: credit_entries<br/>Condition: used credit is nonzero"]
+        monthly["<b>19. Add gross to original-month usage</b><br/>Table: monthly_usage<br/>Month: usage_month; amount: gross ticks"]
+        balance["<b>20. Update the customer account</b><br/>Table: customer_billing_state<br/>Values: remaining credit, incremented state_version"]
+        complete["<b>21. Mark the receipt processed</b><br/>Table: usage_inbox<br/>Field: processed_at"]
+        commit["<b>22. Commit the transaction</b><br/>Result: all financial writes and receipt completion are durable together"]
+        noop["<b>Commit without financial writes</b><br/>Reason: another writer already handled the receipt"]
+        quarantine["<b>Quarantine the receipt</b><br/>Commit: processing_error + immutable closing exclusion<br/>processed_at remains NULL; invoice issuance continues<br/>Financial effect: none"]
+        missingPrice["<b>Quarantine the missing valid price</b><br/>Commit: processing_error = P0 missing_valid_price<br/>processed_at remains NULL; financial effect: none<br/>Durable closing exclusion; invoice issuance continues"]
+    end
+
+    report["<b>Report the committed catalog incident</b><br/>ERROR log: priority P0; code missing_valid_price<br/>Include receipt identity, customer, metric, consumption time<br/>Operator SQL: repair dated price; explicitly release<br/>Historical rating; eligible open billing month after exclusion"]
+    next["<b>Return success to the polling loop</b><br/>Result: receipt handled"]
+    retry["<b>Return failure to the polling loop</b><br/>Transaction result: pre-commit writes rolled back<br/>Loop policy: logged error and delayed retry"]
+
+    select -->|"Candidate found"| begin --> account --> catalog --> reload --> pending
+    select -->|"No candidate"| idle
+    select -.->|"Selection failed"| retry
+    account -.->|"Unknown customer"| quarantine
+    pending -->|"No"| noop
+    pending -->|"Yes"| validation --> usageMonth --> price --> charge
+    charge --> closures --> routing --> key --> credit --> cumulative --> rounding
+    rounding --> group --> link --> debit --> monthly --> balance --> complete --> commit
+    validation -.->|"Invalid or unsupported input"| quarantine
+    usageMonth -.->|"Unsupported month interval"| quarantine
+    price -.->|"No eligible price at consumption time"| missingPrice
+    price -.->|"Invalid or ambiguous price; unsupported price interval"| quarantine
+    charge -.->|"Unrepresentable charge"| quarantine
+    routing -.->|"No representable open month"| quarantine
+    rounding -.->|"Rounded amount overflows"| quarantine
+    transaction -.->|"Pre-commit failure"| retry
+    commit --> next
+    noop --> next
+    quarantine --> next
+    missingPrice --> report --> next
+
+    classDef operation fill:#edf0ff,stroke:#56649c,color:#24335c;
+    classDef storage fill:#e9f7ee,stroke:#287d4e,color:#173b28;
+    classDef exception fill:#fff2cf,stroke:#a56800,color:#543800;
+    class select,begin,account,catalog,reload,validation,usageMonth,price,charge,closures,routing,key,credit,cumulative,rounding operation;
+    class group,link,debit,monthly,balance,complete,commit,next storage;
+    class idle,noop,quarantine,missingPrice,report,retry exception;
+    style transaction fill:#f9f9ff,stroke:#9b9fc0;

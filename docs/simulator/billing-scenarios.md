@@ -61,8 +61,8 @@ zero gross usage. Invoice issuance and retries consume no additional credit.
 | [billing-credit-exhaustion](billing-credit-exhaustion.json) | One cent of credit pays one of two usage cents; the month-end add-on costs 2_000 cents; invoice total is 2_001 cents; a later grant preserves the issued invoice. |
 | [billing-limit-status](billing-limit-status.json) | Platform reads below/reached/raised/reset/zero/unlimited statuses; all measured consumption remains billable. |
 | [billing-price-versions](billing-price-versions.json) | An 8-cent default and 3-cent customer override produce a 1_100-cent invoice; historical changes affecting rated usage conflict. |
-| [billing-price-boundary](billing-price-boundary.json) | A receipt crossing the applicable price boundary becomes a visible processing error and blocks issuance. |
-| [billing-month-boundary](billing-month-boundary.json) | A receipt crossing a UTC month boundary becomes a visible processing error and blocks issuance. |
+| [billing-price-boundary](billing-price-boundary.json) | A receipt crossing the applicable price boundary becomes a visible processing error; issuance succeeds without billing the quarantined receipt. |
+| [billing-month-boundary](billing-month-boundary.json) | A receipt crossing a UTC month boundary becomes a visible processing error; issuance succeeds without billing the quarantined receipt. |
 
 ## Durable retries, outages, and restart
 

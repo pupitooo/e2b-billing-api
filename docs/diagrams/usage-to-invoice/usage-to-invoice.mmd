@@ -24,7 +24,7 @@ flowchart TB
 
     subgraph processing["B. Worker processes each event atomically (1 cent = 1_000_000 ticks)"]
         direction LR
-        rating["2. Price each event (Rating)<br/>Historical price: 5 cents per million units<br/>1_000 units → 5_000 money ticks"]
+        rating["2. Price each event (Rating)<br/>Consumption-time price: 5 cents per million units<br/>Ordinary new prices cannot start before insertion<br/>1_000 units → 5_000 money ticks"]
         group["3. Accumulate compatible events<br/>(RatedUsageGroup)<br/>After all events: 1_000_000 units<br/>Gross: 5_000_000 ticks = USD 0.05"]
         credits["4. Apply available usage credit<br/>Starting credit: USD 0.02<br/>Total used: 2_000_000 ticks; left: 0<br/>Final net: 3_000_000 ticks"]
 
@@ -39,6 +39,10 @@ flowchart TB
 
         rounding --> lines --> invoice
     end
+
+    errors["Any processing_error: retain unprocessed usage<br/>Durably exclude from closing; no financial effects<br/>Operator SQL repair and explicit release<br/>Recover into an eligible open billing month"]
+    rating -.->|"Quarantine"| errors
+    errors -.->|"Does not block invoice issuance"| invoice
 
     intake -->|"Accepted events wait in usage_inbox"| processing
     processing -->|"At closing, read stored group totals; credit is already allocated"| closing

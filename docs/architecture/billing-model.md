@@ -7,7 +7,7 @@ and how PostgreSQL stores and verifies the assignment's financial state:
 
 - [Logical data model (ERD)](#logical-data-model-erd): billing concepts, their relationships, and an editable diagram.
 - [Architectural decisions and rationale](#architectural-decisions-and-rationale): database choice, customer locks, durable ingestion, retry identities, exact accounting, audit history, immutable invoices, and separation of responsibilities.
-- [Implemented PostgreSQL schema](#implemented-postgresql-schema-erd-migrations-001007): the complete schema through migration 007, SQL columns, keys, and cardinalities.
+- [Implemented PostgreSQL schema](#implemented-postgresql-schema-erd-migrations-001008): the complete schema through migration 008, SQL columns, keys, and cardinalities.
 - [Tables and relationships](#tables-and-relationships): table purposes, foreign keys, ownership checks, mutable projections, and append-only history.
 - [Money and months](#money-and-months): ticks and cents, the charge formula, arbitrary precision, UTC periods, and historical price selection.
 - [Initial data and migrations](#initial-data-and-migrations): startup commands, assignment catalog values, initial account state, exact-credit conversion, and transactional migration behavior.
@@ -49,15 +49,15 @@ These decisions describe the current implementation. Assignment requirements and
 
 - **Separate the UTC usage month from the billing month.** Late consumption keeps its original price and spend-limit month but moves to an open billing month after closure. This preserves issued invoices without losing the consumption's origin. Explicit UTC calculation avoids dependence on session time zones, at the cost of carrying both month identities through groups and invoice lines.
 
-- **Persist closing cohorts and immutable invoice snapshots.** A fixed set of committed receipts (metered sandbox usage events stored in `usage_inbox`, such as CPU seconds reported for a customer's sandbox over a measurement interval) makes closing resumable across short processing transactions; a receipt timestamp alone cannot prove that input committed before closing. Final issuance atomically records closure, frozen groups, the invoice snapshot, and its number. Snapshots preserve buyer details and financial results despite later profile or catalog changes. This requires extra closing records and group-freeze enforcement, and an unresolved error in the cohort blocks issuance.
+- **Persist closing cohorts and immutable invoice snapshots.** A fixed set of committed receipts (metered sandbox usage events stored in `usage_inbox`, such as CPU seconds reported for a customer's sandbox over a measurement interval) makes closing resumable across short processing transactions; a receipt timestamp alone cannot prove that input committed before closing. Final issuance atomically records closure, frozen groups, the invoice snapshot, and its number. Snapshots preserve buyer details and financial results despite later profile or catalog changes. This requires extra closing records and group-freeze enforcement, and quarantined receipts are durably excluded without blocking issuance.
 
 - **Separate pure calculations from persistence and transport.** `internal/accounting` calculates prices, credit, months, and invoice amounts without I/O; `internal/billing` owns locks and financial transactions, while HTTP code owns request and response handling. This makes financial rules directly testable and keeps transaction boundaries visible. Database constraints still protect structural integrity, so changes to a rule must keep calculations, persistence, and validation consistent.
 
-## Implemented PostgreSQL schema (ERD, migrations 001–007)
+## Implemented PostgreSQL schema (ERD, migrations 001–008)
 
 `UsageReceipt` maps to `usage_inbox` plus the separate `usage_ratings` link. Invoices use immutable JSON snapshots and frozen-group links rather than the separate line table proposed in the logical ERD.
 
-This diagram shows all 18 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `007`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
+This diagram shows all 19 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `008`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
 
 ![Implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
 
@@ -87,6 +87,7 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 | `spend_limit_operations` | Immutable operation results; replaying an old identity cannot undo a newer limit. |
 | `invoice_closings` | Durable customer/month closing attempts. |
 | `invoice_closing_receipts` | Fixed membership of committed pending metered-usage events from `usage_inbox` at closing, independent of receipt timestamps. |
+| `invoice_closing_exclusions` | Append-only receipt exclusions with the original processing error; clearing the inbox error cannot restore membership in the eligible closing cohort. |
 | `invoices` | One immutable snapshot per customer/month, with unique per-customer number and total cents. Buyer details, ordered lines, exact audit ticks, and issue time are in `snapshot`. |
 | `invoiced_usage_groups` | Links issued invoices to groups; a trigger rejects changes to frozen groups. |
 
@@ -94,7 +95,7 @@ Identifiers, balances, prices, and timestamps are supplied explicitly. `customer
 
 Foreign keys reject missing catalog records, missing receipts, and credit debits for another customer's group. A group's price must belong to its metric and be either a default or an override for that customer. Group identity cannot change after insertion; totals can increase as the worker processes more events. Rating links require the same customer and metric and an interval wholly within the original UTC month, including intervals ending exactly at the next month's boundary.
 
-Prices, credit entries, and rating links reject row updates and deletes. Price changes append a new version; they do not rewrite past prices. Customer details, account projections, group totals, monthly totals, and the add-on catalog remain mutable. A subscription retains its purchased price when the catalog changes.
+Prices, credit entries, rating links, and closing exclusions reject row updates and deletes. Price changes append a new version; they do not rewrite past prices. Customer details, account projections, group totals, monthly totals, and the add-on catalog remain mutable. A subscription retains its purchased price when the catalog changes.
 
 ## Money and months
 

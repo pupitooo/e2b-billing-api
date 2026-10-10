@@ -1,0 +1,56 @@
+---
+title: Price activation and delayed usage
+config:
+  layout: elk
+  flowchart:
+    wrappingWidth: 300
+    nodeSpacing: 30
+    rankSpacing: 40
+    useMaxWidth: false
+---
+%% System contracts: no ordinary backdating; consumption-time pricing;
+%% quarantined receipts never block invoices; historical repair uses operator SQL.
+flowchart TB
+    subgraph command["A. Ordinary POST /prices - one catalog transaction"]
+        lock["Acquire exclusive catalog lock"]
+        identity{"Existing price_version_id?"}
+        retry["Identical content: return original price<br/>Changed content: 409 conflict"]
+        time["Sample server UTC insertion instant<br/>After lock acquisition and identity check"]
+        eligible{"effective_from at or after<br/>the insertion instant?"}
+        invalid["422 invalid_command<br/>Field: effective_from<br/>No catalog or financial writes"]
+        persist["Check rated history; insert and commit<br/>Future activation is supported"]
+        lock --> identity
+        identity -->|"Yes"| retry
+        identity -->|"No"| time --> eligible
+        eligible -->|"No"| invalid
+        eligible -->|"Yes"| persist
+    end
+
+    subgraph historical["B. Consumption time selects the price - delivery time does not"]
+        old["Initial historical catalog: price 100"]
+        change["2 February: insert price 200<br/>Effective from 2 February"]
+        a["Usage A: consumed 1 February<br/>Received 1 February -> price 100"]
+        b["Usage B: consumed 1 February<br/>Received 10 February -> price 100"]
+        c["Usage C: consumed from 2 February<br/>Received 10 February -> price 200"]
+        old --> a
+        old --> b
+        change --> c
+        change -.->|"Cannot reprice earlier consumption"| b
+    end
+
+    subgraph recovery["C. Missing valid price or any other processing error"]
+        quarantine["Keep usage unprocessed with processing_error<br/>No financial effect; retain and report missing price as P0"]
+        exclude["Durably exclude from closing cohort<br/>Issue invoice from successfully rated groups<br/>Any processing error never blocks issuance"]
+        repair["Operator: controlled SQL repair and explicit release<br/>Preserve rated history and issued invoices"]
+        later["Account exactly once at the historical consumption price<br/>Excluded usage bills in an eligible open month<br/>Keep the original usage month for limits and audit"]
+        quarantine --> exclude --> repair --> later
+    end
+
+    persist -.->|"Price selection contract"| historical
+    historical -.->|"No valid price"| quarantine
+    classDef normal fill:#eff6ff,stroke:#2563eb,color:#1e3a8a
+    classDef stored fill:#ecfdf5,stroke:#059669,color:#064e3b
+    classDef problem fill:#fff4df,stroke:#a66a15,color:#593a0c
+    class lock,time,old,change,a,b,c normal
+    class persist,retry,later stored
+    class invalid,quarantine,exclude,repair problem

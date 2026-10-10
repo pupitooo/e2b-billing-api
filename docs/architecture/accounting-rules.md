@@ -8,6 +8,7 @@ and the migration and verification requirements:
 - [Fixed calendar-month contract](#fixed-calendar-month-contract): whole UTC calendar periods and one immutable invoice per customer/month.
 - [Exact money and credit](#exact-money-and-credit): tick precision, exact charge calculations, signed credit entries, and allocation order.
 - [Historical prices and groups](#historical-prices-and-groups): customer overrides, consumption-time pricing, supported intervals, and stable grouping keys.
+- [Price insertion contract](#price-insertion-contract): no backdated ordinary changes, lock-time validation, stable retries, and controlled historical repairs.
 - [Catalog provisioning and P0 recovery](#catalog-provisioning-and-p0-recovery): required dated prices before metering and explicit recovery from a missing valid catalog.
 - [Rounding and invoice presentation](#rounding-and-invoice-presentation): cumulative half-up rounding, balancing credit lines, immutable snapshots, and invoice totals.
 - [UTC months, limits, add-ons, and late usage](#utc-months-limits-add-ons-and-late-usage): supported years, gross spend limits, full monthly add-on charges, and routing after closure.
@@ -22,11 +23,12 @@ are implemented in `internal/billing` and documented in OpenAPI.
 
 The assignment requires monthly invoices over UTC calendar months, historical
 prices, customer overrides, usage-only credit, gross monthly limits, full monthly
-add-on charges, immutable invoices, and the example's numerical results. On
-9 October 2026 the user selected **credit in ticks before rounding**. On
-10 October 2026 the user confirmed the whole-calendar-month rule below as a fixed
-contract. Half-up rounding, allocation order, and the receipt-cohort mechanism are
-implementation assumptions for this reference implementation.
+add-on charges, immutable invoices, and the example's numerical results. The
+system must allocate **credit in exact ticks before rounding** and preserve whole
+UTC calendar months as fixed billing periods. Half-up rounding, allocation order,
+and the receipt-cohort mechanism are implementation policies for this reference
+implementation. The [system contract register](../../README.md#system-contracts)
+distinguishes assignment requirements from these additional policies.
 
 ## Fixed calendar-month contract
 
@@ -104,10 +106,33 @@ Sandbox and batch IDs do not create rounding boundaries. Preserve gross ticks
 separately from credit. `booked_charge_cents` remains a rounded gross projection,
 not a credit debit or a net invoice amount.
 
+## Price insertion contract
+
+New ordinary price versions must have `effective_from` at or after the server's
+insertion instant, sampled after the exclusive catalog lock is acquired and the
+identity is checked. Equality is accepted; future activation can be scheduled.
+A past instant returns HTTP `422`, `invalid_command`, field `effective_from`,
+without a catalog or financial write. An unchanged existing identity succeeds
+on retry even after activation; changed content still returns `409`.
+
+Keep the catalog lock and rated-history protection. Waiting for the lock can
+make a previously future instant invalid, so request arrival time is not the
+validation boundary. Usage remains priced at consumption time. Two increments
+from 1 February both use price 100, even when one arrives on 10 February after
+price 200 was inserted and became effective on 2 February. Only consumption
+from the activation instant uses 200. Invoice closure affects billing-month
+routing, not historical price selection.
+
+Initial historical seed data and investigated catalog-gap repair are controlled
+database operations, outside ordinary `POST /prices`. Repairs must acquire the
+exclusive catalog advisory lock, preserve all rated history and issued invoices,
+and explicitly release only the investigated receipt. They do not implement
+retroactive repricing; no automatic recalculation exists.
+
 ## Catalog provisioning and P0 recovery
 
-On 10 October 2026 the user confirmed that every price retains an explicit finite,
-non-null `effective_from`. There is no undated baseline and no implied price before
+Every price must retain an explicit finite, non-null `effective_from`.
+There is no undated baseline and no implied price before
 the first eligible version. The assignment seed supplies its exact dated default
 prices and Acme override. Preserve those amounts and start times.
 
@@ -130,14 +155,15 @@ Polling and invoice closing share this behavior. Automatic polling excludes the
 quarantined receipt and continues with other pending input.
 
 Treat the missing catalog as an immediate P0 repair: append the correct price
-through `POST /prices`, with an explicit start covering the original measurement.
+through controlled operator SQL, with an explicit start covering the original measurement.
 The historical protection still rejects a version that invalidates already rated
 usage. After the repair, an operator explicitly clears the investigated receipt's
 error using the [recovery procedure](../../README.md#transactional-usage-accounting).
 Adding a price or repeating the usage request does not automatically release it.
 The next attempt accounts for the original receipt exactly once and follows the
-existing open-month routing. An unresolved error in a closing cohort blocks that
-invoice until recovery; it cannot change an already issued invoice.
+existing open-month routing. Every non-null processing error excludes the receipt
+from invoice issuance, regardless of its cause. It cannot block closing or change
+an already issued invoice.
 
 ## Rounding and invoice presentation
 
@@ -198,15 +224,21 @@ back the complete financial effect. Transient failures retry; unsupported inputs
 remain available with a visible processing error and explicit recovery path.
 
 Closing establishes a fixed cohort of already committed accepted receipts, then
-drains it without holding the worker's account lock. Processing errors in that
-cohort block closing. Under the account lock, recheck the cohort, freeze groups,
+drains eligible members without holding the worker's account lock. Any receipt
+with a non-null `processing_error` is excluded, including errors discovered while
+draining. Append its identity and original error to `invoice_closing_exclusions`
+in the same transaction as quarantine; capture and publication also record any
+already stored errors under the account lock. Exclusion is permanent even if an
+operator releases the receipt before publication. The receipt remains unprocessed
+and has no financial effects until a successful recovery accounts for it in an
+eligible open month. Under the account lock, recheck eligible members, freeze groups,
 record the closed month, create immutable invoice snapshots, and allocate the
 customer's next number in one transaction. Do not consume credit again. Later
 accepted input follows the late-usage rule, including a request whose receipt
 timestamp predates its eventual commit.
 
 The invoice implementation persists cohort membership and closing state; a retry
-resumes after fixing the supported catalog and explicitly releasing processing errors. A receipt timestamp alone is not a closing
+resumes eligible work; excluded receipts do not delay publication. A receipt timestamp alone is not a closing
 watermark. Used historical prices and issued invoices cannot be silently rewritten
 by a later command; retroactive corrections require a separate policy.
 
@@ -260,8 +292,8 @@ server clock to check the exact UTC boundary and run fixed assignment fixtures;
 HTTP callers cannot override that clock.
 
 The scheduler, customer day settings, document delivery, and an optional preview
-are not implemented. The user confirmed the fixed period contract and requested
-discussion of these alternatives; no scheduling alternative has been approved.
+are not implemented. Whole UTC calendar months remain a fixed system contract;
+the scheduling alternatives remain open proposals.
 
 ## Migration and verification
 

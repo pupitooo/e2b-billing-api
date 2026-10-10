@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/accounting"
 	"e2b/billing-api/internal/billing"
 	"e2b/billing-api/internal/httpapi"
 	"e2b/billing-api/internal/inbox"
@@ -35,12 +34,14 @@ type invoiceExpectation struct {
 
 // TestCloseMonth reproduces literal assignment invoice values in private schemas.
 // Each case keeps usage steps, grants, purchases, and expected invoice lines visible.
-// Crossing-month receipts block publication and numbering; an interval ending
+// Crossing-month receipts are excluded without blocking issuance; an interval ending
 // exactly at the UTC month boundary closes October once, including on retry.
 // Server-clock boundaries reject unfinished months before any financial effect.
 // A receipt inserted before capture but committed afterward stays outside the
 // fixed cohort, even with an earlier receipt timestamp and worker processing.
 func TestCloseMonth(t *testing.T) {
+	t.Run("quarantined receipts do not block issuance", testQuarantinedClosing)
+	t.Run("repair before publication cannot undo exclusion", testClosingExclusionRecovery)
 	cases := []struct {
 		name         string
 		customer     string
@@ -142,7 +143,7 @@ func TestCloseMonth(t *testing.T) {
 			wantClosingState    closingState
 		}{
 			{
-				name:                "cross-month receipt blocks invoice and retry without financial effects",
+				name:                "cross-month receipt is quarantined without blocking invoice or retry",
 				customer:            "acme",
 				invoiceTime:         "2026-11-01T00:02:00Z",
 				start:               "2026-10-31T23:59:00Z",
@@ -151,14 +152,15 @@ func TestCloseMonth(t *testing.T) {
 				receiptTime:         "2026-11-01T00:02:00Z",
 				initialCreditTicks:  "2500000000",
 				closingMonths:       []string{"2026-10", "2026-10"},
-				wantError:           true,
-				wantCloseError:      billing.ErrConflict,
+				wantError:           false,
+				wantCloseError:      nil,
 				wantCompleted:       false,
 				wantProcessingError: "usage interval must fit within one UTC month",
+				wantInvoice:         invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossTicks: "0", creditTicks: "0", remainingCredit: "2500000000"},
 				wantClosingState: closingState{
-					invoices: 0, closedMonths: 0, frozenGroups: 0, groups: 0,
+					invoices: 1, closedMonths: 1, frozenGroups: 0, groups: 0,
 					ratings: 0, monthlyUsageRows: 0, creditEntries: 0, cohortReceipts: 1,
-					nextInvoiceNumber: 1, stateVersion: 0, remainingCreditTicks: "2500000000",
+					nextInvoiceNumber: 2, stateVersion: 1, remainingCreditTicks: "2500000000",
 				},
 			},
 			{
@@ -432,7 +434,7 @@ func TestCloseMonth(t *testing.T) {
 			t.Fatalf("concurrent invoice count=%d want %d", count, scenario.wantCount)
 		}
 	})
-	t.Run("fixed cohort resumes after price recovery and excludes later commits", func(t *testing.T) {
+	t.Run("fixed cohort excludes errors and routes recovered and later receipts forward", func(t *testing.T) {
 		scenario := struct {
 			invoiceTime         string
 			originalUnits       int64
@@ -445,7 +447,7 @@ func TestCloseMonth(t *testing.T) {
 			wantLog             missingPriceLog
 		}{
 			invoiceTime: "2026-12-01T00:00:00Z", originalUnits: 100_000_000, laterUnits: 100_000_000,
-			wantFirstError: billing.ErrConflict, wantOctoberTotal: 400, wantNovemberTotal: 400, wantCohort: 1,
+			wantFirstError: nil, wantOctoberTotal: 0, wantNovemberTotal: 800, wantCohort: 1,
 			wantProcessingError: "P0 missing_valid_price: no valid price for customer acme and metric unpriced at 2026-10-10T12:00:00Z",
 			wantLog:             missingPriceLog{Level: "ERROR", Priority: "P0", ErrorCode: "missing_valid_price", Source: "cohort", EventID: "original", CustomerID: "acme", Metric: "unpriced", PeriodStart: "2026-10-10T12:00:00Z"},
 		}
@@ -536,10 +538,13 @@ func TestCloseMonth(t *testing.T) {
 				if laterMonth != tc.wantLaterMonth {
 					t.Errorf("Worker routed receipt %+v to %s; want %s", later, laterMonth, tc.wantLaterMonth)
 				}
-				if err := store.CreatePrice(ctx, accounting.PriceVersion{ID: "recovered-price", Metric: "unpriced", PricePerMillionCents: 4, EffectiveFrom: parseBillingTime(t, "2026-10-01T00:00:00Z")}); err != nil {
+				if _, err := pool.Exec(ctx, "INSERT INTO price_versions VALUES ($1,NULL,$2,$3,$4)", "recovered-price", "unpriced", 4, parseBillingTime(t, "2026-10-01T00:00:00Z")); err != nil {
 					t.Fatal(err)
 				}
 				if _, err := pool.Exec(ctx, "UPDATE usage_inbox SET processing_error=NULL WHERE source='cohort' AND event_id='original'"); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := store.ProcessBatch(ctx); err != nil {
 					t.Fatal(err)
 				}
 				october, err := store.CloseMonth(ctx, "acme", "2026-10")

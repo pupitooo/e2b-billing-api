@@ -178,6 +178,15 @@ func quarantine(ctx context.Context, tx pgx.Tx, event usage.Event, message strin
 	_, err := tx.Exec(ctx, `UPDATE usage_inbox SET processing_error=$3
         WHERE source=$1 AND event_id=$2 AND processed_at IS NULL AND processing_error IS NULL`,
 		event.Source, event.EventID, message)
+	if err != nil {
+		return err
+	}
+
+	// Preserve the closing decision even if an operator later clears the error.
+	_, err = tx.Exec(ctx, `INSERT INTO invoice_closing_exclusions
+        SELECT customer_id,billing_month,source,event_id,$3
+        FROM invoice_closing_receipts WHERE source=$1 AND event_id=$2
+        ON CONFLICT DO NOTHING`, event.Source, event.EventID, message)
 
 	return err
 }

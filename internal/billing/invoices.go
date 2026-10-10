@@ -41,7 +41,7 @@ type Invoice struct {
 
 // CloseMonth durably captures a cohort, drains it without an account lock held
 // across transactions, then freezes the result and allocates one invoice number.
-// A timeout leaves resumable work; cohort errors block issuance visibly.
+// A timeout leaves resumable work; quarantined receipts are durably excluded.
 // A new closure requires the complete UTC calendar month to have ended.
 func (s *Store) CloseMonth(ctx context.Context, customer, monthValue string) (Invoice, error) {
 	if err := ValidateIdentifier("customer_id", customer); err != nil {
