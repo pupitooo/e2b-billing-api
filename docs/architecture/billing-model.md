@@ -1,30 +1,73 @@
 # Billing model and assignment seed data
 
+## Summary
+
+This document explains the billing data model, the reasons behind its architecture,
+and how PostgreSQL stores and verifies the assignment's financial state:
+
+- [Logical data model (ERD)](#logical-data-model-erd): billing concepts, their relationships, and an editable diagram.
+- [Architectural decisions and rationale](#architectural-decisions-and-rationale): database choice, customer locks, durable ingestion, retry identities, exact accounting, audit history, immutable invoices, and separation of responsibilities.
+- [Implemented PostgreSQL schema](#implemented-postgresql-schema-erd-migrations-001007): the complete schema through migration 007, SQL columns, keys, and cardinalities.
+- [Tables and relationships](#tables-and-relationships): table purposes, foreign keys, ownership checks, mutable projections, and append-only history.
+- [Money and months](#money-and-months): ticks and cents, the charge formula, arbitrary precision, UTC periods, and historical price selection.
+- [Initial data and migrations](#initial-data-and-migrations): startup commands, assignment catalog values, initial account state, exact-credit conversion, and transactional migration behavior.
+- [Transactional processing and verification](#transactional-processing-and-verification): time-zone checks, isolated fixtures, atomic worker updates, closing cohorts, and public API simulator coverage.
+
 The schema stores the assignment catalog, transactional accounting, financial command identities, closing cohorts, and immutable monthly invoices. [Shared financial rules and pure Go calculations](accounting-rules.md) define rating, exact credit, rounding, and UTC routing; the worker and public APIs implement those rules in `internal/billing`.
 
-The [usage-to-invoice guide](usage-to-invoice.md) explains the accounting pipeline and the fields used at every stage. Migration 004 supports its credit-before-rounding order with exact tick balances, allocations, and ledger records.
-
-## Foundation PostgreSQL schema (ERD, migrations 001–004)
-
-This diagram shows all 12 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `004`, including the runner's `schema_migrations` table. It uses the names and types from the migrations.
-
-![Implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
-
-[Editable Mermaid source](../diagrams/implemented-data-model/implemented-data-model.mmd).
-
-All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns belonging to primary and foreign keys, including composite keys. Solid relationships include the referenced identity in the child's primary key; dashed relationships are other declared foreign keys. The Mermaid source records the composite unique constraints. `billing_ticks` is an exact `numeric` domain for non-negative finite integers; one cent is 1_000_000 ticks.
-
-`usage_inbox` has no customer or metric foreign keys. Its optional one-to-one relationship with `usage_ratings` records whether an event has been assigned to a group; each rating references one `rated_usage_groups` row. The diagram shows database cardinalities, so a customer may have zero or one account-state row even though the seed creates one for each initial customer. Receipt matching and price ownership checks are enforced by triggers, as described below. The diagram is a foundation snapshot through migration 004. Migrations 005–007 add closure, command history, and invoice records described below; they are absent from this diagram.
+Read the logical model first, then the architectural decisions and their trade-offs, followed by the PostgreSQL schema, financial representation, migrations, and transaction details. The [usage-to-invoice guide](usage-to-invoice.md) follows the accounting pipeline and explains the fields used at every stage.
 
 ## Logical data model (ERD)
 
-The earlier ERD shows the proposed logical model, including planned invoice entities. Its names and attributes are conceptual; the implemented ERD above and the table summary below describe the schema created by these migrations.
+The logical model introduces customers, metered usage, historical prices, credit, add-on purchases, and monthly invoices before considering SQL tables and constraints. The diagram shows the main billing concepts and their relationships; the implementation sections below describe their PostgreSQL representation. Invoice lines and immutable monthly invoices are explained in the [usage-to-invoice guide](usage-to-invoice.md#8-invoiceline-what-appears-on-a-particular-invoice).
 
 ![Proposed MVP logical data model](../diagrams/data-model/data-model.png)
 
 [Editable Mermaid source](../diagrams/data-model/data-model.mmd).
 
-`UsageReceipt` is implemented as `usage_inbox` plus the separate `usage_ratings` link. The inbox deliberately has no customer or metric foreign keys. Invoices use immutable JSON snapshots and frozen-group links rather than the separate line table proposed in the logical ERD.
+Conceptually, accepted usage is rated using historical prices, consumes available usage credit, and contributes to a monthly invoice alongside purchased add-ons. The architectural decisions below explain how these responsibilities map to durable input, financial state, and immutable output.
+
+## Architectural decisions and rationale
+
+These decisions describe the current implementation. Assignment requirements and implementation assumptions are distinguished in [the financial rules](accounting-rules.md); the trade-offs below do not imply measured production capacity.
+
+- **Use PostgreSQL for durable input and accounting.** Exact integer-valued `numeric`, row-level locks, and a partial index containing only pending inbox rows fit this billing model. Unlike [SQLite's single concurrent writer](https://www.sqlite.org/lang_transaction.html), PostgreSQL permits concurrent writes to different customer rows; its [unconstrained `numeric`](https://www.postgresql.org/docs/18/datatype-numeric.html#DATATYPE-NUMERIC-DECIMAL) also has a wider precision range than [MySQL `DECIMAL`](https://dev.mysql.com/doc/refman/8.4/en/precision-math-decimal-characteristics.html). Ingestion and accounting share database resources.
+
+- **Separate customer identity from billing state.** `customers` holds profile data; `customer_billing_state` holds the mutable financial account. Financial writers select the account by `customer_id` with `FOR UPDATE`, leaving ordinary profile updates independent of that row lock. At [READ COMMITTED](https://www.postgresql.org/docs/18/transaction-iso.html#XACT-READ-COMMITTED), a waiting writer rechecks `WHERE` against the committed row and reads the updated balance when the customer still matches. `state_version` is incremented with financial effects as a revision counter; it is not a lock filter. Separate tables require occasional joins and account creation alongside the customer: the PK/FK guarantees at most one account, not that every customer has one.
+
+- **Serialize financial changes per customer.** Usage accounting and credit allocation, credit grants, spend-limit changes, add-on purchases, and each transaction of invoice closing acquire the account lock before reading mutable financial state, then commit their related changes together. The account row coordinates changes across the ledger, usage projections, subscriptions, and closing/invoice records; for example, a new subscription cannot race with freezing the same billing month. Closing releases the lock between its short transactions. This shared protocol limits parallel financial writes for one busy customer.
+
+- **Persist usage before asynchronous accounting.** Ingestion acknowledges a durable receipt without waiting for rating and credit allocation. The inbox has no customer or metric foreign keys, so unknown catalog identifiers remain available for diagnosis rather than losing the submitted event. The trade-off is delayed financial visibility: acceptance does not mean successful accounting. Temporary database failures roll back and retry automatically; unsupported input is retained with `processing_error` and excluded from automatic processing. After diagnosing and correcting the cause, an operator must explicitly release the affected receipt for another attempt, as described in the [recovery instructions](../../README.md#transactional-usage-accounting).
+
+- **Use stable identities and content checks for retries.** `(source, event_id)` identifies usage; financial commands have operation identities. Identical retries preserve the previous effect, while changed input under the same identity conflicts. After acquiring the account lock, the worker reselects the receipt with `processed_at IS NULL AND processing_error IS NULL`: completion or quarantine by another committed worker makes a stale candidate fail this filter and be skipped. The worker commits the rating link, financial projections, ledger changes, and receipt completion together, so a failed attempt cannot leave a partial charge. Unique constraints support this protocol but do not replace content comparison or the transaction.
+
+- **Keep exact ticks and round cumulative groups.** Integer ticks preserve sub-cent usage and credit; Go arbitrary-precision integers and PostgreSQL integer-valued `numeric` avoid floating-point error and intermediate `bigint` overflow. Grouping by customer, price version, usage month, and billing month prevents individual event or sandbox boundaries from introducing extra rounding. The cost is more explicit money conversion and group-level invoice presentation; intervals crossing supported month or price boundaries must currently be rejected.
+
+- **Append historical prices and snapshot purchased add-on prices.** Consumption uses the applicable historical price and customer override, while a subscription retains its purchased price. Later catalog changes therefore cannot silently reprice earlier usage or an existing purchase. Price history and ownership checks add storage and validation work; retroactive corrections need a separate policy.
+
+- **Keep audit history beside mutable projections.** `credit_entries` and `usage_ratings` preserve how balances and groups changed; account balances and `monthly_usage` make current-credit and monthly-limit reads direct. A separate original-month gross projection is necessary because limits exclude credit and add-ons, even when late usage is invoiced later. These duplicated totals must be maintained in the same transaction; constraints alone do not reconcile them with history.
+
+- **Separate the UTC usage month from the billing month.** Late consumption keeps its original price and spend-limit month but moves to an open billing month after closure. This preserves issued invoices without losing the consumption's origin. Explicit UTC calculation avoids dependence on session time zones, at the cost of carrying both month identities through groups and invoice lines.
+
+- **Persist closing cohorts and immutable invoice snapshots.** A fixed set of committed receipts (metered sandbox usage events stored in `usage_inbox`, such as CPU seconds reported for a customer's sandbox over a measurement interval) makes closing resumable across short processing transactions; a receipt timestamp alone cannot prove that input committed before closing. Final issuance atomically records closure, frozen groups, the invoice snapshot, and its number. Snapshots preserve buyer details and financial results despite later profile or catalog changes. This requires extra closing records and group-freeze enforcement, and an unresolved error in the cohort blocks issuance.
+
+- **Separate pure calculations from persistence and transport.** `internal/accounting` calculates prices, credit, months, and invoice amounts without I/O; `internal/billing` owns locks and financial transactions, while HTTP code owns request and response handling. This makes financial rules directly testable and keeps transaction boundaries visible. Database constraints still protect structural integrity, so changes to a rule must keep calculations, persistence, and validation consistent.
+
+## Implemented PostgreSQL schema (ERD, migrations 001–007)
+
+`UsageReceipt` maps to `usage_inbox` plus the separate `usage_ratings` link. Invoices use immutable JSON snapshots and frozen-group links rather than the separate line table proposed in the logical ERD.
+
+This diagram shows all 18 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `007`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
+
+![Implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
+
+[Open full-size PNG](../diagrams/implemented-data-model/implemented-data-model.png) · [Editable Mermaid source](../diagrams/implemented-data-model/implemented-data-model.mmd).
+
+All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns belonging to primary and foreign keys, including composite keys. Solid relationships include the referenced identity in the child's primary key; dashed relationships are other declared foreign keys. The Mermaid source records the composite unique constraints. `billing_ticks` is an exact `numeric` domain for non-negative finite integers; one cent is 1_000_000 ticks.
+
+`usage_inbox` has no customer or metric foreign keys. Its optional one-to-one relationship with `usage_ratings` records whether an event has been assigned to a group; each rating references one `rated_usage_groups` row. The diagram shows database cardinalities, so a customer may have zero or one account-state row even though the seed creates one for each initial customer. Receipt matching and price ownership checks are enforced by triggers, as described below.
+
+`invoice_closing_receipts` links a durable closing attempt to its fixed cohort of inbox identities. `invoices` references a closed customer/month; `invoiced_usage_groups` links each group to at most one invoice and activates the group-freeze trigger. Buyer details, issue time, and `InvoiceLine` values are in `invoices.snapshot`; there is no separate `invoice_lines` table. Closing publishes the related records atomically. Its transaction also matches customer/month ownership where the schema has no additional composite foreign key.
 
 ## Tables and relationships
 
@@ -43,7 +86,7 @@ The earlier ERD shows the proposed logical model, including planned invoice enti
 | `closed_billing_months` | Immutable customer/month closures used to route late consumption forward. |
 | `spend_limit_operations` | Immutable operation results; replaying an old identity cannot undo a newer limit. |
 | `invoice_closings` | Durable customer/month closing attempts. |
-| `invoice_closing_receipts` | Fixed membership of committed pending input at closing, independent of receipt timestamps. |
+| `invoice_closing_receipts` | Fixed membership of committed pending metered-usage events from `usage_inbox` at closing, independent of receipt timestamps. |
 | `invoices` | One immutable snapshot per customer/month, with unique per-customer number and total cents. Buyer details, ordered lines, exact audit ticks, and issue time are in `snapshot`. |
 | `invoiced_usage_groups` | Links issued invoices to groups; a trigger rejects changes to frozen groups. |
 
@@ -62,14 +105,28 @@ One tick is one millionth of a cent, or USD 0.000_000_01. For this price contrac
 ```text
 price_unit_count = 1_000_000
 ticks_per_cent = 1_000_000
-exact_charge_ticks = units × price_per_million_cents × ticks_per_cent / price_unit_count
+exact_charge_ticks = (((units × price_per_million_cents) × ticks_per_cent) / price_unit_count)
 ```
 
 `accounting.PriceUnitCount` defines the resource units covered by the price; `accounting.TicksPerCent` defines monetary resolution. They currently have equal values and cancel in the formula. [Issue #29](https://github.com/pupitooo/e2b-billing-api/issues/29) proposes storing `price_unit_count` on each historical price version, backfilling existing versions with 1_000_000, and requiring new rates to be exactly representable in whole ticks. That proposal preserves the current tick scale; this implementation still uses a fixed price denominator.
 
 Integer-valued PostgreSQL `numeric` stores exact tick totals and aggregate units beyond the `bigint` range. Negative, fractional, infinite, and NaN values are rejected. The Go rater uses immutable arbitrary-precision integers and checks conversions to signed 64-bit cents. PostgreSQL documents the distinction between [exact numeric and floating-point types](https://www.postgresql.org/docs/18/datatype-numeric.html).
 
-Cyberdyne's first 123_456_789 units produce 617_283_945 ticks, or USD 6.172_839_45. The group can store that exact amount alongside its booked 617 gross cents. Credit is allocated against new exact ticks before rounding. The shared Go helpers round cumulative gross and net groups and derive a balancing credit line; migrations do not perform accounting. `allocated_credit_ticks` cannot exceed `exact_charge_ticks`, even when rounded gross cents are higher.
+Cyberdyne's first rate is USD 0.05 (5 cents) per 1_000_000 units. Its first 123_456_789 units are charged as follows:
+
+```text
+exact_charge_ticks = (((123_456_789 × 5) × 1_000_000) / 1_000_000)
+                   = (123_456_789 × 5)
+                   = 617_283_945 ticks
+ticks_per_dollar = (100 × 1_000_000) = 100_000_000
+exact_charge_usd = (617_283_945 / 100_000_000) = USD 6.172_839_45
+booked_gross_cents = floor(((617_283_945 + 500_000) / 1_000_000))
+                   = 617 cents = USD 6.17
+```
+
+First multiply units by the price in cents, then multiply by ticks per cent, and finally divide by the units covered by that price. The two million-valued constants cancel, so this rate charges 5 ticks per resource unit. The group stores the exact tick amount alongside its booked 617 gross cents; subsequent usage is added to the exact group total before rounding again.
+
+Credit is allocated against new exact ticks before rounding. The shared Go helpers round cumulative gross and net groups and derive a balancing credit line; migrations do not perform accounting. `allocated_credit_ticks` cannot exceed `exact_charge_ticks`, even when rounded gross cents are higher.
 
 `usage_month` and `billing_month` are finite first-of-month `date` values. Application code derives them in UTC. Late October usage billed in November retains `usage_month = 2026-10-01` and `billing_month = 2026-11-01`; its gross spend belongs to October. Billing months cannot precede usage months. Timestamps are finite `timestamptz` values. Subscription start months are checked against the purchase timestamp in UTC, independently of the SQL session's time zone.
 
@@ -105,7 +162,7 @@ The migration runner applies schema, seed, and version records in one transactio
 
 ## Transactional processing and verification
 
-`make test` discovers all `tests/sql/*.sql` files and runs them in UTC and `Asia/Shanghai`. Model tests roll back all fixtures. Seed tests reconstruct the catalog in a private schema inside a rolled-back transaction, so tests also preserve edited application data. The PostgreSQL service's existing read-only `/migrations` mount supplies the seed test scripts.
+`make test` discovers all `tests/sql/*.sql` files and runs them in UTC and `Asia/Shanghai`. The non-UTC session checks that any values derived from the database session's default time zone remain correct when that zone differs from the application logic, which always uses UTC. This exposes accidental dependence on the session time zone, especially at month boundaries. Model tests roll back all fixtures. Seed tests reconstruct the catalog in a private schema inside a rolled-back transaction, so tests also preserve edited application data. The PostgreSQL service's existing read-only `/migrations` mount supplies the seed test scripts.
 
 The worker locks the customer's state row and commits the rating link, group totals, credit debit/balance, original month's gross spend, state version, and inbox `processed_at` together. Constraints represent those records but do not automatically reconcile ledger sums, projection totals, or the calculated price and booked cents. The unique rating link alone does not prove that a complete financial transaction ran exactly once.
 

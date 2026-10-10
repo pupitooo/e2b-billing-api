@@ -1,5 +1,7 @@
 ---
-title: Implemented PostgreSQL schema (migrations 001-004)
+title: Implemented PostgreSQL schema (migrations 001-007)
+config:
+  layout: elk
 ---
 erDiagram
     direction LR
@@ -16,6 +18,15 @@ erDiagram
     rated_usage_groups |o..o{ credit_entries : "(group_id, customer_id)"
     customers ||..o{ addon_subscriptions : customer_id
     addons ||..o{ addon_subscriptions : addon_name
+
+    customers ||--o{ spend_limit_operations : customer_id
+    customers ||--o{ closed_billing_months : customer_id
+    customers ||--o{ invoice_closings : customer_id
+    invoice_closings ||--o{ invoice_closing_receipts : "(customer_id, billing_month)"
+    usage_inbox ||--o{ invoice_closing_receipts : "(source, event_id)"
+    closed_billing_months ||--o| invoices : "(customer_id, billing_month)"
+    invoices ||..o{ invoiced_usage_groups : "(customer_id, billing_month)"
+    rated_usage_groups ||--o| invoiced_usage_groups : group_id
 
     usage_inbox {
         text source PK
@@ -59,6 +70,7 @@ erDiagram
         billing_ticks credit_balance_ticks "Exact non-negative credit"
         bigint spend_limit_cents "Nullable; non-negative"
         bigint state_version "Non-negative; default 0"
+        bigint next_invoice_number "Positive; default 1"
     }
     metrics {
         text metric PK
@@ -95,18 +107,52 @@ erDiagram
         timestamptz purchased_at "Finite"
         date start_month "First day of UTC purchase month"
     }
+    spend_limit_operations {
+        text customer_id PK,FK
+        text operation_id PK
+        bigint limit_cents "Nullable; non-negative"
+        timestamptz recorded_at "Finite"
+    }
+    closed_billing_months {
+        text customer_id PK,FK
+        date billing_month PK "First day of UTC billing month"
+        timestamptz closed_at "Finite"
+    }
+    invoice_closings {
+        text customer_id PK,FK
+        date billing_month PK "First day of UTC billing month"
+        timestamptz started_at "Finite"
+    }
+    invoice_closing_receipts {
+        text customer_id PK,FK
+        date billing_month PK,FK
+        text source PK,FK
+        text event_id PK,FK
+    }
+    invoices {
+        text customer_id PK,FK
+        date billing_month PK,FK
+        text invoice_number "Unique per customer"
+        bigint total_cents "Non-negative"
+        jsonb snapshot "Object: buyer, lines, issued_at"
+    }
+    invoiced_usage_groups {
+        text group_id PK,FK
+        text customer_id FK
+        date billing_month FK
+    }
     schema_migrations {
         integer version PK "Positive"
         text name
         timestamptz applied_at "Default now()"
     }
 
-    %% This diagram covers every table and column created by migrate.sql and migrations 001-004.
+    %% This diagram covers all 18 tables and 82 columns after migrate.sql and migrations 001-007.
     %% All columns are NOT NULL unless explicitly labeled Nullable.
     %% PK and FK markers identify membership in primary and foreign keys, including composite keys.
     %% Solid relationships include parent identity in the child's primary key; dashed ones do not.
     %% Edges show declared foreign keys only; usage_inbox has no customer or metric FK.
-    %% billing_ticks is numeric constrained to non-negative finite integers; 1 cent = 1,000,000 ticks.
+    %% billing_ticks is numeric constrained to non-negative finite integers; 1 cent = 1_000_000 ticks.
     %% billing_signed_ticks is numeric constrained to signed finite integers for credit history.
     %% price_versions UNIQUE NULLS NOT DISTINCT: (customer_id, metric, effective_from).
     %% price_versions UNIQUE: (price_version_id, metric).
@@ -114,6 +160,13 @@ erDiagram
     %% rated_usage_groups UNIQUE: (group_id, customer_id).
     %% credit_entries UNIQUE: (customer_id, operation_id).
     %% addon_subscriptions UNIQUE: (customer_id, addon_name).
+    %% invoices UNIQUE: (customer_id, invoice_number).
     %% price_versions, usage_ratings, and credit_entries reject updates and deletes through triggers.
+    %% closed_billing_months, spend_limit_operations, invoice_closings, invoice_closing_receipts,
+    %% invoices, and invoiced_usage_groups also reject updates and deletes through triggers.
     %% Triggers also preserve group identity and validate receipt customer, metric, and UTC month.
-    %% Invoice tables, invoice numbering, and frozen groups are not implemented.
+    %% A group referenced by invoiced_usage_groups rejects updates and deletes.
+    %% InvoiceLine values are stored in invoices.snapshot.lines; there is no invoice_lines table.
+    %% No extra FK matches invoiced_usage_groups customer/month to the group's customer/month.
+    %% No extra FK matches invoice_closing_receipts customer to the receipt's customer.
+    %% Those ownership checks belong to the closing transaction; edges show only declared FKs.
