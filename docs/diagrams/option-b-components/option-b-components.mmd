@@ -1,5 +1,5 @@
 ---
-title: Option B - synchronous Go and PostgreSQL
+title: Alternative option B - synchronous Go and PostgreSQL
 config:
   layout: dagre
   flowchart:
@@ -17,7 +17,7 @@ flowchart LR
     database[("PostgreSQL accounting store<br/>Receipt identities + usage charges<br/>Credit ledger + spend state<br/>Immutable invoices")]
 
     platform <-->|"HTTP / JSON<br/>POST /usage/batches<br/>Accounting result after commit"| api
-    platform <-->|"HTTP GET<br/>/customers/{id}/spend-status"| api
+    platform <-->|"HTTP GET<br/>/customers/{id}/limit-status"| api
     callers <-->|"HTTP commands and queries<br/>Credit, prices, add-ons,<br/>limits, invoices, closing"| api
     api <-->|"SQL: customer lock + one transaction<br/>Deduplicate + financial effect<br/>SQL reads and commands"| database
 

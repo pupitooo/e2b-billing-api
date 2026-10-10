@@ -7,7 +7,7 @@ config:
     nodeSpacing: 60
     rankSpacing: 75
 ---
-%% Option C foundation includes PostgreSQL, usage_inbox, and Go runtime skeletons.
+%% Implemented option C uses PostgreSQL, usage_inbox, a Go API and a separate Go worker.
 %% API and worker must run in separate processes and containers for independent lifecycle control.
 %% Durable ingestion, accounting and invoice publication are implemented.
 %% The two storage blocks are tables in one PostgreSQL database.
@@ -15,7 +15,7 @@ config:
 %% T2 includes claiming the inbox row, financial writes, and marking it processed.
 %% Closing holds the customer account lock for one publication transaction and never drains usage.
 flowchart LR
-    platform["Sandbox platform - separate system<br/>Go simulator in the assignment<br/>Metering + durable sender buffer<br/>Stable IDs + retry + spend-status polling"]
+    platform["Sandbox platform - separate system<br/>Go simulator in the assignment<br/>Metering + durable sender buffer<br/>Stable IDs + retry + limit-status polling"]
     callers["Customer / E2B administrator<br/>Closing operator"]
     api["Billing API - Go process<br/>Separate API container<br/>Ingestion + financial interfaces<br/>Ordinary prices: no backdated activation"]
     worker["Usage worker - Go process<br/>Separate worker container + heartbeat<br/>Polling + historical accounting<br/>Quarantine errors without financial writes"]
@@ -32,16 +32,16 @@ flowchart LR
     api -->|"SQL T1: persist + deduplicate<br/>SQL reads: processing progress"| inbox
     worker <-->|"SQL T2: poll + claim + mark processed<br/>Customer-first locking + receipt recheck"| inbox
     worker -->|"SQL T2: customer lock<br/>Financial writes + spend update<br/>ONE commit with inbox completion"| accounting
-    api <-->|"SQL commands and queries<br/>Prices / credit / add-ons / limits<br/>Invoice snapshots + spend status<br/>Quarantined usage never blocks issuance"| accounting
+    api <-->|"SQL commands and queries<br/>Prices / credit / add-ons / limits<br/>Invoice snapshots + spend status<br/>Publication from processed groups only"| accounting
 
     classDef platformNode fill:#e8f1fb,stroke:#31588a,color:#172b4d;
     classDef goModule fill:#e9f7ee,stroke:#287d4e,color:#173b28;
-    classDef firstStep fill:#fff2cf,stroke:#a56800,color:#543800,stroke-width:3px;
+    classDef receiptStore fill:#fff2cf,stroke:#a56800,color:#543800,stroke-width:3px;
     classDef storedData fill:#edf0ff,stroke:#56649c,color:#24335c;
     classDef actor fill:#f2f3f5,stroke:#6b7280,color:#253044;
     class platform platformNode;
     class api,worker goModule;
-    class inbox firstStep;
+    class inbox receiptStore;
     class accounting storedData;
     class callers actor;
     style database fill:#f9f9ff,stroke:#9b9fc0;

@@ -35,7 +35,7 @@ These decisions describe the current implementation. Assignment requirements and
 
 - **Separate customer identity from billing state.** `customers` holds profile data; `customer_billing_state` holds the mutable financial account. Financial writers select the account by `customer_id` with `FOR UPDATE`, leaving ordinary profile updates independent of that row lock. At [READ COMMITTED](https://www.postgresql.org/docs/18/transaction-iso.html#XACT-READ-COMMITTED), a waiting writer rechecks `WHERE` against the committed row and reads the updated balance when the customer still matches. `state_version` is incremented with financial effects as a revision counter; it is not a lock filter. Separate tables require occasional joins and account creation alongside the customer: the PK/FK guarantees at most one account, not that every customer has one.
 
-- **Serialize financial changes per customer.** Usage accounting and credit allocation, credit grants, spend-limit changes, add-on purchases, and each transaction of invoice closing acquire the account lock before reading mutable financial state, then commit their related changes together. The account row coordinates changes across the ledger, usage projections, subscriptions, and closing/invoice records; for example, a new subscription cannot race with freezing the same billing month. Closing releases the lock between its short transactions. This shared protocol limits parallel financial writes for one busy customer.
+- **Serialize financial changes per customer.** Usage accounting and credit allocation, credit grants, spend-limit changes, add-on purchases, and invoice closing acquire the account lock before reading mutable financial state, then commit their related changes together. The account row coordinates changes across the ledger, usage projections, subscriptions and invoices; for example, a new subscription cannot race with freezing the same billing month. Closing holds the lock throughout its single publication transaction. This shared protocol limits parallel financial writes for one busy customer.
 
 - **Persist usage before asynchronous accounting.** Ingestion acknowledges a durable receipt without waiting for rating and credit allocation. The inbox has no customer or metric foreign keys, so unknown catalog identifiers remain available for diagnosis rather than losing the submitted event. The trade-off is delayed financial visibility: acceptance does not mean successful accounting. Temporary database failures roll back and retry automatically; unsupported input is retained with `processing_error` and excluded from automatic processing. After diagnosing and correcting the cause, an operator must explicitly release the affected receipt for another attempt, as described in the [recovery instructions](../../README.md#transactional-usage-accounting).
 
@@ -142,9 +142,11 @@ The seed preserves the assignment's original effective starts. Provision an addi
 metric and its applicable price before the platform generates its first usage, using
 a start covering that consumption. Missing a valid price is a P0 catalog incident:
 the receipt retains `P0 missing_valid_price: ...` without financial effects and the
-receipt orchestrator logs the incident after commit, during polling or invoice closing.
-Append the correct dated price and explicitly release the investigated receipt for
-another attempt. See the [provisioning and recovery contract](accounting-rules.md#catalog-provisioning-and-p0-recovery).
+receipt orchestrator logs the incident after commit during worker processing.
+Invoice closing never processes input or emits this incident. Repair the historical
+catalog through [controlled operator SQL](../../README.md#controlled-historical-price-repair),
+then explicitly release the investigated receipt for another attempt. Ordinary
+`POST /prices` rejects new backdated versions. See the [provisioning and recovery contract](accounting-rules.md#catalog-provisioning-and-p0-recovery).
 
 ## Initial data and migrations
 

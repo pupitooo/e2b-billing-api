@@ -1,5 +1,12 @@
 # Public billing scenarios
 
+## Contents
+
+- [Run the complete assignment](#run-the-complete-assignment)
+- [Scenarios and review entry points](#scenarios-and-review-entry-points)
+- [Durable retries, outages, and restart](#durable-retries-outages-and-restart)
+- [Verification](#verification)
+
 The platform simulator runs named HTTP steps with explicit inputs and literal expected
 responses. It sends usage increments and financial commands to the real billing API;
 it never calculates expected prices, rounding, invoices, or credit. Accounting runs in
@@ -24,8 +31,9 @@ server clock, so the fixed October/November 2026 assignment workflow can finish
 only from `2026-12-01T00:00:00Z`. Earlier runs stop at an invoice step with HTTP
 `422`; usage and financial commands already committed by earlier steps remain.
 For review before that date, run `make inbox-test RUN=BillingSimulator`. Those
-isolated integration servers use an explicit `2026-12-01T00:00:00Z` clock, while
-exercising the same month guard, router, worker, and persistence. Requests have no
+isolated integration servers declare an invoice clock at `2026-12-01T00:00:00Z`, while
+exercising the same month guard, router, worker, and persistence. The price-version
+case additionally declares separate insertion times, described below. Requests have no
 clock override.
 
 ```sh
@@ -60,9 +68,18 @@ zero gross usage. Invoice issuance and retries consume no additional credit.
 | [billing-exact-credit](billing-exact-credit.json) | Two 1_250-unit measurements use exactly 10_000 ticks; credit remains 990_000 ticks and the invoice is zero cents. |
 | [billing-credit-exhaustion](billing-credit-exhaustion.json) | One cent of credit pays one of two usage cents; the month-end add-on costs 2_000 cents; invoice total is 2_001 cents; a later grant preserves the issued invoice. |
 | [billing-limit-status](billing-limit-status.json) | Platform reads below/reached/raised/reset/zero/unlimited statuses; all measured consumption remains billable. |
-| [billing-price-versions](billing-price-versions.json) | An 8-cent default and 3-cent customer override produce a 1_100-cent invoice; historical changes affecting rated usage conflict. |
+| [billing-price-versions](billing-price-versions.json) | An 8-cent default and 3-cent customer override produce a 1_100-cent invoice; two new backdated versions return `422` with `effective_from` and leave history unchanged. |
 | [billing-price-boundary](billing-price-boundary.json) | A receipt crossing the applicable price boundary becomes a visible processing error; issuance succeeds without billing the quarantined receipt. |
 | [billing-month-boundary](billing-month-boundary.json) | A receipt crossing a UTC month boundary becomes a visible processing error; issuance succeeds without billing the quarantined receipt. |
+
+The `billing-price-versions` file uses the automated private-schema runner: its
+first two price commands see `2026-10-01T00:00:00Z`, before their October activation
+dates, while rejected backdated commands and invoice issuance see
+`2026-12-01T00:00:00Z`. A live December API rejects those initial October versions
+as backdated. Use `make inbox-test RUN=BillingSimulator` for the fixed scenario;
+there is no public clock override. Identical price retries remain valid after
+activation. Investigated missing historical prices use [controlled operator SQL](../../README.md#controlled-historical-price-repair)
+and explicit receipt release, independently of invoice publication.
 
 ## Durable retries, outages, and restart
 

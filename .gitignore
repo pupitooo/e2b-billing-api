@@ -10,6 +10,7 @@
 !/docs/architecture/billing-model.md
 !/docs/architecture/usage-to-invoice.md
 !/docs/architecture/accounting-rules.md
+!/docs/architecture/submission-overview.md
 !/docs/guides/
 /docs/guides/*
 !/docs/guides/final-acceptance-testing.md
@@ -32,6 +33,7 @@
 /docs/diagrams/invoice-issuance/*
 !/docs/diagrams/invoice-issuance/invoice-issuance.mmd
 !/docs/diagrams/invoice-issuance/invoice-issuance.png
+!/docs/diagrams/invoice-issuance/README.md
 !/docs/diagrams/usage-worker-accounting/
 /docs/diagrams/usage-worker-accounting/*
 !/docs/diagrams/usage-worker-accounting/usage-worker-accounting.mmd
@@ -64,6 +66,7 @@
 /docs/diagrams/option-c-components/*
 !/docs/diagrams/option-c-components/option-c-components.mmd
 !/docs/diagrams/option-c-components/option-c-components.png
+!/docs/diagrams/option-c-components/README.md
 !/docs/diagrams/option-d-components/
 /docs/diagrams/option-d-components/*
 !/docs/diagrams/option-d-components/option-d-components.mmd

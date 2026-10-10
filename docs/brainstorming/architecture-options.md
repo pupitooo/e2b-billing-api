@@ -1,8 +1,21 @@
 # Billing architecture options
 
-Option C is the selected starting architecture. The implementation provides PostgreSQL, `usage_inbox`, an HTTP API response skeleton, and a standalone Go worker runtime. Durable HTTP ingestion, accounting, financial tables, and the platform simulator remain planned. This document records the alternatives considered and the basic rationale. TODO sections reserve the analysis needed before claiming support for higher load.
+Option C is implemented: a Go ingestion API commits measurements to a PostgreSQL inbox, a separate Go worker accounts for them, and financial APIs expose prices, credit, add-ons, limits and immutable monthly invoices. The platform simulator reproduces the assignment. The [submission overview](../architecture/submission-overview.md) summarizes interfaces, tools and remaining limits; this comparison explains alternatives and future growth.
 
-Go is fixed for every option. Storage, transport, and processing arrangements vary. These are assignment design proposals, not descriptions of E2B's production infrastructure. Payment processing, tax calculation, and authentication are outside the assignment.
+Go is fixed for every option. Storage, transport and processing arrangements vary. Options A, B and D are alternatives, not descriptions of the current implementation or E2B's production infrastructure. Payment processing, tax calculation and authentication are outside the assignment.
+
+## Contents
+
+- [Options at a glance](#options-at-a-glance)
+- [Option A: synchronous Go service with SQLite](#option-a-synchronous-go-service-with-sqlite)
+- [Option B: synchronous Go service with PostgreSQL](#option-b-synchronous-go-service-with-postgresql)
+- [Option C: PostgreSQL inbox and asynchronous Go worker](#option-c-postgresql-inbox-and-asynchronous-go-worker)
+- [Option D: Kafka ingestion and separate accounting pipeline](#option-d-kafka-ingestion-and-separate-accounting-pipeline)
+- [Why option C was selected](#why-option-c-was-selected)
+- [Workload assumptions for further analysis](#workload-assumptions-for-further-analysis)
+- [Implemented correctness and remaining limits](#implemented-correctness-and-remaining-limits)
+- [TODO: freshness, durability, and operations](#todo-freshness-durability-and-operations)
+- [Scaling to billions of records](#scaling-to-billions-of-records)
 
 ## Options at a glance
 
@@ -37,11 +50,11 @@ The API performs ingestion and accounting in one PostgreSQL transaction. Receipt
 
 ## Option C: PostgreSQL inbox and asynchronous Go worker
 
-The planned ingestion API commits validated measurements to `usage_inbox` and then acknowledges receipt. A worker will subsequently claim pending rows and commit their financial effects with the processed marker. The API and worker run as separate Go processes and Compose services, sharing the repository and one PostgreSQL database. They can be restarted and deployed independently; production can scale their replica counts separately. The current worker only runs its lifecycle and heartbeat, with accounting disabled.
+The ingestion API atomically commits validated measurements to `usage_inbox`, then returns `202` with `{"status":"accepted"}`. The worker processes one receipt per transaction, locking the customer account before rechecking and locking the pending receipt. Its financial effects and completion marker commit together. The API and worker are separate Go processes and Compose services sharing one PostgreSQL database; they can restart independently. The simulator retains stable measurements and retries after lost replies or outages.
 
-Process isolation contains a worker crash and allows separate resource limits. It does not isolate shared database contention: a future worker can still delay API writes through long transactions or exhausted database capacity. Bounded connection pools, batch sizes, query deadlines, and measured concurrency remain necessary.
+Process isolation contains a worker crash and allows separate resource limits. It does not isolate shared database contention: workers can delay API writes through transactions or exhausted database capacity. The API has bounded admission, connection pools and deadlines; adding worker replicas still requires measured database headroom and does not remove contention over the earliest pending receipt.
 
-**Weak point:** accepted input can be ahead of the financial state. If Cyberdyne's second example hour is waiting in the inbox, the platform can still see the earlier spend below its USD 15 limit. Exposing processing progress and bounding backlog makes this visible; invoice closing also needs a fixed boundary of accepted input. Those measures require extra state, waiting, error recovery, and a freshness agreement. The shared database remains an availability and capacity dependency for both ingestion and accounting.
+**Weak point:** accepted input can be ahead of the financial state. If Cyberdyne's second example hour is waiting in the inbox, the platform can still see spend below its USD 15 limit. Limit and credit reads expose pending/error counts, but cannot see undelivered platform measurements. Closing snapshots only accounting committed before it acquires the customer lock; even previously accepted input can bill later. This keeps closing independent of backlog size, at the cost of incomplete current invoices, separate rounding groups and a freshness agreement. The shared database remains an availability and capacity dependency.
 
 ![Option C: building blocks and interfaces](../diagrams/option-c-components/option-c-components.png)
 
@@ -51,7 +64,7 @@ Process isolation contains a worker crash and allows separate resource limits. I
 
 A Go ingress publishes stable raw measurements to Kafka. An archive consumer preserves raw history; an aggregator prepares immutable deltas through a durable state store and outbox; accounting workers apply those deltas to PostgreSQL. The billing API serves financial commands and status. This arrangement provides separate places to buffer and distribute work.
 
-**Weak point:** a worker can commit Acme's credit allocation and crash before recording its Kafka progress. Replaying the input must preserve the original identity and avoid another financial effect. Stable delta IDs and atomic accounting deduplication address this, with additional state, replay tests, retention management, and operating cost. Kafka transactions alone do not make an external PostgreSQL write atomic with consumer progress. [Kafka delivery semantics](https://kafka.apache.org/43/design/design/#semantics).
+**Weak point:** a worker can commit Acme's credit allocation and crash before recording its Kafka progress. Replaying the input must preserve the original identity and avoid another financial effect. Stable delta IDs and atomic accounting deduplication address this, with additional state, replay tests, retention management, and operating cost. Kafka transactions alone do not make an external PostgreSQL write atomic with consumer progress. [Kafka delivery semantics](https://kafka.apache.org/43/design/design/#message-delivery-semantics).
 
 ![Option D: building blocks and interfaces](../diagrams/option-d-components/option-d-components.png)
 
@@ -59,9 +72,9 @@ A Go ingress publishes stable raw measurements to Kafka. An archive consumer pre
 
 ## Why option C was selected
 
-The starting architecture uses option C and establishes the database and inbox before receipt validation and accounting. Incoming measurements must have durable storage independent of the accounting worker. Later processing preserves that boundary. Pending work remains explicit without introducing a broker in the first iteration.
+Option C keeps incoming measurements durable independently of the accounting worker, makes pending work visible and avoids operating a broker in the assignment implementation. PostgreSQL supplies receipt identity, exact financial storage and account locks in one local service. Separate API and worker lifecycles allow recovery without coupling receipt availability to a running worker.
 
-C adds a second transaction and a gap between receipt and accounting. An inbox primary key prevents duplicate rows; financial correctness still requires the worker's accounting writes and completion marker to commit together. The source buffer must retain unacknowledged measurements. Choosing C does not establish a throughput limit or select D as the eventual production architecture.
+C adds a second transaction and a gap between receipt and accounting. The inbox key and content comparison protect receipt retries; financial correctness requires accounting writes and completion to commit together. The source buffer retains unacknowledged measurements. Choosing C does not establish production capacity or adopt D as the eventual architecture.
 
 ## Workload assumptions for further analysis
 
@@ -69,35 +82,59 @@ The assignment asks the design to consider about 50_000 customers and potentiall
 
 | Illustrative profile | Average active sandboxes per customer | Records per second | Records per 30 days |
 | --- | ---: | ---: | ---: |
-| 1_000 customers | 10 | 166.7 | 432 million |
 | 50_000 customers | 10 | 8_333.3 | 21.6 billion |
 | 50_000 customers | 100 | 83_333.3 | 216 billion |
+| 50_000 customers | 1_000 | 833_333.3 | 2.16 trillion |
 
 Calculated rate = customers × average active sandboxes × metrics ÷ 60. Monthly records = customers × average active sandboxes × metrics × 43_200. These counts are scenarios, not measured capacity; batching HTTP requests does not remove event identities or financial work.
 
-## TODO: receipt and financial correctness
+## Implemented correctness and remaining limits
 
-- [ ] Define supported schema versions, identifier and timestamp validation, interval splitting at price and UTC month boundaries, batch limits, response bodies, and atomic versus partial acceptance.
-- [ ] Specify identical retries versus identity conflicts, event immutability, and how deduplication survives inbox cleanup and replay.
-- [ ] Define worker claiming, lock order, concurrent customer writes, crash recovery, quarantine, and operator requeue. Include errors when reporting unfinished work.
-- [ ] Choose exact money representation, overflow checks, rounding groups, time-based pricing, and credit allocation; prove results stay the same when measurements are split or reordered.
-- [ ] Preserve the processed-usage closing cutoff when scaling: lock the customer account, publish only committed groups, and route later accounting into an eligible open month. Do not wait for ingestion or worker backlogs. Verify both worker/closing lock orders, immutable invoices and numbering.
-- [ ] Reproduce the assignment's invoice, credit, add-on, and limit results; test duplicate delivery, lost responses, late usage, and worker crashes at commit boundaries.
+| Implemented contract | Detail and verification |
+| --- | --- |
+| Strict measurement validation and atomic receipt | [OpenAPI](../api/openapi.yaml) defines JSON, time, identity, body and batch limits. [HTTP tests](../../tests/api/usage_batches_test.go) and [repository tests](../../tests/inbox/usage_inbox_test.go) verify retries, conflicts, cancellation and rollback. |
+| Exactly-once financial effects through retries | Account-first locking, pending-receipt recheck and one financial transaction are described in the [billing model](../architecture/billing-model.md#architectural-decisions-and-rationale); [accounting tests](../../tests/inbox/billing_test.go) cover concurrent workers and rollback. |
+| Historical prices, exact credit and cumulative rounding | [Financial rules](../architecture/accounting-rules.md) distinguish consumption prices, ticks, group rounding and serialized credit allocation. [Primitive tests](../../internal/accounting/money_test.go) and [price tests](../../internal/accounting/pricing_test.go) cover boundaries and overflow. |
+| Closing from processed usage, immutable invoices and numbering | The [closing contract](../architecture/accounting-rules.md#transaction-and-closing-contract) and [processed-closing tests](../../tests/inbox/processed_closing_test.go) cover pending input, both lock orders, month order, retries and separate rounding groups. |
+| Assignment values and durable platform recovery | [Public workflows](../simulator/billing-scenarios.md) and [executable tests](../../tests/inbox/billing_simulator_test.go) reproduce invoices, balances, limits, lost committed replies and outages. |
+
+Intervals must fit one applicable price version and one UTC month; ambiguous crossings are quarantined, not automatically split. Missing valid prices produce a P0 incident without charges. Historical catalog repair and explicit receipt release use the [operator procedure](../../README.md#controlled-historical-price-repair); ordinary price commands cannot backdate a new version. Closing never drains or repairs input, and pending/quarantined target-month usage can bill later.
+
+Credit allocation follows serialized processing order. Splitting a compatible group preserves its cumulative amount; reordering around grants or closing can change credit timing or the billing group. No inbox cleanup is implemented: deduplication depends on retained receipt identities and content. Automatic interval segmentation, correction policy and replay-safe retention remain extensions.
 
 ## TODO: freshness, durability, and operations
 
-- [ ] Agree on spend-status freshness, pending-input visibility, month rollover, changed limits, polling cadence, and platform behaviour when status is unavailable. Count gross usage before credit and exclude add-ons.
-- [ ] Define sender and billing failure coverage, retry age, permitted delay or loss, buffer capacity, overload responses, and ownership of recovery before and after receipt.
+- [ ] Agree a spend-status freshness target, polling cadence and platform behaviour when status is unavailable. Gross usage, month rollover, changed limits and pending/error visibility are implemented; undelivered measurements remain invisible.
+- [ ] Agree production failure coverage, replay age, buffer capacity and recovery ownership. The simulator retains pending data through process restarts; volume loss, sustained overload and disaster recovery need separate guarantees.
 - [ ] Plan database backup, restoration, and any replication required by the agreed failure coverage. A surviving local volume covers a restart, not destruction of its only storage copy.
 - [ ] Define metrics and alerts for arrival rate, processing rate, oldest unfinished input, quarantine, lock waits, and storage growth; add reconciliation between received units and accounting effects.
 
-## TODO: higher load and evolution beyond C
+## Scaling to billions of records
 
-- [ ] Measure average and peak sandbox counts, metrics, payload sizes, batching, synchronized minute bursts, and retry traffic. Estimate table, index, WAL, archive, and replica storage with explicit retention assumptions.
-- [ ] Benchmark ingestion, workers, status reads, and closing together. Include large customers and backlog recovery while new usage continues; record latency targets and measured processing headroom.
-- [ ] Evaluate customer-aware batching, query indexes, partitioning, vacuum, archive handoff, and retention. State each improvement's cost and the conditions under which it helps.
-- [ ] Compare continued PostgreSQL use with separate raw ingestion and aggregation. Preserve price/month boundaries, stable delta identities, recovery checkpoints, and deduplication ownership when repartitioning.
-- [ ] Define triggers for a broker or customer sharding from measured capacity, recovery time, freshness, and operating cost. Evaluate raw archive lag, broker retention, replay, and a closing boundary across all pipeline stages.
-- [ ] Plan a reconciled transition with a clear accounting owner and rollback strategy; demonstrate that migration cannot drop usage, apply credit twice, or change issued invoices.
+**Proposal:** keep C initially; move towards D when measured writes, storage or processing delay exceed agreed targets. These extensions are not implemented or adopted contracts.
 
-Technical references above were checked on 8 October 2026. Operational guarantees and capacity remain to be specified and measured in the TODOs.
+Process large measurement volumes separately; send smaller accounting increments to the financial database:
+
+| Layer | Purpose | Main benefit |
+| --- | --- | --- |
+| Queue, e.g. Kafka | Retain accepted measurements pending processing. | Absorb bursts and accounting outages. |
+| History: object archive, optional analytical (OLAP) database | Archive originals; OLAP serves historical reports. | Keep large queries away from financial writes. |
+| Transactional database, e.g. PostgreSQL | Maintain credit, charges, limits and invoices. | Commit related financial changes together. |
+
+OLAP is optional; no engine is selected. A Go aggregator prepares increments; PostgreSQL remains the financial source of truth.
+
+1. **Keep receipt available during accounting outages.** C already separates receipt and accounting. D's replicated queue can accept measurements while the financial database is unavailable. Confirm durable receipt, then account later. **Cost:** another service and a finite buffer that can fill during prolonged overload.
+
+2. **Reduce financial writes by combining usage.** One customer's 100 sandboxes at the same CPU price can produce one minute's accounting increment instead of 100 writes. Keep originals for audit. Combine matching metric, price, UTC usage month and billing destination; preserve credit-grant order, exact money and rounding. **Cost:** waiting for a sum delays limit visibility.
+
+3. **Keep restarts from changing charges.** C already prevents double charging. An aggregator must not place E2 in both sums A and B. Save consumed inputs with their immutable output, then commit each output's identity with its financial effects. **Cost:** durable aggregation state; Kafka alone cannot make external PostgreSQL writes atomic with consumer progress.
+
+4. **Spread load and bound active storage.** Put Acme and Cyberdyne in separate PostgreSQL databases if needed, keeping one owner per account. Distribute original events by stable identity. Archive before deleting active history; retain identities throughout permitted replay. **Cost:** more stores and ownership coordination; a very large customer still needs aggregation.
+
+5. **Keep invoice contents stable as the pipeline grows.** C closes only already processed groups under the customer account lock. D must preserve this cutoff through aggregation: unfinished input can appear on a later invoice, including already accepted usage. **Cost:** document this delay and separate rounding boundaries; platform limit reads must also expose processing progress.
+
+6. **Prove recovery before switching.** At 1_000 measurements/s arriving and 1_000/s processed, an outage backlog never shrinks. Test bursts, large customers and recovery alongside normal operation. Monitor unfinished input, errors, archive lag and storage; catch up before retention expires. Compare old/new results without live financial effects, then transfer state and identities to one owner with a rollback plan. **Cost:** spare capacity and controlled migration.
+
+Assuming 200 bytes/event, ten sandboxes/customer produce 4.32 TB per 30 days before indexes, WAL, replicas and backups. Retention must cover recovery and audit; [workload calculations](#workload-assumptions-for-further-analysis) do not establish capacity.
+
+References checked on 10 October 2026: [Kafka delivery semantics](https://kafka.apache.org/43/design/design/#message-delivery-semantics), [PostgreSQL transactions](https://www.postgresql.org/docs/18/tutorial-transactions.html), and [OLAP workloads](https://clickhouse.com/docs/get-started/about/intro). The OLAP reference illustrates the role; it does not select a product.

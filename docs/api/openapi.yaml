@@ -1258,7 +1258,10 @@ components:
           $ref: '#/components/schemas/Identifier'
         metric:
           $ref: '#/components/schemas/Identifier'
-          description: Resource identifier; accounting registries are future work.
+          description: >-
+            Resource identifier retained without a catalog foreign key at receipt.
+            The accounting worker selects historical prices from the metric catalog;
+            missing valid prices quarantine usage without financial effects.
         period_start:
           $ref: '#/components/schemas/ConsumptionTime'
           description: Inclusive start of consumption.

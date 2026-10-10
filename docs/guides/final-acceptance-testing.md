@@ -1,5 +1,17 @@
 # Final acceptance test procedure
 
+## Contents
+
+- [1. Scope and acceptance decisions](#1-scope-and-acceptance-decisions)
+- [2. Automated regression gate in an isolated project](#2-automated-regression-gate-in-an-isolated-project)
+- [3. Fresh assignment environment and seed inspection](#3-fresh-assignment-environment-and-seed-inspection)
+- [4. Walk through the complete assignment and transport failures](#4-walk-through-the-complete-assignment-and-transport-failures)
+- [5. Final invoices and independently persisted state](#5-final-invoices-and-independently-persisted-state)
+- [6. Remaining business, integrity, and concurrency scenarios](#6-remaining-business-integrity-and-concurrency-scenarios)
+- [7. Persistence and immutable reads across restart](#7-persistence-and-immutable-reads-across-restart)
+- [8. Credit-covered gross spend and add-on exclusion](#8-credit-covered-gross-spend-and-add-on-exclusion)
+- [9. Architecture review, limitations, and completion record](#9-architecture-review-limitations-and-completion-record)
+
 Use this procedure to review one revision of the complete billing service. Run the
 automated regression gate, walk through the assignment using the public API, and
 compare its responses with persisted accounting state. Record evidence before
@@ -107,7 +119,7 @@ make migration-status > "$acceptance_evidence/migrations-concurrent.txt"
 cmp "$acceptance_evidence/migrations.txt" "$acceptance_evidence/migrations-concurrent.txt"
 ```
 
-Both runners must exit zero, with the same seven version rows and unchanged seed
+Both runners must exit zero, with the same nine version rows and unchanged seed
 values. Retain both logs. This exercises concurrent no-op runners after a fresh
 migration; it does not demonstrate a failing future migration or simultaneous
 first-time application of future versions.
@@ -201,8 +213,10 @@ and `completed=N steps=24`, with `N` matching the row below. GET steps marked
 `await` poll until their expected state is observed. A nonzero `processing_errors`
 is a failure for this valid scenario. Do not replace polling with a fixed sleep.
 An ERROR worker log with `priority=P0` and `error_code=missing_valid_price` identifies
-a missing eligible catalog version. Correct its dated price immediately and
-explicitly release the investigated receipt using the [recovery procedure](../../README.md#transactional-usage-accounting).
+a missing eligible catalog version. Use the [controlled SQL repair](../../README.md#controlled-historical-price-repair),
+then explicitly release the receipt using the [recovery procedure](../../README.md#transactional-usage-accounting).
+Ordinary `POST /prices` rejects new backdated versions; invoice issuance never
+repairs or processes the receipt.
 The assignment seed's effective starts remain unchanged; additional metrics must
 be priced before their first measurement, and `effective_from` cannot be null.
 Use explicit month paths for October/November; `/limit-status` uses the real
@@ -422,6 +436,12 @@ worker. When manually replaying any additional JSON workflow, use a new seeded
 project for **each** file. Reusing the assignment accounts or changing only source
 would invalidate its literal expected results.
 
+The fixed `billing-price-versions` workflow must use the private-schema automated
+runner. It declares `2026-10-01T00:00:00Z` for its first two price commands and
+`2026-12-01T00:00:00Z` for its two rejected backdated commands and invoice. A live
+December server cannot create its October versions through ordinary `POST /prices`;
+changing only measurement dates does not advance or override the server clock.
+
 Section 8 adds a required manual combination of credit, an add-on, and a finite
 limit. The existing public limit workflow uses a customer without credit; the
 combined check must be recorded separately from the automated suite.
@@ -429,7 +449,7 @@ combined check must be recorded separately from the automated suite.
 | Scenario / regression entry point | Inputs and required outcome |
 | --- | --- |
 | [Command retries](../simulator/billing-command-retries.json), 16 steps | Grant, purchase, limit, and price retries preserve original results. Changed grant/price content and a second pack subscription return `409`. Replaying the old 1_500-cent limit after raising it to 2_000 preserves the newer setting. Final Acme balance is 2_500_000_000 ticks, version 4. |
-| [Price versions](../simulator/billing-price-versions.json), 8 steps | Append an 8-cent default effective 12 October and a 3-cent Cyberdyne override effective 19 October. Two 100_000_000-unit increments on 13/20 October produce 800 + 300 cents and `CYBERDYNE-0001` total 1_100. Two changes that would rewrite rated history return `409`. |
+| [Price versions](../simulator/billing-price-versions.json), 8 steps | Append an 8-cent default effective 12 October and a 3-cent Cyberdyne override effective 19 October. Two 100_000_000-unit increments on 13/20 October produce 800 + 300 cents and `CYBERDYNE-0001` total 1_100. Both new backdated versions return `422` / `invalid_command` with field `effective_from`; no price or financial history changes. |
 | [Exact credit](../simulator/billing-exact-credit.json), 6 steps | One cent of credit and two 1_250-unit Acme increments consume 10_000 ticks, leaving 990_000. A zero-cent invoice retains both exact audit amounts; issuance consumes no extra ticks. |
 | [Credit exhaustion](../simulator/billing-credit-exhaustion.json), 9 steps | One cent covers part of 500_000 Acme units (2 cents gross). A pack bought `2026-10-31T23:59:59Z` still costs 2_000 cents. Invoice total is 2_001; credit becomes zero. A later 5-cent grant leaves 5_000_000 ticks and cannot change the captured invoice. |
 | [Limit status](../simulator/billing-limit-status.json), 15 steps | Gross crosses 1_500 cents, a raise to 2_000 clears it, a new UTC month resets gross, zero is reached even without usage, and NULL means unlimited. Every measured unit is still invoiced: 1_817 cents. |
@@ -578,7 +598,8 @@ make up
 
 ## 9. Architecture review, limitations, and completion record
 
-Review the [selected architecture and workload assumptions](../brainstorming/architecture-options.md),
+Review the [submission overview](../architecture/submission-overview.md),
+[selected architecture and workload assumptions](../brainstorming/architecture-options.md),
 [usage-to-invoice flow](../architecture/usage-to-invoice.md),
 [financial rules](../architecture/accounting-rules.md), and
 [operational README](../../README.md#architecture-and-http-interfaces). Record:
@@ -592,8 +613,9 @@ Review the [selected architecture and workload assumptions](../brainstorming/arc
   no authorization enforcement is implemented in this assignment.
 - Why Go, PostgreSQL, Compose, and the durable simulator were selected, and whether
   the documented design addresses about 50_000 customers with several through
-  thousands of concurrent sandboxes and minute records. Review growth TODOs and
-  bottlenecks; this procedure does not establish billion-record capacity or a
+  thousands of concurrent sandboxes and minute records. Review the scaling proposal
+  and remaining operational decisions; this procedure does not establish
+  billion-record capacity or a
   measured production throughput/freshness guarantee.
 
 Keep these implementation limits visible in the acceptance result: a receipt must
@@ -602,7 +624,11 @@ errors rather than invented allocations. Invoice issuance is explicitly invoked
 through the API. Month ordering, half-up grouping, and credit allocation order
 are implementation decisions. Automatic calendar scheduling, broader interval
 segmentation, additional correction policies, and production scaling remain
-follow-ups; the architecture comparison still contains growth-analysis TODOs.
+follow-ups. Closing includes only accounting committed before it acquired the
+customer account lock; pending and quarantined target-month input never waits
+inside publication. The first invoice cannot skip earlier known usage, and later
+new invoices require a closed predecessor. Processing after closure routes forward
+without changing issued invoices and can introduce separate rounding groups.
 
 Record the commit and any working-tree changes, date, Compose project names,
 commands and exit results, full-suite logs, completed scenario counts, seed and
