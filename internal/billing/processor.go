@@ -44,7 +44,8 @@ func (s *Store) ProcessBatch(ctx context.Context) (bool, error) {
 }
 
 // accountReceipt reports catalog incidents only after the quarantine commits.
-// Both polling and invoice closing use this transaction and reporting boundary.
+// Worker processing owns this transaction and reporting boundary; closing only
+// snapshots financial effects that have already committed.
 func (s *Store) accountReceipt(ctx context.Context, candidate receipt) error {
 	var missingPrice *accounting.MissingPriceError
 	err := s.transact(ctx, func(tx pgx.Tx) error {
@@ -109,7 +110,7 @@ func processReceipt(ctx context.Context, tx pgx.Tx, candidate receipt) (*account
 		return nil, quarantine(ctx, tx, item.event, err.Error())
 	}
 
-	closed, err := routingMonths(ctx, tx, item.event)
+	closed, err := loadClosedMonths(ctx, tx, item.event.CustomerID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,38 +156,30 @@ func loadPrices(ctx context.Context, tx pgx.Tx, customer, metric string) ([]acco
 	return prices, rows.Err()
 }
 
+// loadClosedMonths reads committed closure history under the customer account lock.
 func loadClosedMonths(ctx context.Context, tx pgx.Tx, customer string) ([]time.Time, error) {
 	rows, err := tx.Query(ctx, "SELECT billing_month FROM closed_billing_months WHERE customer_id=$1", customer)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var months []time.Time
+	var closed []time.Time
 	for rows.Next() {
 		var month time.Time
 		if err := rows.Scan(&month); err != nil {
 			return nil, err
 		}
 
-		months = append(months, month)
+		closed = append(closed, month)
 	}
 
-	return months, rows.Err()
+	return closed, rows.Err()
 }
 
 func quarantine(ctx context.Context, tx pgx.Tx, event usage.Event, message string) error {
 	_, err := tx.Exec(ctx, `UPDATE usage_inbox SET processing_error=$3
         WHERE source=$1 AND event_id=$2 AND processed_at IS NULL AND processing_error IS NULL`,
 		event.Source, event.EventID, message)
-	if err != nil {
-		return err
-	}
-
-	// Preserve the closing decision even if an operator later clears the error.
-	_, err = tx.Exec(ctx, `INSERT INTO invoice_closing_exclusions
-        SELECT customer_id,billing_month,source,event_id,$3
-        FROM invoice_closing_receipts WHERE source=$1 AND event_id=$2
-        ON CONFLICT DO NOTHING`, event.Source, event.EventID, message)
 
 	return err
 }

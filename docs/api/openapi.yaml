@@ -925,28 +925,33 @@ paths:
       tags:
       - Billing
       summary: Close a UTC month and issue its immutable invoice
-      description: The fixed billing period is a whole UTC calendar month, with one immutable invoice per
+      description: >-
+        The fixed billing period is a whole UTC calendar month, with one immutable invoice per
         customer/month. The request accepts only a YYYY-MM month, with no closing-day or usage-cutoff parameter.
-        A chosen issue or delivery day never changes the calendar period. Issue and closure times come from
-        the server clock. A new closure requires the server UTC time to be at or after the first instant
-        of the following month. Ongoing or future months return 422 with invalid_command and field month
-        before cohort capture, receipt processing, or any financial changes. January becomes eligible
-        exactly at 00:00:00Z on 1 February. Customer schedules and document delivery are not implemented.
-        The customer/month is the stable operation identity. First capture a durable cohort of
-        committed pending receipts through the target month under the account lock. Drain without holding
-        that lock across transactions. Receipts with any non-null processing_error, including P0 missing_valid_price,
-        are durably excluded without financial effects and never block invoice issuance.
-        Exclusions remain permanent after operator release. Repair missing historical prices through
-        controlled SQL and release the investigated receipt; subsequent accounting uses an open
-        billing month and cannot change the issued invoice. Storage deadlines
-        return 503 and retain resumable closing state. Later accepted receipts route to another open month
-        even with an older receipt timestamp. Finalize closure, freeze rated groups, snapshot buyer details
-        and exact audit ticks, and allocate the next customer-specific invoice number in one transaction.
-        Retry returns the original snapshot and never consumes credit again. Issue months in increasing
-        order; earlier unclosed rated groups block a later close. Empty months are supported. An operator
-        invokes closing explicitly; no automatic calendar scheduler is included. USD group presentation
-        uses cumulative half-up cents and an aggregate credit line derived from rounded gross minus rounded
-        net. Add-ons are charged in full, including the purchase month.
+        A new closure requires server UTC time at or after the first instant of the following month.
+        Ongoing or future months return 422 with invalid_command and field month before any financial changes.
+        January becomes eligible exactly at 00:00:00Z on 1 February. Closing uses one transaction and the
+        customer account lock. Only usage accounting committed before acquisition of that lock is included
+        through rated_usage_groups. Closing never processes pending usage or waits for the inbox to drain.
+        Pending and quarantined usage in the target month do not block valid chronological issuance, even
+        if accepted before the closing request.
+        An in-flight worker holding the account lock must finish before closing acquires it. Workers
+        acquiring the lock after the committed closure preserve an original month later than the latest
+        closure. Usage from the latest closed month or an earlier month routes strictly after that closure
+        and at or after its receipt month, including skipped earlier empty months. Retain historical prices and original-month
+        gross spend. Separate billing groups have separate rounding boundaries. Snapshot buyer details,
+        freeze groups, store the closed month and invoice, and advance the customer-specific number and
+        state version atomically. A pre-commit failure rolls back the entire closing attempt; a retry
+        can include newly processed groups. A lost committed response is resolved by the same customer/month
+        identity: retry returns the original immutable snapshot and never consumes credit again. Storage
+        deadlines return 503 when a response can be delivered. A first invoice cannot skip an earlier original
+        usage month already present in usage_inbox or earlier unclosed rated groups. This indexed existence
+        check does not process usage. Each subsequent new invoice requires the immediately preceding month
+        closed. Missing predecessors, skipped earlier data or incompatible closed history return 409 without
+        financial effects. Empty months are supported; no separate first-month configuration is required.
+        An operator invokes closing explicitly; scheduling and document delivery are not implemented.
+        USD group presentation uses cumulative half-up cents and an aggregate credit line derived from
+        rounded gross minus rounded net. Add-ons are charged in full, including the purchase month.
       x-implementation-status: implemented
       parameters:
       - name: customer_id

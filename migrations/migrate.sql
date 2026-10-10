@@ -79,4 +79,10 @@ SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 8) AS apply_0
     INSERT INTO schema_migrations (version, name) VALUES (8, 'invoice_closing_exclusions');
 \endif
 
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 9) AS apply_009 \gset
+\if :apply_009
+    \ir 009_processed_usage_closing.sql
+    INSERT INTO schema_migrations (version, name) VALUES (9, 'processed_usage_closing');
+\endif
+
 COMMIT;

@@ -1,5 +1,5 @@
 ---
-title: Implemented PostgreSQL schema (migrations 001-008)
+title: Implemented PostgreSQL schema (migrations 001-009)
 config:
   layout: elk
 ---
@@ -21,9 +21,6 @@ erDiagram
 
     customers ||--o{ spend_limit_operations : customer_id
     customers ||--o{ closed_billing_months : customer_id
-    customers ||--o{ invoice_closings : customer_id
-    invoice_closings ||--o{ invoice_closing_receipts : "(customer_id, billing_month)"
-    usage_inbox ||--o{ invoice_closing_receipts : "(source, event_id)"
     closed_billing_months ||--o| invoices : "(customer_id, billing_month)"
     invoices ||..o{ invoiced_usage_groups : "(customer_id, billing_month)"
     rated_usage_groups ||--o| invoiced_usage_groups : group_id
@@ -118,24 +115,6 @@ erDiagram
         date billing_month PK "First day of UTC billing month"
         timestamptz closed_at "Finite"
     }
-    invoice_closings {
-        text customer_id PK,FK
-        date billing_month PK "First day of UTC billing month"
-        timestamptz started_at "Finite"
-    }
-    invoice_closing_receipts {
-        text customer_id PK,FK
-        date billing_month PK,FK
-        text source PK,FK
-        text event_id PK,FK
-    }
-    invoice_closing_exclusions {
-        text customer_id PK,FK
-        date billing_month PK,FK
-        text source PK,FK
-        text event_id PK,FK
-        text processing_error "Original error; immutable"
-    }
     invoices {
         text customer_id PK,FK
         date billing_month PK,FK
@@ -154,7 +133,7 @@ erDiagram
         timestamptz applied_at "Default now()"
     }
 
-    %% This diagram covers all 18 tables and 82 columns after migrate.sql and migrations 001-008.
+    %% This diagram covers all 16 tables after migrate.sql and migrations 001-009.
     %% All columns are NOT NULL unless explicitly labeled Nullable.
     %% PK and FK markers identify membership in primary and foreign keys, including composite keys.
     %% Solid relationships include parent identity in the child's primary key; dashed ones do not.
@@ -169,13 +148,9 @@ erDiagram
     %% addon_subscriptions UNIQUE: (customer_id, addon_name).
     %% invoices UNIQUE: (customer_id, invoice_number).
     %% price_versions, usage_ratings, and credit_entries reject updates and deletes through triggers.
-    %% closed_billing_months, spend_limit_operations, invoice_closings, invoice_closing_receipts,
-    %% invoices, and invoiced_usage_groups also reject updates and deletes through triggers.
+    %% Closed months, spend-limit operations, invoices and invoiced groups reject updates and deletes.
     %% Triggers also preserve group identity and validate receipt customer, metric, and UTC month.
     %% A group referenced by invoiced_usage_groups rejects updates and deletes.
     %% InvoiceLine values are stored in invoices.snapshot.lines; there is no invoice_lines table.
     %% No extra FK matches invoiced_usage_groups customer/month to the group's customer/month.
-    %% No extra FK matches invoice_closing_receipts customer to the receipt's customer.
     %% Those ownership checks belong to the closing transaction; edges show only declared FKs.
-
-    invoice_closing_receipts ||--o| invoice_closing_exclusions : "permanently excludes quarantined receipt"

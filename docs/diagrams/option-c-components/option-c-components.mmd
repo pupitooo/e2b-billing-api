@@ -13,7 +13,7 @@ config:
 %% The two storage blocks are tables in one PostgreSQL database.
 %% Solid arrows identify HTTP or SQL interfaces.
 %% T2 includes claiming the inbox row, financial writes, and marking it processed.
-%% The closing barrier is per customer and must not hold the worker's customer lock while waiting.
+%% Closing holds the customer account lock for one publication transaction and never drains usage.
 flowchart LR
     platform["Sandbox platform - separate system<br/>Go simulator in the assignment<br/>Metering + durable sender buffer<br/>Stable IDs + retry + spend-status polling"]
     callers["Customer / E2B administrator<br/>Closing operator"]
@@ -22,14 +22,14 @@ flowchart LR
 
     subgraph database["One PostgreSQL database - one local Compose service"]
         inbox[("usage_inbox<br/>Accepted measurements<br/>Unique source + event_id<br/>Processed marker + errors")]
-        accounting[("Billing tables<br/>Customers, prices, subscriptions<br/>Usage charges, credit ledger, spend state<br/>Immutable invoices + closing exclusions")]
+        accounting[("Billing tables<br/>Customers, prices, subscriptions<br/>Usage charges, credit ledger, spend state<br/>Immutable invoices + closed months")]
     end
 
     platform <-->|"HTTP / JSON<br/>POST /usage/batches<br/>202 after T1 commit"| api
     platform <-->|"HTTP GET<br/>/customers/{id}/limit-status<br/>Processed status + lag"| api
     callers <-->|"HTTP commands and queries<br/>Credit, prices, add-ons,<br/>limits, invoices, closing"| api
 
-    api -->|"SQL T1: persist + deduplicate<br/>SQL reads: progress + closing boundary"| inbox
+    api -->|"SQL T1: persist + deduplicate<br/>SQL reads: processing progress"| inbox
     worker <-->|"SQL T2: poll + claim + mark processed<br/>Customer-first locking + receipt recheck"| inbox
     worker -->|"SQL T2: customer lock<br/>Financial writes + spend update<br/>ONE commit with inbox completion"| accounting
     api <-->|"SQL commands and queries<br/>Prices / credit / add-ons / limits<br/>Invoice snapshots + spend status<br/>Quarantined usage never blocks issuance"| accounting

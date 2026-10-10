@@ -11,7 +11,7 @@ config:
 %% Implemented accounting flow, clarified on 10 October 2026.
 %% Numbered boxes explain transformations, not services or SQL statement order.
 %% Example: one customer, metric, price version, usage month, and billing month.
-%% All 1_000 events arrive before October closes; no add-ons are included.
+%% All 1_000 events are processed before October closes; no add-ons are included.
 %% The 2-cent starting credit is illustrative; 1 cent = 1_000_000 ticks.
 %% Group and credit boxes show cumulative results after all events are processed.
 %% Steps 2-4 commit together for each event; credit uses exact ticks.
@@ -40,12 +40,12 @@ flowchart TB
         rounding --> lines --> invoice
     end
 
-    errors["Any processing_error: retain unprocessed usage<br/>Durably exclude from closing; no financial effects<br/>Operator SQL repair and explicit release<br/>Recover into an eligible open billing month"]
+    errors["Any processing_error: retain unprocessed usage<br/>Closing reads only processed groups; no financial effects<br/>Operator SQL repair and explicit release<br/>Recover into an eligible open billing month"]
     rating -.->|"Quarantine"| errors
     errors -.->|"Does not block invoice issuance"| invoice
 
     intake -->|"Accepted events wait in usage_inbox"| processing
-    processing -->|"At closing, read stored group totals; credit is already allocated"| closing
+    processing -->|"At closing, lock account and read processed group totals; credit is already allocated"| closing
 
     classDef input fill:#e9f7ee,stroke:#287d4e,color:#173b28;
     classDef accounting fill:#edf0ff,stroke:#56649c,color:#24335c;

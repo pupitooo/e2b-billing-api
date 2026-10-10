@@ -51,13 +51,13 @@ Steps 3 and 4 show the cumulative state **after all 1_000 events**, while step 2
 
 The phase boxes distinguish receipt, accounting, and issuance. The seven numbered steps describe accounting transformations; they do not each require their own service or table. `InvoiceLine` values are stored together in `invoices.snapshot.lines`. The next section shows the actual tables and relationships.
 
-Shared Go calculations are implemented in `internal/accounting`; the worker persists them transactionally through `internal/billing`. PostgreSQL stores the inbox, price catalog, rated groups, exact credit ledger and balances, monthly gross usage, closing cohorts, and immutable invoice snapshots. The [financial rules](accounting-rules.md) describe the accounting contract.
+Shared Go calculations are implemented in `internal/accounting`; the worker persists them transactionally through `internal/billing`. PostgreSQL stores the inbox, price catalog, rated groups, exact credit ledger and balances, monthly gross usage, closed months, and immutable invoice snapshots. The [financial rules](accounting-rules.md) describe the accounting contract.
 
 The flow diagram follows the required `Credits → Rounding` order. Credit balances, allocations, and ledger entries use exact ticks. Invoice presentation rounds each group's gross and net amounts to cents after credit allocation.
 
 ## Implemented PostgreSQL schema (ERD)
 
-This ERD shows all **18 current tables**, including the migration runner's `schema_migrations` table. It uses the SQL table and column names, types, primary keys, foreign keys, and database cardinalities.
+This ERD shows all **16 current tables**, including the migration runner's `schema_migrations` table. It uses the SQL table and column names, types, primary keys, foreign keys, and database cardinalities.
 
 ![Current implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
 
@@ -67,7 +67,7 @@ This ERD shows all **18 current tables**, including the migration runner's `sche
 
 The stored path from a measurement to its invoice is `usage_inbox → usage_ratings → rated_usage_groups → invoiced_usage_groups → invoices`. `price_versions` supplies the historical price, `credit_entries` records grants and usage debits, and `monthly_usage` retains gross spend in the original usage month. `customer_billing_state` holds the current credit balance, spend limit, state version, and next invoice number.
 
-`invoice_closings` identifies a customer/month closing attempt; `invoice_closing_receipts` fixes its cohort by linking to actual inbox identities. `invoices` references `closed_billing_months` by `(customer_id, billing_month)`, while `invoiced_usage_groups` links each frozen group to its issued invoice. The optional cardinality allows a closed month without an invoice at the SQL level; the application publishes closure, invoice, group links, and numbering in one transaction.
+Closing needs no separate attempt or pending-usage membership tables. `invoices` references `closed_billing_months` by `(customer_id, billing_month)`, while `invoiced_usage_groups` links each frozen group to its issued invoice. The optional cardinality allows a closed month without an invoice at the SQL level; the application publishes closure, invoice, group links, and numbering in one transaction.
 
 **Invoice lines are stored in `invoices.snapshot.lines`, not a separate SQL table.** The JSON snapshot also preserves buyer details, exact audit amounts, and issue time. Add-on lines use the purchased price stored in `addon_subscriptions`; the ERD shows that table's catalog and customer foreign keys, while invoice traceability to a subscription is stored in the JSON snapshot.
 
@@ -439,11 +439,26 @@ Recommended design: store `provider` and `external_invoice_id` in separate integ
 
 ### Invoice generation workflow
 
-Closing has three phases: capture or resume a fixed cohort of accepted receipts, process those receipts in their individual accounting transactions, then publish the invoice atomically under the customer account lock. A new closure requires the whole UTC month to have ended. Earlier committed accounting survives an interrupted close; retrying the same customer/month resumes work or returns the original invoice. Issuance uses the credit already allocated during accounting.
+Closing is one atomic transaction with three logical steps. It includes only usage
+whose accounting committed before the customer account lock was acquired. The
+worker owns all usage processing; the close does not wait for pending usage.
 
-1. **Capture:** commit the customer/month closing record and the identities of its pending receipts. Receipts outside this fixed cohort route to another open month, even if their receipt timestamp is earlier.
-2. **Process:** account for each captured receipt in a separate transaction. A processing error durably excludes the receipt; a timeout or storage failure leaves committed progress available for retry.
-3. **Publish:** under the customer account lock, snapshot buyer details and signed invoice lines, freeze the rated groups, close the month, and advance numbering in one transaction.
+1. **A — Lock and validate:** lock the customer account, return an existing invoice
+   on retry, and require an ended UTC month. The first close cannot skip existing
+   earlier usage; each later close requires the previous month closed.
+2. **B — Build:** read processed groups and applicable add-ons, round gross and net,
+   and build lines, buyer details and the next number. Use already allocated credit.
+3. **C — Publish:** store the closed month and immutable snapshot, freeze groups,
+   and advance numbering and state version together, then commit.
+
+Pending and quarantined usage in the target month do not block a correctly ordered close. Usage the worker processes
+later goes to an eligible open billing month. An in-flight worker already holding
+the account lock finishes before closing can acquire it. If closing rolls back,
+a retry can include newly processed groups; a committed invoice stays unchanged.
+This policy accepts missing pending usage on the current invoice for simplicity
+and faster closing, without losing the usage or its historical financial meaning.
+Separate billing months create separate rounding boundaries; see the
+[closing contract](accounting-rules.md#transaction-and-closing-contract).
 
 ![Monthly invoice generation](../diagrams/closing-workflow/closing-workflow.png)
 
@@ -499,7 +514,7 @@ November's invoice includes USD 2 for October and USD 4 for November, while the 
 
 A single "month" column would lose this distinction. A rated group describes the origin and cost of usage; an invoice line describes the particular issued document that bills it.
 
-The implemented `CloseMonth` captures a stable cohort of accepted customer events. It drains their processing without holding the customer lock across those transactions, then atomically freezes groups and creates the invoice snapshot under that lock. Every quarantined receipt is permanently excluded without blocking closing. `routingMonths` treats a closing month as unavailable to receipts outside its eligible cohort, including permanent quarantine exclusions, so later input reaches an appropriate open period. Closing and routing are implemented in `internal/billing`.
+The implemented `CloseMonth` locks the account and invoices only already processed groups in one transaction. Pending and quarantined usage remain in `usage_inbox` without delaying issuance. The worker reads committed `closed_billing_months` under the same lock: usage processed after closure routes to an eligible open billing month, retaining its original usage month and historical price. Even usage accepted well before closing can therefore appear on a later invoice. Closing never debits credit or processes usage.
 
 ## 11. What must stay atomic during processing
 

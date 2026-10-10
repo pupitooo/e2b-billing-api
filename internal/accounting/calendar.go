@@ -36,9 +36,10 @@ func UsageMonth(start, end time.Time) (time.Time, error) {
 	return month, nil
 }
 
-// BillingMonth preserves an open original month. Closed original months route
-// to the first open month at or after both original usage and durable receipt.
-// The future caller must read closure state under the same customer lock as rating.
+// BillingMonth preserves the original month while chronological closing permits
+// its invoice. Otherwise route at or after durable receipt and strictly after
+// the latest closed month, including when an earlier empty month was skipped.
+// The caller reads closure state under the same customer lock as rating.
 func BillingMonth(usageMonth, receivedAt time.Time, closedMonths []time.Time) (time.Time, error) {
 	original, err := canonicalMonth(usageMonth)
 	if err != nil {
@@ -50,30 +51,29 @@ func BillingMonth(usageMonth, receivedAt time.Time, closedMonths []time.Time) (t
 		return time.Time{}, err
 	}
 
-	closed := make(map[time.Time]bool, len(closedMonths))
+	var latestClosed time.Time
 	for _, month := range closedMonths {
 		canonical, err := canonicalMonth(month)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("closed months must be UTC month boundaries")
 		}
 
-		closed[canonical] = true
+		if canonical.After(latestClosed) {
+			latestClosed = canonical
+		}
 	}
 
-	if !closed[original] {
+	if original.After(latestClosed) {
 		return original, nil
 	}
 
-	candidate := original
-	if receiptMonth.After(candidate) {
-		candidate = receiptMonth
+	candidate := latestClosed.AddDate(0, 1, 0)
+	if candidate.Year() > usage.MaxUTCYear {
+		return time.Time{}, fmt.Errorf("no representable open billing month")
 	}
 
-	for closed[candidate] {
-		candidate = candidate.AddDate(0, 1, 0)
-		if candidate.Year() > usage.MaxUTCYear {
-			return time.Time{}, fmt.Errorf("no representable open billing month")
-		}
+	if receiptMonth.After(candidate) {
+		candidate = receiptMonth
 	}
 
 	return candidate, nil

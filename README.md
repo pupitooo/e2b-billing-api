@@ -7,7 +7,7 @@ The project uses the selected [option C architecture](docs/brainstorming/archite
 Transactional accounting, financial APIs, and immutable monthly invoices are implemented. For the design and financial details, start with:
 
 - [Billing model — Architectural decisions and rationale](docs/architecture/billing-model.md#architectural-decisions-and-rationale): design choices and trade-offs.
-- [Billing model — Implemented PostgreSQL schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001008): the complete ERD and its editable source.
+- [Billing model — Implemented PostgreSQL schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001009): the complete ERD and its editable source.
 - [Financial rules — Exact money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit): tick precision and credit allocation.
 - [Usage-to-invoice guide — One example through the entire flow](docs/architecture/usage-to-invoice.md#2-one-example-through-the-entire-flow): a measurement's path to an issued invoice.
 
@@ -773,8 +773,8 @@ resolution before implementing the conflicting behavior or adopting it as a cont
 | Invoice presentation | Round cumulative groups half-up, derive displayed credit from rounded gross and net, and preserve exact audit values. Reproduce the assignment's invoice totals and balances. | Cent invoices and example results come from the assignment; the rounding method is a system policy. [Rounding and presentation](docs/architecture/accounting-rules.md#rounding-and-invoice-presentation). |
 | Fixed monthly periods | Use whole UTC calendar months and one immutable invoice per customer/month. New closures require a completed month; generation or delivery preferences cannot move its boundaries. Retries retain the original number and snapshot. | UTC calendar months and monthly customer invoices come from the assignment; completion checks and immutable retry behavior enforce the system contract. [Fixed calendar months](docs/architecture/accounting-rules.md#fixed-calendar-month-contract), [completed-month validation](docs/architecture/accounting-rules.md#invoice-generation-and-delivery-proposal). |
 | Spend limits and add-ons | Compare original-month gross usage before credit, excluding add-ons; account for all measured usage even beyond the limit. Charge the full purchased monthly add-on price from the purchase month. | Assignment rules. [Months, limits, add-ons, and late usage](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). |
-| Late usage | Preserve the consumption month for prices, limits, and audit; route usage from a closed month to the first eligible open billing month, including repaired receipts excluded from closing. Never reopen an issued invoice. | The assignment's late October example; general routing is a system policy. [Late-usage rules](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). |
-| Atomic accounting and closing | Serialize financial writes per customer. Commit each receipt's complete financial effect with inbox completion. Capture a fixed committed receipt cohort, drain it, and publish the closed month, frozen groups, snapshot, and number atomically; all quarantined receipts are durably excluded and never block issuance. | System transaction and closing policy supporting correct retries and immutable invoices. [Transaction and closing contract](docs/architecture/accounting-rules.md#transaction-and-closing-contract). |
+| Late usage | Preserve the consumption month for prices, limits, and audit; route usage from a closed or skipped earlier month to an eligible billing month after the latest closure and at or after receipt, including repaired usage. Never reopen an issued invoice. | The assignment's late October example; general routing is a system policy. [Late-usage rules](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). |
+| Atomic accounting and closing | Serialize financial writes per customer. Commit each receipt's complete financial effect with inbox completion. Invoice only usage already processed when the customer account lock is acquired. Never drain pending usage; pending and quarantined usage in the target month do not block issuance. The first close cannot skip existing earlier usage; each subsequent new invoice requires its previous month closed. Publish the closed month, frozen groups, snapshot, and number in one transaction. Usage processed after closure bills in an eligible open month. | System transaction and closing policy supporting correct retries and immutable invoices. [Transaction and closing contract](docs/architecture/accounting-rules.md#transaction-and-closing-contract). |
 | Supported timestamps | Validate consumption and receipt times after UTC conversion, within years 1000 through 9999, with at most microsecond precision. | System parsing boundaries. [Usage event validation](internal/usage/event.go), [event contract](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed). |
 
 Automatic scheduling and delivery, an external invoice reference, configurable
@@ -816,7 +816,7 @@ The diagram records the selected architecture. The available HTTP endpoints are:
 | `POST /customers/{customer_id}/spend-limit` | Set or remove the monthly gross-usage limit idempotently. |
 | `GET /customers/{customer_id}/limit-status` | Let the platform read the current UTC month's status. |
 | `GET /customers/{customer_id}/months/{month}/limit-status` | Read an explicit original usage month with the current limit configuration. |
-| `POST /customers/{customer_id}/invoices` | Close an explicit month, drain its durable cohort, and return one immutable numbered invoice. |
+| `POST /customers/{customer_id}/invoices` | Close an explicit month from already processed groups and return one immutable numbered invoice. Pending usage is billed later. |
 | `GET /customers/{customer_id}/invoices/{month}` | Read the issued buyer and financial snapshot. |
 
 Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.
@@ -863,9 +863,25 @@ for activation and retries, and the [Catalog provisioning and P0 recovery chapte
 for provisioning requirements. Request fields and conflict responses are in the
 [OpenAPI reference](docs/api/openapi.yaml).
 
-Migration `008` adds immutable closing exclusions and backfills existing errored
-cohort members. Run `make migrate` before starting the updated API and worker;
-complete that rollout before releasing quarantined receipts.
+Migration `009` replaces pending-usage capture with closing from processed groups.
+It removes `invoice_closings`, `invoice_closing_receipts` and
+`invoice_closing_exclusions`, retaining usage, financial history and issued invoices.
+Stop the API and worker before migrating so the previous application cannot access
+retired tables; then start both from the updated source:
+
+```sh
+make stop SERVICE=api
+make stop SERVICE=worker
+make migrate
+make up
+```
+
+An unfinished old closing has no reserved cutoff after this migration. Its already
+committed accounting remains, and its next successful close uses the processed
+groups available at the new account-lock cutoff. Pending usage may be absent from
+that invoice and is accounted later by the worker. A failed closing leaves no
+partial snapshot or consumed number; only a successfully committed invoice fixes
+its contents. Different billing months retain separate group rounding boundaries.
 
 ### Controlled historical price repair
 
