@@ -65,8 +65,8 @@ help:
 	  'docs-check Validate published guides, links, and assets without services' \
 	  'simulate Run or resume platform usage; MODE=step releases one step' \
 	  'simulate-help Show all simulator options' \
-	  'fmt      Format Go source, whitespace, and decimal numeric literals' \
-	  'fmt-check Check gofmt, whitespace, and decimal numeric-literal grouping' \
+	  'fmt      Format Go source and whitespace' \
+	  'fmt-check Check gofmt and whitespace' \
 	  'vet      Run go vet with default and integration build tags' \
 	  'check    Run formatting and static checks together' \
 	  'install-hooks Enable staged Go checks before every commit in this clone' \

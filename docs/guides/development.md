@@ -22,17 +22,17 @@ make install-hooks
 ```
 
 Every subsequent normal commit checks the staged snapshot with `gofmt`, the
-`wsl` whitespace rules, the project's numeric-literal rule, and `go vet`, including integration-tagged test
+`wsl` whitespace rules, and `go vet`, including integration-tagged test
 code. A formatting violation or vet finding stops the commit. The hook preserves
 partial staging and never formats or stages files automatically. Fix reported problems, then stage the intended
 changes and commit again.
 
 | Command | Behavior |
 | --- | --- |
-| `make fmt` | Group decimal numeric literals, preserve plain calendar years, and apply `gofmt` plus `wsl` whitespace fixes. |
-| `make fmt-check` | Check `gofmt`, `wsl`, and numeric-literal grouping; change no files. |
+| `make fmt` | Apply `gofmt` plus `wsl` whitespace fixes. |
+| `make fmt-check` | Check `gofmt` and `wsl`; change no files. |
 | `make vet` | Run `go vet` for `cmd/`, `internal/`, and `tests/` with default and integration build tags. |
-| `make check` | Run `gofmt`, `wsl`, numeric-literal, and vet checks together, as CI does. |
+| `make check` | Run `gofmt`, `wsl`, and vet checks together, as CI does. |
 | `make install-hooks` | Set this clone's `core.hooksPath` to the tracked `.githooks` directory. |
 
 These commands use installed Go when available, otherwise Docker builds the
@@ -64,17 +64,15 @@ assignment fixtures, and expected outputs explicit; test expectations must not
 derive from production constants. Review this semantic rule manually:
 `make fmt` and `make check` do not enforce constant names.
 
-The [numeric-literal checker](../../cmd/number-format/main.go) requires underscore
-groups of three for decimal Go literals with five or more digits, for example
-`10_000` and `1_000_000`. Fractional digits group from the decimal point, as in
+Use underscore groups of three for decimal Go literals with five or more digits,
+for example `10_000` and `1_000_000`. Fractional digits group from the decimal point, as in
 `0.000_000_01`. Smaller literals may remain plain; existing separators must use
 the same grouping. Calendar years stay plain, including `2026`, year-named values,
-the year argument to `time.Date`, and comparisons with `Year()`. The checker reads
-Go syntax, so comments, string values, dates inside strings, and non-decimal
-literals are preserved. Markdown prose and calculation examples follow the same
-number style; years, dates, identifiers, URLs, and copyable language examples
-retain their required syntax. `make fmt` repairs Go literals; checks report the
-file, line, and required spelling without editing files.
+the year argument to `time.Date`, and comparisons with `Year()`. Markdown prose and
+calculation examples follow the same number style; years, dates, identifiers,
+URLs, and copyable language examples
+retain their required syntax. AI-assisted edits and manual review maintain this
+number style; `make fmt`, the staged hook, and CI do not repair or check it.
 
 Hook configuration is local Git metadata and must be enabled in each clone.
 Git permits bypassing local hooks with `--no-verify`; CI independently runs the

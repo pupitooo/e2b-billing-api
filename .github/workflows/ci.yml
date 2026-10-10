@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Check Go formatting, whitespace, numeric literals, and static analysis
+      - name: Check Go formatting, whitespace, and static analysis
         run: E2B_GO_CHECKS_DOCKER=1 make check
       - name: Validate published documentation, links, and assets
         run: make docs-check
