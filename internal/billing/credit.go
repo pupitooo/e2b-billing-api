@@ -10,9 +10,9 @@ import (
 )
 
 type CreditGrant struct {
-	OperationID string    `json:"operation_id"`
-	AmountCents int64     `json:"amount_cents"`
-	RecordedAt  time.Time `json:"recorded_at"`
+	IdempotencyKey string    `json:"idempotency_key"`
+	AmountCents    int64     `json:"amount_cents"`
+	RecordedAt     time.Time `json:"recorded_at"`
 }
 
 // CreditSnapshot reports exact balance and asynchronous accounting visibility.
@@ -32,7 +32,7 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant CreditGr
 		return err
 	}
 
-	if err := ValidateIdentifier("operation_id", grant.OperationID); err != nil {
+	if err := ValidateIdempotencyKey(grant.IdempotencyKey); err != nil {
 		return err
 	}
 
@@ -53,7 +53,7 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant CreditGr
 
 		var previous string
 		var recorded time.Time
-		operation := "grant/" + grant.OperationID
+		operation := "grant/" + grant.IdempotencyKey
 		err := tx.QueryRow(ctx, `SELECT amount_ticks::text,recorded_at FROM credit_entries
             WHERE customer_id=$1 AND operation_id=$2`, customer, operation).Scan(&previous, &recorded)
 		if err == nil {
@@ -68,9 +68,14 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant CreditGr
 			return err
 		}
 
+		entryID, err := nextAccountingID(ctx, tx, creditEntryIDSequence, creditEntryIDPrefix)
+		if err != nil {
+			return err
+		}
+
 		_, err = tx.Exec(ctx, `INSERT INTO credit_entries
             (credit_entry_id,customer_id,operation_id,group_id,amount_ticks,recorded_at)
-            VALUES ($1,$2,$3,NULL,$4::numeric,$5)`, identity("grant/", customer, grant.OperationID),
+            VALUES ($1,$2,$3,NULL,$4::numeric,$5)`, entryID,
 			customer, operation, ticks.Ticks().String(), grant.RecordedAt.UTC())
 		if err != nil {
 			return err

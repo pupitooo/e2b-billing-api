@@ -30,7 +30,7 @@ Polling keeps platform deployment independent of billing and needs no notificati
 
 Go is the fixed implementation language. Standard HTTP and context cancellation support small independent API, worker and simulator executables; arbitrary-precision integer calculations avoid floating-point money. Pure calculations stay separate from transport and storage.
 
-PostgreSQL provides durable input, exact integer-valued `numeric`, constraints, append-only history and per-customer row locks. It lets financial effects and completion share one transaction, although ingestion and accounting compete for the same database resources. The schema has **16 tables after migrations 001–009**; [the billing model and ERD](billing-model.md#implemented-postgresql-schema-erd-migrations-001009) describe them. Versioned migrations and version records commit together under an advisory lock.
+PostgreSQL provides durable input, exact integer-valued `numeric`, constraints, append-only history and per-customer row locks. It lets financial effects and completion share one transaction, although ingestion and accounting compete for the same database resources. The schema has **17 tables after migrations 001–012**; [the billing model and ERD](billing-model.md#implemented-postgresql-schema-erd-migrations-001012) describe them. Versioned migrations and version records commit together under an advisory lock.
 
 Docker Compose and Make provide one reproducible local runtime for PostgreSQL, API, worker, simulator, the Markdown documentation portal and Scalar API reference. Scalar reads the same OpenAPI contract and provides browser requests. The simulator's durable state makes repeats, outages and lost committed responses reviewable without a real sandbox platform.
 

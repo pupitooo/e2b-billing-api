@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"errors"
+	"net/url"
 	"time"
 
 	"e2b/billing-api/internal/accounting"
@@ -10,10 +11,14 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+const (
+	addonOperationScopePrefix = "addons/"
+	subscriptionIDPrefix      = "subscription/"
+)
+
 type AddonPurchase struct {
-	SubscriptionID string    `json:"subscription_id"`
-	AddonName      string    `json:"addon_name"`
-	PurchasedAt    time.Time `json:"purchased_at"`
+	AddonName   string    `json:"addon_name"`
+	PurchasedAt time.Time `json:"purchased_at"`
 }
 
 type Subscription struct {
@@ -25,46 +30,57 @@ type Subscription struct {
 	StartMonth        string    `json:"start_month"`
 }
 
-// PurchaseAddon snapshots the catalog price once. Replaying that identity
+// PurchaseAddon snapshots the catalog price once. Replaying the scoped request key
 // returns the original subscription, including after its invoice is issued.
-func (s *Store) PurchaseAddon(ctx context.Context, customer string, purchase AddonPurchase) (Subscription, error) {
+func (s *Store) PurchaseAddon(ctx context.Context, customer, key string, purchase AddonPurchase) (Subscription, error) {
+	if err := ValidateIdempotencyKey(key); err != nil {
+		return Subscription{}, err
+	}
+
 	if err := validatePurchase(customer, purchase); err != nil {
 		return Subscription{}, err
 	}
 
+	purchase.PurchasedAt = purchase.PurchasedAt.UTC()
+	scope := addonOperationScopePrefix + customer
 	var result Subscription
 	err := s.transact(ctx, func(tx pgx.Tx) error {
-		if _, err := lockAccount(ctx, tx, customer); err != nil {
+		found, err := operationResponse(ctx, tx, scope, key, &result)
+		if err != nil {
 			return err
 		}
 
-		existing, err := subscriptionByID(ctx, tx, purchase.SubscriptionID)
-		if err == nil {
-			if existing.CustomerID != customer || existing.AddonName != purchase.AddonName || !existing.PurchasedAt.Equal(purchase.PurchasedAt) {
+		if found {
+			if result.CustomerID != customer || result.AddonName != purchase.AddonName || !result.PurchasedAt.Equal(purchase.PurchasedAt) {
 				return ErrConflict
 			}
-
-			result = existing
 
 			return nil
 		}
 
-		if !errors.Is(err, pgx.ErrNoRows) {
+		if _, err := lockAccount(ctx, tx, customer); err != nil {
 			return err
 		}
 
-		return insertSubscription(ctx, tx, customer, purchase, &result)
+		subscriptionID := subscriptionIdentity(customer, purchase.AddonName)
+		if err := insertSubscription(ctx, tx, customer, subscriptionID, purchase, &result); err != nil {
+			return err
+		}
+
+		return recordOperation(ctx, tx, scope, key, purchase, result, s.now())
 	})
 
 	return result, err
 }
 
+// subscriptionIdentity preserves the readable customer/add-on tuple. Escaping
+// each path segment keeps separators, percent signs, and Unicode unambiguous.
+func subscriptionIdentity(customer, addon string) string {
+	return subscriptionIDPrefix + url.PathEscape(customer) + "/" + url.PathEscape(addon)
+}
+
 func validatePurchase(customer string, p AddonPurchase) error {
 	if err := ValidateIdentifier("customer_id", customer); err != nil {
-		return err
-	}
-
-	if err := ValidateIdentifier("subscription_id", p.SubscriptionID); err != nil {
 		return err
 	}
 
@@ -75,16 +91,7 @@ func validatePurchase(customer string, p AddonPurchase) error {
 	return validateTime("purchased_at", p.PurchasedAt)
 }
 
-func subscriptionByID(ctx context.Context, tx pgx.Tx, id string) (Subscription, error) {
-	var value Subscription
-	err := tx.QueryRow(ctx, `SELECT subscription_id,customer_id,addon_name,monthly_price_cents,
-        purchased_at,start_month::text FROM addon_subscriptions WHERE subscription_id=$1`, id).
-		Scan(&value.SubscriptionID, &value.CustomerID, &value.AddonName, &value.MonthlyPriceCents, &value.PurchasedAt, &value.StartMonth)
-
-	return value, err
-}
-
-func insertSubscription(ctx context.Context, tx pgx.Tx, customer string, p AddonPurchase, result *Subscription) error {
+func insertSubscription(ctx context.Context, tx pgx.Tx, customer, subscriptionID string, p AddonPurchase, result *Subscription) error {
 	month, _ := accounting.UTCMonth(p.PurchasedAt)
 	var closed bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM closed_billing_months
@@ -107,7 +114,7 @@ func insertSubscription(ctx context.Context, tx pgx.Tx, customer string, p Addon
 	}
 
 	_, err = tx.Exec(ctx, `INSERT INTO addon_subscriptions VALUES ($1,$2,$3,$4,$5,$6)`,
-		p.SubscriptionID, customer, p.AddonName, price, p.PurchasedAt.UTC(), month)
+		subscriptionID, customer, p.AddonName, price, p.PurchasedAt.UTC(), month)
 	var databaseError *pgconn.PgError
 	if errors.As(err, &databaseError) && databaseError.Code == "23505" {
 		return ErrConflict
@@ -118,7 +125,7 @@ func insertSubscription(ctx context.Context, tx pgx.Tx, customer string, p Addon
 	}
 
 	_, err = tx.Exec(ctx, "UPDATE customer_billing_state SET state_version=state_version+1 WHERE customer_id=$1", customer)
-	*result = Subscription{SubscriptionID: p.SubscriptionID, CustomerID: customer, AddonName: p.AddonName, MonthlyPriceCents: price, PurchasedAt: p.PurchasedAt.UTC(), StartMonth: month.Format("2006-01-02")}
+	*result = Subscription{SubscriptionID: subscriptionID, CustomerID: customer, AddonName: p.AddonName, MonthlyPriceCents: price, PurchasedAt: p.PurchasedAt.UTC(), StartMonth: month.Format("2006-01-02")}
 
 	return err
 }

@@ -186,9 +186,8 @@ func quarantine(ctx context.Context, tx pgx.Tx, event usage.Event, message strin
 
 func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounting.Rating, month time.Time, credit accounting.Amount) error {
 	e := item.event
-	group := identity("group/", e.CustomerID, rating.Price.ID, rating.UsageMonth.Format("2006-01"), month.Format("2006-01"))
 	allocation := accounting.AllocateCredit(rating.Charge, credit)
-	gross, err := cumulativeGross(ctx, tx, group, rating.Charge)
+	group, gross, err := cumulativeGross(ctx, tx, e.CustomerID, rating.Price, rating.UsageMonth, month, rating.Charge)
 	if err != nil {
 		return err
 	}
@@ -196,6 +195,13 @@ func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounti
 	cents, err := gross.RoundCents()
 	if err != nil {
 		return quarantine(ctx, tx, e, err.Error())
+	}
+
+	if group == "" {
+		group, err = nextAccountingID(ctx, tx, groupIDSequence, groupIDPrefix)
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := updateGroup(ctx, tx, group, item, rating, month, cents, allocation.Used); err != nil {
@@ -240,23 +246,28 @@ func completeReceipt(ctx context.Context, tx pgx.Tx, event usage.Event) error {
 	return err
 }
 
-func cumulativeGross(ctx context.Context, tx pgx.Tx, group string, charge accounting.Amount) (accounting.Amount, error) {
+// cumulativeGross finds the stored group by its financial identity, preserving
+// earlier IDs while accumulating exact ticks before rounding.
+func cumulativeGross(ctx context.Context, tx pgx.Tx, customer string, price accounting.PriceVersion, usageMonth, billingMonth time.Time, charge accounting.Amount) (string, accounting.Amount, error) {
+	var group string
 	var ticks string
-	err := tx.QueryRow(ctx, "SELECT exact_charge_ticks::text FROM rated_usage_groups WHERE group_id=$1", group).Scan(&ticks)
+	err := tx.QueryRow(ctx, `SELECT group_id,exact_charge_ticks::text FROM rated_usage_groups
+        WHERE customer_id=$1 AND price_version_id=$2 AND usage_month=$3 AND billing_month=$4`,
+		customer, price.ID, usageMonth, billingMonth).Scan(&group, &ticks)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return charge, nil
+		return "", charge, nil
 	}
 
 	if err != nil {
-		return accounting.Amount{}, err
+		return "", accounting.Amount{}, err
 	}
 
 	previous, err := amount(ticks)
 	if err != nil {
-		return accounting.Amount{}, err
+		return "", accounting.Amount{}, err
 	}
 
-	return previous.Add(charge), nil
+	return group, previous.Add(charge), nil
 }
 
 func updateGroup(ctx context.Context, tx pgx.Tx, group string, item receipt, rating accounting.Rating, month time.Time, cents int64, used accounting.Amount) error {
@@ -287,9 +298,14 @@ func recordCreditDebit(ctx context.Context, tx pgx.Tx, e usage.Event, group stri
 	}
 
 	operation := identity("usage/", e.Source, e.EventID)
-	_, err := tx.Exec(ctx, `INSERT INTO credit_entries
+	entryID, err := nextAccountingID(ctx, tx, creditEntryIDSequence, creditEntryIDPrefix)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx, `INSERT INTO credit_entries
         (credit_entry_id,customer_id,operation_id,group_id,amount_ticks,recorded_at)
-        VALUES ($1,$2,$1,$3,$4::numeric,$5)`, operation, e.CustomerID, group,
+        VALUES ($1,$2,$3,$4,$5::numeric,$6)`, entryID, e.CustomerID, operation, group,
 		"-"+used.Ticks().String(), time.Now().UTC().Truncate(time.Microsecond))
 
 	return err

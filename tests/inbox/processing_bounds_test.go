@@ -175,7 +175,7 @@ func testProcessingBounds(t *testing.T) {
 				ID: tc.priceVersionID, CustomerID: tc.customerID, Metric: "cpu_seconds",
 				EffectiveFrom: parseBillingTime(t, tc.priceEffectiveFrom), PricePerMillionCents: tc.pricePerMillionCents,
 			}
-			if err := store.CreatePrice(ctx, price); err != nil {
+			if _, err := pool.Exec(ctx, `INSERT INTO price_versions VALUES ($1,$2,$3,$4,$5)`, price.ID, price.CustomerID, price.Metric, price.PricePerMillionCents, price.EffectiveFrom); err != nil {
 				t.Fatalf("Prepare price %+v: %v", price, err)
 			}
 

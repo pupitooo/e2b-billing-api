@@ -10,7 +10,7 @@ import (
 func registerLimitRoutes(mux *http.ServeMux, store *billing.Store, timeout time.Duration) {
 	mux.HandleFunc("POST /customers/{customer_id}/spend-limit", func(w http.ResponseWriter, r *http.Request) {
 		var change billing.SpendLimitChange
-		if !commandJSON(w, r, &change, []string{"operation_id", "limit_cents"}, "limit_cents") {
+		if !commandJSON(w, r, &change, []string{"idempotency_key", "limit_cents"}, "limit_cents") {
 			return
 		}
 

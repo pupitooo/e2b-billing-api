@@ -1,5 +1,5 @@
 ---
-title: Implemented PostgreSQL schema (migrations 001-009)
+title: Implemented PostgreSQL schema (migrations 001-012)
 config:
   layout: elk
 ---
@@ -45,7 +45,7 @@ erDiagram
         text group_id FK
     }
     rated_usage_groups {
-        text group_id PK
+        text group_id PK "New: grp_1, grp_2, ..."
         text customer_id FK
         text price_version_id FK
         text metric FK "Composite price FK"
@@ -85,7 +85,7 @@ erDiagram
         billing_ticks gross_charge_ticks "Before credit and add-ons"
     }
     credit_entries {
-        text credit_entry_id PK
+        text credit_entry_id PK "New: crd_1, crd_2, ..."
         text customer_id FK "Also part of group FK"
         text operation_id
         text group_id FK "Nullable: grants"
@@ -106,7 +106,7 @@ erDiagram
     }
     spend_limit_operations {
         text customer_id PK,FK
-        text operation_id PK
+        text idempotency_key PK
         bigint limit_cents "Nullable; non-negative"
         timestamptz recorded_at "Finite"
     }
@@ -127,13 +127,20 @@ erDiagram
         text customer_id FK
         date billing_month FK
     }
+    api_idempotency_operations {
+        text operation_scope PK
+        text idempotency_key PK "Visible ASCII, 1-256 bytes"
+        jsonb request_payload "Original normalized command"
+        jsonb response_payload "Successful resource snapshot"
+        timestamptz created_at "Finite UTC time"
+    }
     schema_migrations {
         integer version PK "Positive"
         text name
         timestamptz applied_at "Default now()"
     }
 
-    %% This diagram covers all 16 tables after migrate.sql and migrations 001-009.
+    %% This diagram covers all 17 tables after migrate.sql and migrations 001-012.
     %% All columns are NOT NULL unless explicitly labeled Nullable.
     %% PK and FK markers identify membership in primary and foreign keys, including composite keys.
     %% Solid relationships include parent identity in the child's primary key; dashed ones do not.
@@ -154,3 +161,9 @@ erDiagram
     %% InvoiceLine values are stored in invoices.snapshot.lines; there is no invoice_lines table.
     %% No extra FK matches invoiced_usage_groups customer/month to the group's customer/month.
     %% Those ownership checks belong to the closing transaction; edges show only declared FKs.
+
+    %% api_idempotency_operations has no resource FK: the immutable result is a JSON snapshot.
+    %% Scoped operation history rejects updates and deletes; financial effects and results commit together.
+
+    %% Migration 012 adds owned, noncycling bigint sequences for new group and credit IDs.
+    %% Existing IDs and references remain intact; rollback can leave sequence gaps.

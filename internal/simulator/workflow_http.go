@@ -20,9 +20,10 @@ type WorkflowRequest struct {
 }
 
 type WorkflowExpectation struct {
-	Status int             `json:"status"`
-	Body   json.RawMessage `json:"body,omitempty"`
-	SameAs string          `json:"same_as,omitempty"`
+	UsageLineOrder string          `json:"usage_line_order,omitempty"`
+	Status         int             `json:"status"`
+	Body           json.RawMessage `json:"body,omitempty"`
+	SameAs         string          `json:"same_as,omitempty"`
 }
 
 type workflowRunner struct {

@@ -24,17 +24,17 @@
         "method": "POST",
         "path": "/customers/acme/credits",
         "body": {
-          "operation_id": "welcome",
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z"
+          "recorded_at": "2026-10-01T00:00:00Z",
+          "idempotency_key": "welcome"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "welcome",
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z"
+          "recorded_at": "2026-10-01T00:00:00Z",
+          "idempotency_key": "welcome"
         }
       },
       "fault": {
@@ -47,17 +47,17 @@
         "method": "POST",
         "path": "/customers/acme/credits",
         "body": {
-          "operation_id": "welcome",
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z"
+          "recorded_at": "2026-10-01T00:00:00Z",
+          "idempotency_key": "welcome"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "welcome",
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z"
+          "recorded_at": "2026-10-01T00:00:00Z",
+          "idempotency_key": "welcome"
         }
       }
     },
@@ -67,9 +67,9 @@
         "method": "POST",
         "path": "/customers/acme/credits",
         "body": {
-          "operation_id": "welcome",
           "amount_cents": 2600,
-          "recorded_at": "2026-10-01T00:00:00Z"
+          "recorded_at": "2026-10-01T00:00:00Z",
+          "idempotency_key": "welcome"
         }
       },
       "want": {
@@ -105,7 +105,7 @@
         "method": "POST",
         "path": "/customers/acme/addons",
         "body": {
-          "subscription_id": "acme-pack",
+          "idempotency_key": "acme-pack",
           "addon_name": "concurrency_pack",
           "purchased_at": "2026-10-05T00:00:00Z"
         }
@@ -115,7 +115,8 @@
         "body": {
           "monthly_price_cents": 2000
         }
-      }
+      },
+      "capture": "created-acme-pack"
     },
     {
       "name": "unchanged purchase retry",
@@ -123,7 +124,7 @@
         "method": "POST",
         "path": "/customers/acme/addons",
         "body": {
-          "subscription_id": "acme-pack",
+          "idempotency_key": "acme-pack",
           "addon_name": "concurrency_pack",
           "purchased_at": "2026-10-05T00:00:00Z"
         }
@@ -141,7 +142,7 @@
         "method": "POST",
         "path": "/customers/acme/addons",
         "body": {
-          "subscription_id": "another-pack",
+          "idempotency_key": "another-pack",
           "addon_name": "concurrency_pack",
           "purchased_at": "2026-10-05T00:00:00Z"
         }
@@ -161,15 +162,15 @@
         "method": "POST",
         "path": "/customers/acme/spend-limit",
         "body": {
-          "operation_id": "first-limit",
-          "limit_cents": 1500
+          "limit_cents": 1500,
+          "idempotency_key": "first-limit"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "first-limit",
-          "limit_cents": 1500
+          "limit_cents": 1500,
+          "idempotency_key": "first-limit"
         }
       }
     },
@@ -179,15 +180,15 @@
         "method": "POST",
         "path": "/customers/acme/spend-limit",
         "body": {
-          "operation_id": "raised-limit",
-          "limit_cents": 2000
+          "limit_cents": 2000,
+          "idempotency_key": "raised-limit"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "raised-limit",
-          "limit_cents": 2000
+          "limit_cents": 2000,
+          "idempotency_key": "raised-limit"
         }
       }
     },
@@ -197,15 +198,15 @@
         "method": "POST",
         "path": "/customers/acme/spend-limit",
         "body": {
-          "operation_id": "first-limit",
-          "limit_cents": 1500
+          "limit_cents": 1500,
+          "idempotency_key": "first-limit"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "first-limit",
-          "limit_cents": 1500
+          "limit_cents": 1500,
+          "idempotency_key": "first-limit"
         }
       }
     },
@@ -235,7 +236,7 @@
         "method": "POST",
         "path": "/prices",
         "body": {
-          "price_version_id": "new-default",
+          "idempotency_key": "new-default",
           "customer_id": null,
           "metric": "cpu_seconds",
           "price_per_million_cents": 7,
@@ -245,10 +246,10 @@
       "want": {
         "status": 200,
         "body": {
-          "price_version_id": "new-default",
           "price_per_million_cents": 7
         }
-      }
+      },
+      "capture": "created-new-default"
     },
     {
       "name": "retry the unchanged price version",
@@ -256,7 +257,7 @@
         "method": "POST",
         "path": "/prices",
         "body": {
-          "price_version_id": "new-default",
+          "idempotency_key": "new-default",
           "customer_id": null,
           "metric": "cpu_seconds",
           "price_per_million_cents": 7,
@@ -266,7 +267,7 @@
       "want": {
         "status": 200,
         "body": {
-          "price_version_id": "new-default",
+          "price_version_id": "{{capture.created-new-default.price_version_id}}",
           "price_per_million_cents": 7
         }
       }
@@ -277,7 +278,7 @@
         "method": "POST",
         "path": "/prices",
         "body": {
-          "price_version_id": "new-default",
+          "idempotency_key": "new-default",
           "customer_id": null,
           "metric": "cpu_seconds",
           "price_per_million_cents": 8,

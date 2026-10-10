@@ -10,8 +10,8 @@ import (
 )
 
 type SpendLimitChange struct {
-	OperationID string `json:"operation_id"`
-	LimitCents  *int64 `json:"limit_cents"`
+	IdempotencyKey string `json:"idempotency_key"`
+	LimitCents     *int64 `json:"limit_cents"`
 }
 
 type LimitStatus struct {
@@ -46,7 +46,7 @@ func (s *Store) SetSpendLimit(ctx context.Context, customer string, change Spend
 		return err
 	}
 
-	if err := ValidateIdentifier("operation_id", change.OperationID); err != nil {
+	if err := ValidateIdempotencyKey(change.IdempotencyKey); err != nil {
 		return err
 	}
 
@@ -62,7 +62,7 @@ func (s *Store) SetSpendLimit(ctx context.Context, customer string, change Spend
 		}
 
 		var previous *int64
-		err := tx.QueryRow(ctx, "SELECT limit_cents FROM spend_limit_operations WHERE customer_id=$1 AND operation_id=$2", customer, change.OperationID).Scan(&previous)
+		err := tx.QueryRow(ctx, "SELECT limit_cents FROM spend_limit_operations WHERE customer_id=$1 AND idempotency_key=$2", customer, change.IdempotencyKey).Scan(&previous)
 		if err == nil {
 			if equalLimit(previous, change.LimitCents) {
 				return nil
@@ -75,7 +75,7 @@ func (s *Store) SetSpendLimit(ctx context.Context, customer string, change Spend
 			return err
 		}
 
-		if _, err := tx.Exec(ctx, "INSERT INTO spend_limit_operations VALUES ($1,$2,$3,$4)", customer, change.OperationID, change.LimitCents, time.Now().UTC().Truncate(time.Microsecond)); err != nil {
+		if _, err := tx.Exec(ctx, "INSERT INTO spend_limit_operations VALUES ($1,$2,$3,$4)", customer, change.IdempotencyKey, change.LimitCents, time.Now().UTC().Truncate(time.Microsecond)); err != nil {
 			return err
 		}
 

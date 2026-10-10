@@ -1,0 +1,41 @@
+---
+title: Implemented API endpoints and callers
+config:
+  flowchart:
+    wrappingWidth: 440
+    nodeSpacing: 32
+    rankSpacing: 55
+---
+%% Caller boxes represent responsibilities, not deployed applications or access controls.
+%% The standalone simulator exercises platform, customer, administrator and closing roles.
+%% Solid arrows identify HTTP requests; responses return over the same connection.
+%% Dashed arrows identify SQL operations against the shared PostgreSQL database.
+flowchart LR
+    platform["Sandbox platform"]
+    customer["Customer"]
+    admin["E2B administrator"]
+    closing["Monthly closing operator"]
+    health["Health check"]
+
+    subgraph billing["Billing system"]
+        api["Billing HTTP API<br/>One Go process"]
+        worker["Usage accounting worker<br/>Separate Go process"]
+        db[("PostgreSQL<br/>Usage inbox and financial tables")]
+    end
+
+    platform -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>POST /usage/batches<br/>GET /customers/{customer_id}/limit-status<br/>GET /customers/{customer_id}/months/{month}/limit-status</span>"| api
+    customer -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>POST /customers/{customer_id}/spend-limit<br/>POST /customers/{customer_id}/addons<br/>GET /customers/{customer_id}/credit<br/>GET /customers/{customer_id}/invoices/{month}</span>"| api
+    admin -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>POST /prices<br/>POST /customers/{customer_id}/credits</span>"| api
+    closing -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>POST /customers/{customer_id}/invoices</span>"| api
+    health -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>GET /healthz</span>"| api
+
+    api -.-> db
+    worker -.-> db
+
+    classDef caller fill:#e8f1fb,stroke:#31588a,color:#172b4d;
+    classDef service fill:#e9f7ee,stroke:#287d4e,color:#173b28;
+    classDef storage fill:#fff2cf,stroke:#a56800,color:#543800;
+    class platform,customer,admin,closing,health caller;
+    class api,worker service;
+    class db storage;
+    style billing fill:#f9f9ff,stroke:#9b9fc0;

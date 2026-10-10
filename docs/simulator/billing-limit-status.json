@@ -24,15 +24,15 @@
         "method": "POST",
         "path": "/customers/cyberdyne/spend-limit",
         "body": {
-          "operation_id": "first",
-          "limit_cents": 1500
+          "limit_cents": 1500,
+          "idempotency_key": "first"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "first",
-          "limit_cents": 1500
+          "limit_cents": 1500,
+          "idempotency_key": "first"
         }
       }
     },
@@ -138,15 +138,15 @@
         "method": "POST",
         "path": "/customers/cyberdyne/spend-limit",
         "body": {
-          "operation_id": "higher",
-          "limit_cents": 2000
+          "limit_cents": 2000,
+          "idempotency_key": "higher"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "higher",
-          "limit_cents": 2000
+          "limit_cents": 2000,
+          "idempotency_key": "higher"
         }
       }
     },
@@ -176,15 +176,15 @@
         "method": "POST",
         "path": "/customers/cyberdyne/spend-limit",
         "body": {
-          "operation_id": "restore",
-          "limit_cents": 1500
+          "limit_cents": 1500,
+          "idempotency_key": "restore"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "restore",
-          "limit_cents": 1500
+          "limit_cents": 1500,
+          "idempotency_key": "restore"
         }
       }
     },
@@ -214,15 +214,15 @@
         "method": "POST",
         "path": "/customers/cyberdyne/spend-limit",
         "body": {
-          "operation_id": "zero",
-          "limit_cents": 0
+          "limit_cents": 0,
+          "idempotency_key": "zero"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "zero",
-          "limit_cents": 0
+          "limit_cents": 0,
+          "idempotency_key": "zero"
         }
       }
     },
@@ -252,15 +252,15 @@
         "method": "POST",
         "path": "/customers/cyberdyne/spend-limit",
         "body": {
-          "operation_id": "unlimited",
-          "limit_cents": null
+          "limit_cents": null,
+          "idempotency_key": "unlimited"
         }
       },
       "want": {
         "status": 200,
         "body": {
-          "operation_id": "unlimited",
-          "limit_cents": null
+          "limit_cents": null,
+          "idempotency_key": "unlimited"
         }
       }
     },

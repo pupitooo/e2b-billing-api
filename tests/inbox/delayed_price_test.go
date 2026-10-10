@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/accounting"
 	"e2b/billing-api/internal/billing"
 	"e2b/billing-api/internal/inbox"
 	"e2b/billing-api/internal/usage"
@@ -54,12 +53,15 @@ func testDelayedPriceProcessing(t *testing.T) {
 			serverTime := parseBillingTime(t, "2026-02-02T00:00:00Z")
 			store := billing.NewStoreWithClock(pool, func() time.Time { return serverTime })
 			transport := inbox.NewPostgres(pool, time.Second)
+			var generatedPriceID string
 			for index, step := range steps {
 				if index == 1 {
-					price := accounting.PriceVersion{ID: "new-200", Metric: "activation-test", PricePerMillionCents: 200, EffectiveFrom: parseBillingTime(t, "2026-02-02T00:00:00Z")}
-					if err := store.CreatePrice(ctx, price); err != nil {
+					price := billing.PriceInput{Metric: "activation-test", PricePerMillionCents: 200, EffectiveFrom: parseBillingTime(t, "2026-02-02T00:00:00Z")}
+					created, err := store.CreatePrice(ctx, "new-200", price)
+					if err != nil {
 						t.Fatalf("Insert scheduled price %+v: %v", price, err)
 					}
+					generatedPriceID = created.ID
 					if tc.closeBeforeLate {
 						serverTime = parseBillingTime(t, "2026-03-01T00:00:00Z")
 						invoice, err := store.CloseMonth(ctx, "cyberdyne", "2026-02")
@@ -93,8 +95,12 @@ func testDelayedPriceProcessing(t *testing.T) {
 				if err := pool.QueryRow(ctx, `SELECT g.price_version_id,to_char(g.billing_month,'YYYY-MM') FROM usage_ratings r JOIN rated_usage_groups g USING(group_id) WHERE source=$1 AND event_id=$2`, event.Source, event.EventID).Scan(&priceID, &billingMonth); err != nil {
 					t.Fatal(err)
 				}
-				if priceID != step.wantPriceID {
-					t.Errorf("Step %s price=%s; want %s", step.name, priceID, step.wantPriceID)
+				wantPriceID := step.wantPriceID
+				if wantPriceID == "new-200" {
+					wantPriceID = generatedPriceID
+				}
+				if priceID != wantPriceID {
+					t.Errorf("Step %s price=%s; want %s", step.name, priceID, wantPriceID)
 				}
 				if index > 0 && billingMonth != tc.wantLateBillingMonth {
 					t.Errorf("Late step billing month=%s; want %s", billingMonth, tc.wantLateBillingMonth)

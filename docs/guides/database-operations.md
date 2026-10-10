@@ -140,3 +140,47 @@ groups available at the new account-lock cutoff. Pending usage may be absent fro
 that invoice and is accounted later by the worker. A failed closing leaves no
 partial snapshot or consumed number; only a successfully committed invoice fixes
 its contents. Different billing months retain separate group rounding boundaries.
+
+## Durable API operation keys
+
+Migration `010_api_idempotency.sql` adds append-only `api_idempotency_operations`.
+Apply it with `make migrate` before starting the updated API. Existing prices,
+subscriptions, and invoices retain their IDs. Price and add-on creation bodies replace caller resource IDs with required JSON
+`idempotency_key`; old resource commands do not acquire inferred keys. Migration
+`011_spend_limit_idempotency_key.sql`
+renames the spend-limit history column, preserving its rows, primary key, and
+append-only trigger. Credit and limit callers send their previous `operation_id`
+value as `idempotency_key`; the credit ledger retains internal grant/debit operation
+IDs. Run `make migrate` before rebuilding API and worker services.
+
+```sql
+SELECT operation_scope, idempotency_key, request_payload, response_payload, created_at
+FROM api_idempotency_operations
+ORDER BY created_at, operation_scope, idempotency_key;
+```
+
+Successful keys and results are retained indefinitely. They commit in the same
+transaction as their financial resource, so retry needs no in-memory API state.
+
+## Sequential accounting IDs
+
+Migration `012_accounting_id_sequences.sql` adds persistent, noncycling sequences
+for new `grp_<number>` and `crd_<number>` IDs. Apply `make migrate` before starting
+the updated API and worker. Existing group IDs, ledger entries, references and
+issued invoices retain their original values. Each sequence starts at one unless
+earlier canonical decimal IDs reserve numbers. Allocation may leave gaps after
+rollback; do not reset or cycle these sequences.
+
+Inspect their current state without consuming a number:
+
+```sql
+SELECT 'rated_usage_group_id_seq' AS sequence_name, last_value, is_called
+FROM rated_usage_group_id_seq
+UNION ALL
+SELECT 'credit_entry_id_seq', last_value, is_called
+FROM credit_entry_id_seq;
+```
+
+`is_called = false` means the first value has not been allocated. See the
+[accounting identity rules](../architecture/accounting-rules.md#accounting-resource-identities)
+for retry, concurrency and sequence exhaustion behavior.

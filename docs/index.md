@@ -12,7 +12,7 @@ The source Markdown also remains readable directly in the repository.
 | Topic | Guides |
 | --- | --- |
 | Start and operate | [Local development](guides/local-development.md), [runtime configuration](guides/runtime-configuration.md), [database operations](guides/database-operations.md) |
-| Explore HTTP interfaces | [API reference guide](guides/api-reference.md), [OpenAPI specification](api/openapi.yaml) |
+| Explore HTTP interfaces | [API endpoints and callers](guides/api-reference.md#api-endpoints-and-callers), [API reference guide](guides/api-reference.md), [OpenAPI specification](api/openapi.yaml) |
 | Reproduce usage and billing | [Transport simulator](simulator/transport-scenarios.md), [public billing scenarios](simulator/billing-scenarios.md), [scenario style](simulator/scenario-style.md) |
 | Verify and contribute | [Tests and filters](guides/testing.md), [acceptance procedure](guides/final-acceptance-testing.md), [development conventions](guides/development.md) |
 | Understand accounting | [Financial rules](architecture/accounting-rules.md), [billing model and schema](architecture/billing-model.md), [usage to invoice](architecture/usage-to-invoice.md) |

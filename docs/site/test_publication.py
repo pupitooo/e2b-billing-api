@@ -35,6 +35,8 @@ class TestBuild(unittest.TestCase):
                     "guides/accounting-recovery/index.html", "guides/api-reference/index.html",
                     "simulator/custom-scenario.json", "api/openapi.yaml",
                     "diagrams/option-c-components/option-c-components.png",
+                    "diagrams/api-endpoints/api-endpoints.png",
+                    "diagrams/api-endpoints/api-endpoints.mmd",
                 ],
                 "want_excluded_files": [
                     "guides/private-probe/index.html", "guides/private-probe.json",
@@ -42,7 +44,10 @@ class TestBuild(unittest.TestCase):
                 ],
                 "want_asset_patterns": ["assets/stylesheets/*.css", "assets/javascripts/*.js"],
                 "want_absent_search_text": "PRIVATE_PUBLICATION_PROBE",
-                "want_html_links": {"index.html": 'href="/reference/openapi.yaml"'},
+                "want_html_links": {
+                    "index.html": 'href="/reference/openapi.yaml"',
+                    "guides/api-reference/index.html": 'src="../../diagrams/api-endpoints/api-endpoints.png"',
+                },
             },
             {
                 "scenario": "missing_selected_document_fails",

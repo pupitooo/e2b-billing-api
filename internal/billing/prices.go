@@ -2,74 +2,143 @@ package billing
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"time"
 
 	"e2b/billing-api/internal/accounting"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// CreatePrice appends a version under the catalog lock. Identical identities
-// replay successfully even after activation. New ordinary versions cannot start
-// before the server clock sampled under the lock or invalidate a persisted rating.
-func (s *Store) CreatePrice(ctx context.Context, price accounting.PriceVersion) error {
-	if err := validatePrice(price); err != nil {
-		return err
+const (
+	priceOperationScope = "prices"
+	priceIDPrefix       = "price_"
+)
+
+// PriceInput contains caller-owned price values; resource identities belong to billing.
+// An empty customer denotes the default price. CreatePriceNow resolves the timestamp.
+type PriceInput struct {
+	CustomerID           string    `json:"customer_id"`
+	Metric               string    `json:"metric"`
+	PricePerMillionCents int64     `json:"price_per_million_cents"`
+	EffectiveFrom        time.Time `json:"effective_from"`
+}
+
+// CreatePrice generates an identity and appends a version under the catalog lock.
+// The scoped request key replays the stored result even after activation.
+func (s *Store) CreatePrice(ctx context.Context, key string, input PriceInput) (accounting.PriceVersion, error) {
+	return s.createPrice(ctx, key, input, false)
+}
+
+// CreatePriceNow resolves activation under the catalog lock. Replays retain both
+// the server-generated identity and the original persisted activation instant.
+func (s *Store) CreatePriceNow(ctx context.Context, key string, input PriceInput) (accounting.PriceVersion, error) {
+	return s.createPrice(ctx, key, input, true)
+}
+
+func (s *Store) createPrice(ctx context.Context, key string, input PriceInput, useCurrentTime bool) (accounting.PriceVersion, error) {
+	if err := ValidateIdempotencyKey(key); err != nil {
+		return accounting.PriceVersion{}, err
 	}
 
-	return s.transact(ctx, func(tx pgx.Tx) error {
+	if err := validatePriceValues(input); err != nil {
+		return accounting.PriceVersion{}, err
+	}
+
+	if !useCurrentTime {
+		if err := validateTime("effective_from", input.EffectiveFrom); err != nil {
+			return accounting.PriceVersion{}, err
+		}
+	}
+
+	input.EffectiveFrom = input.EffectiveFrom.UTC()
+	price := accounting.PriceVersion{CustomerID: input.CustomerID, Metric: input.Metric,
+		PricePerMillionCents: input.PricePerMillionCents, EffectiveFrom: input.EffectiveFrom}
+	err := s.transact(ctx, func(tx pgx.Tx) error {
+		var existing accounting.PriceVersion
+		found, err := operationResponse(ctx, tx, priceOperationScope, key, &existing)
+		if err != nil {
+			return err
+		}
+
+		if found {
+			price.ID = existing.ID
+			if useCurrentTime {
+				price.EffectiveFrom = existing.EffectiveFrom
+			}
+
+			if !samePrice(existing, price) {
+				return ErrConflict
+			}
+
+			price = existing
+
+			return nil
+		}
+
 		if err := catalogLock(ctx, tx, true); err != nil {
 			return err
 		}
 
-		existing, err := priceByID(ctx, tx, price.ID)
-		if err == nil {
-			if samePrice(existing, price) {
-				return nil
+		insertionTime := s.now().UTC()
+		if useCurrentTime {
+			price.EffectiveFrom = insertionTime.Truncate(time.Microsecond)
+			if err := validateTime("effective_from", price.EffectiveFrom); err != nil {
+				return err
 			}
-
-			return ErrConflict
-		}
-
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-
-		if price.EffectiveFrom.Before(s.now().UTC()) {
+		} else if price.EffectiveFrom.Before(insertionTime) {
 			return &ValidationError{Field: "effective_from", Message: "A new price must not start before its insertion time."}
 		}
 
+		price.ID = priceIDPrefix + rand.Text()
 		if err := preserveRatedHistory(ctx, tx, price); err != nil {
 			return err
 		}
 
-		var owner any
-		if price.CustomerID != "" {
-			owner = price.CustomerID
-		}
-
-		_, err = tx.Exec(ctx, `INSERT INTO price_versions VALUES ($1,$2,$3,$4,$5)`,
-			price.ID, owner, price.Metric, price.PricePerMillionCents, price.EffectiveFrom)
-		var databaseError *pgconn.PgError
-		if errors.As(err, &databaseError) {
-			if databaseError.Code == "23505" {
-				return ErrConflict
-			}
-
-			if databaseError.Code == "23503" {
-				return ErrNotFound
-			}
-		}
-
-		return err
-	})
-}
-
-func validatePrice(p accounting.PriceVersion) error {
-	for field, value := range map[string]string{"price_version_id": p.ID, "metric": p.Metric} {
-		if err := ValidateIdentifier(field, value); err != nil {
+		if err := insertPrice(ctx, tx, price); err != nil {
 			return err
 		}
+
+		request := struct {
+			Price          PriceInput `json:"price"`
+			UseCurrentTime bool       `json:"use_current_time"`
+		}{Price: input, UseCurrentTime: useCurrentTime}
+
+		return recordOperation(ctx, tx, priceOperationScope, key, request, price, insertionTime)
+	})
+	if err != nil {
+		return accounting.PriceVersion{}, err
+	}
+
+	return price, nil
+}
+
+func insertPrice(ctx context.Context, tx pgx.Tx, price accounting.PriceVersion) error {
+	var owner any
+	if price.CustomerID != "" {
+		owner = price.CustomerID
+	}
+
+	_, err := tx.Exec(ctx, `INSERT INTO price_versions VALUES ($1,$2,$3,$4,$5)`,
+		price.ID, owner, price.Metric, price.PricePerMillionCents, price.EffectiveFrom)
+	var databaseError *pgconn.PgError
+	if errors.As(err, &databaseError) {
+		if databaseError.Code == "23505" {
+			return ErrConflict
+		}
+
+		if databaseError.Code == "23503" {
+			return ErrNotFound
+		}
+	}
+
+	return err
+}
+
+func validatePriceValues(p PriceInput) error {
+	if err := ValidateIdentifier("metric", p.Metric); err != nil {
+		return err
 	}
 
 	if p.CustomerID != "" {
@@ -78,20 +147,7 @@ func validatePrice(p accounting.PriceVersion) error {
 		}
 	}
 
-	if err := validateTime("effective_from", p.EffectiveFrom); err != nil {
-		return err
-	}
-
 	return validateCents("price_per_million_cents", p.PricePerMillionCents, false)
-}
-
-func priceByID(ctx context.Context, tx pgx.Tx, id string) (accounting.PriceVersion, error) {
-	var p accounting.PriceVersion
-	err := tx.QueryRow(ctx, `SELECT price_version_id,COALESCE(customer_id,''),metric,
-        price_per_million_cents,effective_from FROM price_versions WHERE price_version_id=$1`, id).
-		Scan(&p.ID, &p.CustomerID, &p.Metric, &p.PricePerMillionCents, &p.EffectiveFrom)
-
-	return p, err
 }
 
 func samePrice(a, b accounting.PriceVersion) bool {

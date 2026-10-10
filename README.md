@@ -1,5 +1,26 @@
 # E2B Billing API
 
+## 🚧 ⚠️ DISCLAIMER — Proof of concept 🚧
+
+This application is a proof of concept for the assignment and requires further
+work before production deployment. My goal was to implement a broad billing
+workflow, prioritizing the core product logic: reliable usage delivery, historical
+pricing, credit allocation, add-on billing, spend-limit reporting, and consistent
+monthly invoices, including retries and late usage.
+
+Some supporting interfaces for testing and configuration are provisional. An
+internal CRM and other consuming systems are not implemented; their requirements
+would help define the operational workflows and acceptance criteria these
+interfaces still need. These areas require further specification, review, and
+validation before production use.
+
+The implementation makes the main assignment concept testable. Its limitations
+and the work needed to take it into production can be discussed during the interview.
+
+---
+
+## Overview
+
 Billing service for the E2B assignment, built with Go and PostgreSQL. It implements
 durable usage receipt, transactional accounting, historical prices, usage-only
 credit, recurring add-ons, gross spend limits, and immutable monthly invoices.
@@ -19,7 +40,7 @@ uses an HTTP API, PostgreSQL inbox, and an independent accounting worker.
 The API commits usage before returning `202`; the worker commits each receipt's
 financial effects and completion together. Invoice closing snapshots already
 processed usage. See the [usage-to-invoice walkthrough](docs/architecture/usage-to-invoice.md)
-and [implemented schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001009).
+and [implemented schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001012).
 
 Current limits: no authentication, automatic invoice scheduling or delivery;
 receipts must fit one UTC month and applicable price version. Retained local
@@ -85,6 +106,9 @@ event_id)` and content unchanged on retries; changed content returns `409`.
 Acceptance confirms durable receipt; financial processing is asynchronous.
 See the [OpenAPI specification](docs/api/openapi.yaml) for all financial endpoints,
 validation, error responses, and safe retries after a lost response or `503`.
+The [API endpoint diagram](docs/diagrams/api-endpoints/api-endpoints.png) maps
+methods and paths to their callers; it also appears in Scalar's introduction
+and the [API guide](docs/guides/api-reference.md#api-endpoints-and-callers).
 
 Run the transport scenario one step at a time:
 
@@ -178,7 +202,9 @@ resolve conflicts with the assignment before adopting or implementing them.
 | Durable usage and retries | Preserve increments under source-wide `(source, event_id)` identities across customers, sandboxes, processes, and restarts. Acknowledge committed input; unchanged retries preserve receipt time, changed content conflicts, and the sender retains unacknowledged input. [Event contract](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed). | Assignment delivery; system identity and inbox policies. |
 | API and worker lifecycle | Separate processes and containers, independent restarts, shared PostgreSQL capacity. [Option C](docs/brainstorming/architecture-options.md#why-option-c-was-selected). | System architecture. |
 | Historical pricing | Apply consumption-time overrides or defaults with finite, explicit starts. Preserve seed prices and dates; receipts fit one price version and UTC month. [Pricing](docs/architecture/accounting-rules.md#historical-prices-and-groups). | Assignment prices; system segmentation policy. |
-| Price insertion | Ordinary new versions start at or after the server instant sampled under the catalog lock after identity checking. Earlier activation returns `422`; identical retries succeed after activation. [Insertion contract](docs/architecture/accounting-rules.md#price-insertion-contract). | System activation policy. |
+| Generated resource IDs and command retries | Billing generates price IDs and derives readable new subscription IDs as `subscription/<customer_id>/<addon_name>` with each component percent-encoded. Prices, add-ons, credit grants, and spend-limit changes require JSON `idempotency_key`; durable keys and financial effects commit together. Missing or invalid keys return `422`; duplicate fields or wrong types return `400`; changed content conflicts. Existing IDs and financial history remain unchanged. [Command retries](docs/guides/api-reference.md#command-retries). | System API identity policy. |
+| Accounting resource IDs | New rated groups use `grp_1`, `grp_2`, etc.; new credit ledger entries use `crd_1`, `crd_2`, etc. Each namespace has a persistent, noncycling PostgreSQL sequence starting at one. Allocation is safe across API and worker instances without a collision lookup. Rollback can leave gaps; existing IDs, references and invoices are preserved. [Identity rules](docs/architecture/accounting-rules.md#accounting-resource-identities). | System storage identity policy. |
+| Price insertion | Ordinary new versions start at or after the server instant sampled under the catalog lock after identity checking. Explicit `effective_from: null` selects that instant in UTC at microsecond precision; the response and retries retain the stored timestamp. Earlier explicit activation returns `422`; identical retries succeed after activation. [Insertion contract](docs/architecture/accounting-rules.md#price-insertion-contract). | System activation policy. |
 | Catalog recovery | Provision dated prices before metering. Missing prices quarantine without financial effects and report P0; repair through controlled SQL, then explicitly release. [Recovery contract](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery). | System provisioning policy. |
 | Exact money and credit | Allocate exact ticks before rounding; credit pays usage only and later grants do not rewrite allocations. [Money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit). | Assignment credit; system precision/order. |
 | Invoice presentation | Round cumulative groups half-up; displayed credit is rounded gross minus net. Preserve exact audit values and assignment totals. [Presentation](docs/architecture/accounting-rules.md#rounding-and-invoice-presentation). | Assignment cents/examples; system rounding. |

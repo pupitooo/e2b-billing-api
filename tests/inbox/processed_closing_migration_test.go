@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/inbox"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -19,8 +18,23 @@ import (
 // changing raw usage, credit, rated groups, invoice snapshots or numbering. Both
 // time zones retain pending errors and protect the already invoiced group.
 func TestProcessedUsageClosingMigration(t *testing.T) {
+	// Build historical rows directly: the current accounting code requires
+	// migration 012, while this scenario specifically upgrades migration 008.
+	const preUpgradeAccountingSQL = `INSERT INTO usage_inbox
+		(source,event_id,schema_version,customer_id,sandbox_id,metric,period_start,period_end,units,received_at,processed_at)
+		VALUES ('upgrade-history','accounted',1,'acme','sandbox','cpu_seconds','2026-10-10T12:00:00Z','2026-10-10T13:00:00Z',1000000,'2026-10-11T00:00:00Z','2026-10-11T00:00:00Z');
+		INSERT INTO rated_usage_groups
+		(group_id,customer_id,price_version_id,metric,usage_month,billing_month,total_units,exact_charge_ticks,booked_charge_cents,allocated_credit_ticks)
+		VALUES ('group/earlier','acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',1000000,4000000,4,4000000);
+		INSERT INTO usage_ratings (source,event_id,group_id) VALUES ('upgrade-history','accounted','group/earlier');
+		INSERT INTO credit_entries (credit_entry_id,customer_id,operation_id,group_id,amount_ticks,recorded_at) VALUES
+		('grant/earlier','acme','grant/migration-credit',NULL,6000000,'2026-10-01T00:00:00Z'),
+		('usage/earlier','acme','usage/earlier','group/earlier',-4000000,'2026-10-11T00:00:00Z');
+		INSERT INTO monthly_usage (customer_id,usage_month,gross_charge_ticks) VALUES ('acme','2026-10-01',4000000);
+		UPDATE customer_billing_state SET credit_balance_ticks=2000000,state_version=2 WHERE customer_id='acme'`
 	cases := []struct {
 		name                                  string
+		setupSQL                              string
 		timeZone                              string
 		pendingError                          *string
 		wantRetiredTables                     bool
@@ -30,10 +44,10 @@ func TestProcessedUsageClosingMigration(t *testing.T) {
 		wantNextNumber, wantVersion           int64
 		wantPendingProcessed                  bool
 	}{
-		{name: "UTC pending cohort", timeZone: "UTC", wantRetiredTables: true, wantEarlierUsageIndex: true, wantInvoices: 1, wantGroups: 1, wantRatings: 1, wantCredit: "2000000", wantNextNumber: 2, wantVersion: 3, wantPendingProcessed: false},
-		{name: "UTC quarantined cohort", timeZone: "UTC", pendingError: stringPointer("investigated failure"), wantRetiredTables: true, wantEarlierUsageIndex: true, wantInvoices: 1, wantGroups: 1, wantRatings: 1, wantCredit: "2000000", wantNextNumber: 2, wantVersion: 3, wantPendingProcessed: false},
-		{name: "Shanghai pending cohort", timeZone: "Asia/Shanghai", wantRetiredTables: true, wantEarlierUsageIndex: true, wantInvoices: 1, wantGroups: 1, wantRatings: 1, wantCredit: "2000000", wantNextNumber: 2, wantVersion: 3, wantPendingProcessed: false},
-		{name: "Shanghai quarantined cohort", timeZone: "Asia/Shanghai", pendingError: stringPointer("investigated failure"), wantRetiredTables: true, wantEarlierUsageIndex: true, wantInvoices: 1, wantGroups: 1, wantRatings: 1, wantCredit: "2000000", wantNextNumber: 2, wantVersion: 3, wantPendingProcessed: false},
+		{name: "UTC pending cohort", setupSQL: preUpgradeAccountingSQL, timeZone: "UTC", wantRetiredTables: true, wantEarlierUsageIndex: true, wantInvoices: 1, wantGroups: 1, wantRatings: 1, wantCredit: "2000000", wantNextNumber: 2, wantVersion: 3, wantPendingProcessed: false},
+		{name: "UTC quarantined cohort", setupSQL: preUpgradeAccountingSQL, timeZone: "UTC", pendingError: stringPointer("investigated failure"), wantRetiredTables: true, wantEarlierUsageIndex: true, wantInvoices: 1, wantGroups: 1, wantRatings: 1, wantCredit: "2000000", wantNextNumber: 2, wantVersion: 3, wantPendingProcessed: false},
+		{name: "Shanghai pending cohort", setupSQL: preUpgradeAccountingSQL, timeZone: "Asia/Shanghai", wantRetiredTables: true, wantEarlierUsageIndex: true, wantInvoices: 1, wantGroups: 1, wantRatings: 1, wantCredit: "2000000", wantNextNumber: 2, wantVersion: 3, wantPendingProcessed: false},
+		{name: "Shanghai quarantined cohort", setupSQL: preUpgradeAccountingSQL, timeZone: "Asia/Shanghai", pendingError: stringPointer("investigated failure"), wantRetiredTables: true, wantEarlierUsageIndex: true, wantInvoices: 1, wantGroups: 1, wantRatings: 1, wantCredit: "2000000", wantNextNumber: 2, wantVersion: 3, wantPendingProcessed: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,11 +83,9 @@ func TestProcessedUsageClosingMigration(t *testing.T) {
 			}
 			invoiceTime := parseBillingTime(t, "2026-12-01T00:00:00Z")
 			store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
-			if err := store.GrantCredit(ctx, "acme", billing.CreditGrant{OperationID: "migration-credit", AmountCents: 6, RecordedAt: parseBillingTime(t, "2026-10-01T00:00:00Z")}); err != nil {
+			if _, err := pool.Exec(ctx, tc.setupSQL); err != nil {
 				t.Fatal(err)
 			}
-			insertMeasuredHours(t, inbox.NewPostgres(pool, time.Second), "acme", []measuredHour{{eventID: "accounted", start: "2026-10-10T12:00:00Z", units: 1_000_000}}, "2026-10-11T00:00:00Z")
-			processUsageSteps(t, store, []bool{true})
 			original, err := store.CloseMonth(ctx, "acme", "2026-10")
 			if err != nil {
 				t.Fatal(err)

@@ -7,7 +7,7 @@ and how PostgreSQL stores and verifies the assignment's financial state:
 
 - [Logical data model (ERD)](#logical-data-model-erd): billing concepts, their relationships, and an editable diagram.
 - [Architectural decisions and rationale](#architectural-decisions-and-rationale): database choice, customer locks, durable ingestion, retry identities, exact accounting, audit history, immutable invoices, and separation of responsibilities.
-- [Implemented PostgreSQL schema](#implemented-postgresql-schema-erd-migrations-001009): the complete schema through migration 009, SQL columns, keys, and cardinalities.
+- [Implemented PostgreSQL schema](#implemented-postgresql-schema-erd-migrations-001012): the complete schema through migration 012, SQL columns, keys, and cardinalities.
 - [Tables and relationships](#tables-and-relationships): table purposes, foreign keys, ownership checks, mutable projections, and append-only history.
 - [Money and months](#money-and-months): ticks and cents, the charge formula, arbitrary precision, UTC periods, and historical price selection.
 - [Initial data and migrations](#initial-data-and-migrations): startup commands, assignment catalog values, initial account state, exact-credit conversion, and transactional migration behavior.
@@ -53,11 +53,11 @@ These decisions describe the current implementation. Assignment requirements and
 
 - **Separate pure calculations from persistence and transport.** `internal/accounting` calculates prices, credit, months, and invoice amounts without I/O; `internal/billing` owns locks and financial transactions, while HTTP code owns request and response handling. This makes financial rules directly testable and keeps transaction boundaries visible. Database constraints still protect structural integrity, so changes to a rule must keep calculations, persistence, and validation consistent.
 
-## Implemented PostgreSQL schema (ERD, migrations 001–009)
+## Implemented PostgreSQL schema (ERD, migrations 001–012)
 
 `UsageReceipt` maps to `usage_inbox` plus the separate `usage_ratings` link. Invoices use immutable JSON snapshots and frozen-group links rather than the separate line table proposed in the logical ERD.
 
-This diagram shows all 16 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `009`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
+This diagram shows all 17 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `012`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
 
 ![Implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
 
@@ -76,6 +76,7 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 | `customers` | Customer identity, name, country, and current billing address. |
 | `customer_billing_state` | One account row per customer with exact credit balance, optional spend limit, state version, and next invoice number. Financial writers serialize on this row. |
 | `metrics` | Supported metering identifiers. |
+| `api_idempotency_operations` | Append-only scoped request keys, normalized original inputs, successful resource results, and creation times. Written atomically with prices and subscriptions; keys are retained indefinitely. |
 | `price_versions` | Historical prices for a metric, either a default (`customer_id IS NULL`) or a customer override. Each version has an explicit effective timestamp. |
 | `rated_usage_groups` | Totals grouped by customer, price version, original usage month, and billing month; stores exact units/gross ticks, booked gross cents, and allocated credit ticks. |
 | `usage_ratings` | Links one `(source, event_id)` from `usage_inbox` to exactly one group. Many events can share a group. |
@@ -183,5 +184,16 @@ The migration runner applies schema, seed, and version records in one transactio
 The worker locks the customer's state row and commits the rating link, group totals, credit debit/balance, original month's gross spend, state version, and inbox `processed_at` together. Constraints represent those records but do not automatically reconcile ledger sums, projection totals, or the calculated price and booked cents. The unique rating link alone does not prove that a complete financial transaction ran exactly once.
 
 Migrations 005–007 persist accounting, closed months, spend-limit results, invoices and group freezes. Migration 008 introduced error exclusions for the former pending-usage capture flow; migration 009 retires that flow and all three supporting tables. Closing now publishes only already processed groups in one atomic transaction. Usage processed later routes forward without rewriting issued invoices.
+
+Migration `010_api_idempotency.sql` adds durable request-key history for generated price and subscription IDs. It preserves existing resource IDs, financial history, and seed data. Price and add-on bodies require `idempotency_key`. Migration `011_spend_limit_idempotency_key.sql` renames the spend-limit history column without changing rows, uniqueness, or append-only protection. Credit and limit bodies replace `operation_id` with `idempotency_key`; existing values remain replayable. The credit ledger retains internal grant/debit `operation_id` values.
+
+Migration `012_accounting_id_sequences.sql` adds owned, noncycling `bigint`
+sequences for new `grp_<number>` group IDs and `crd_<number>` credit entry IDs.
+Each namespace starts at one unless existing canonical decimal IDs reserve higher
+values. Existing rows and all references remain unchanged. Groups are located by
+their customer, price version, usage month and billing month before allocation;
+credit entries retain their separate operation identity for retries. Sequence
+numbers are not rolled back, so failed financial transactions can leave gaps.
+See the [accounting identity rules](accounting-rules.md#accounting-resource-identities).
 
 Public command and accounting tests use private schemas. The [billing simulator](../simulator/billing-scenarios.md) verifies the complete assignment through HTTP, including retries, unavailable replies, exact invoices and credit, and monthly-limit reads. Ingestion acknowledges receipt before asynchronous accounting finishes.
