@@ -78,7 +78,7 @@ dates, while rejected backdated commands and invoice issuance see
 `2026-12-01T00:00:00Z`. A live December API rejects those initial October versions
 as backdated. Use `make inbox-test RUN=BillingSimulator` for the fixed scenario;
 there is no public clock override. Identical price retries remain valid after
-activation. Investigated missing historical prices use [controlled operator SQL](../../README.md#controlled-historical-price-repair)
+activation. Investigated missing historical prices use [controlled operator SQL](../guides/accounting-recovery.md#controlled-historical-price-repair)
 and explicit receipt release, independently of invoice publication.
 
 ## Durable retries, outages, and restart

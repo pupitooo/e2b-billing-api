@@ -1,0 +1,101 @@
+site_name: E2B Billing
+site_description: Billing architecture, operation, and assignment verification
+docs_dir: /source
+site_dir: /tmp/e2b-docs-site
+strict: true
+hooks:
+  - hooks.py
+theme:
+  name: material
+  language: en
+  font: false
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+plugins:
+  - search
+markdown_extensions:
+  - tables
+  - fenced_code
+  - toc:
+      permalink: true
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+nav:
+  - Home: index.md
+  - Get started:
+      - Local development: guides/local-development.md
+      - Runtime configuration: guides/runtime-configuration.md
+      - Database operations: guides/database-operations.md
+  - API:
+      - Reference guide: guides/api-reference.md
+      - API reference: /reference/
+  - Simulator:
+      - Transport scenarios: simulator/transport-scenarios.md
+      - Billing scenarios: simulator/billing-scenarios.md
+      - Scenario style: simulator/scenario-style.md
+  - Development:
+      - Tests and filters: guides/testing.md
+      - Acceptance procedure: guides/final-acceptance-testing.md
+      - Conventions: guides/development.md
+      - Documentation: guides/documentation.md
+  - Architecture:
+      - Assignment coverage: architecture/submission-overview.md
+      - Financial rules: architecture/accounting-rules.md
+      - Billing model: architecture/billing-model.md
+      - Usage to invoice: architecture/usage-to-invoice.md
+      - Options and growth: brainstorming/architecture-options.md
+      - Capacity and measurements: architecture/capacity-and-measurements.md
+      - Diagrams: diagrams/index.md
+      - Option C: diagrams/option-c-components/README.md
+      - Invoice issuance: diagrams/invoice-issuance/README.md
+  - Recovery: guides/accounting-recovery.md
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/pupitooo/e2b-billing-api
+  published_assets:
+    - diagrams/closing-workflow/closing-workflow.mmd
+    - diagrams/closing-workflow/closing-workflow.png
+    - diagrams/data-model/data-model.mmd
+    - diagrams/data-model/data-model.png
+    - diagrams/implemented-data-model/implemented-data-model.mmd
+    - diagrams/implemented-data-model/implemented-data-model.png
+    - diagrams/invoice-issuance/invoice-issuance.mmd
+    - diagrams/invoice-issuance/invoice-issuance.png
+    - diagrams/option-a-components/option-a-components.mmd
+    - diagrams/option-a-components/option-a-components.png
+    - diagrams/option-b-components/option-b-components.mmd
+    - diagrams/option-b-components/option-b-components.png
+    - diagrams/option-c-components/option-c-components.mmd
+    - diagrams/option-c-components/option-c-components.png
+    - diagrams/option-d-components/option-d-components.mmd
+    - diagrams/option-d-components/option-d-components.png
+    - diagrams/price-version-activation/price-version-activation.mmd
+    - diagrams/price-version-activation/price-version-activation.png
+    - diagrams/usage-to-invoice/usage-to-invoice.mmd
+    - diagrams/usage-to-invoice/usage-to-invoice.png
+    - diagrams/usage-worker-accounting/usage-worker-accounting.mmd
+    - diagrams/usage-worker-accounting/usage-worker-accounting.png
+    - simulator/billing-assignment.json
+    - simulator/billing-command-retries.json
+    - simulator/billing-credit-exhaustion.json
+    - simulator/billing-exact-credit.json
+    - simulator/billing-limit-status.json
+    - simulator/billing-month-boundary.json
+    - simulator/billing-price-boundary.json
+    - simulator/billing-price-versions.json
+    - simulator/custom-scenario.json
+    - api/openapi.yaml
+    - site/mkdocs.yml
+    - site/hooks.py
+    - site/Caddyfile
+    - site/Dockerfile
+    - site/serve.sh

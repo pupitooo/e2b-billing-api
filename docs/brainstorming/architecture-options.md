@@ -98,7 +98,7 @@ Calculated rate = customers × average active sandboxes × metrics ÷ 60. Monthl
 | Closing from processed usage, immutable invoices and numbering | The [closing contract](../architecture/accounting-rules.md#transaction-and-closing-contract) and [processed-closing tests](../../tests/inbox/processed_closing_test.go) cover pending input, both lock orders, month order, retries and separate rounding groups. |
 | Assignment values and durable platform recovery | [Public workflows](../simulator/billing-scenarios.md) and [executable tests](../../tests/inbox/billing_simulator_test.go) reproduce invoices, balances, limits, lost committed replies and outages. |
 
-Intervals must fit one applicable price version and one UTC month; ambiguous crossings are quarantined, not automatically split. Missing valid prices produce a P0 incident without charges. Historical catalog repair and explicit receipt release use the [operator procedure](../../README.md#controlled-historical-price-repair); ordinary price commands cannot backdate a new version. Closing never drains or repairs input, and pending/quarantined target-month usage can bill later.
+Intervals must fit one applicable price version and one UTC month; ambiguous crossings are quarantined, not automatically split. Missing valid prices produce a P0 incident without charges. Historical catalog repair and explicit receipt release use the [operator procedure](../guides/accounting-recovery.md#controlled-historical-price-repair); ordinary price commands cannot backdate a new version. Closing never drains or repairs input, and pending/quarantined target-month usage can bill later.
 
 Credit allocation follows serialized processing order. Splitting a compatible group preserves its cumulative amount; reordering around grants or closing can change credit timing or the billing group. No inbox cleanup is implemented: deduplication depends on retained receipt identities and content. Automatic interval segmentation, correction policy and replay-safe retention remain extensions.
 
@@ -138,3 +138,6 @@ OLAP is optional; no engine is selected. A Go aggregator prepares increments; Po
 Assuming 200 bytes/event, ten sandboxes/customer produce 4.32 TB per 30 days before indexes, WAL, replicas and backups. Retention must cover recovery and audit; [workload calculations](#workload-assumptions-for-further-analysis) do not establish capacity.
 
 References checked on 10 October 2026: [Kafka delivery semantics](https://kafka.apache.org/43/design/design/#message-delivery-semantics), [PostgreSQL transactions](https://www.postgresql.org/docs/18/tutorial-transactions.html), and [OLAP workloads](https://clickhouse.com/docs/get-started/about/intro). The OLAP reference illustrates the role; it does not select a product.
+
+The [capacity and measurement guide](../architecture/capacity-and-measurements.md)
+records the local ingestion sample, pool assumptions, and reproduction command.

@@ -1,200 +1,74 @@
 # E2B Billing API
 
-Billing service for the E2B assignment, built with Go and PostgreSQL. It provides an HTTP API, an independently managed worker runtime, versioned database migrations, a usage inbox, an accounting model with the assignment's initial catalog, and a restartable platform simulator.
+Billing service for the E2B assignment, built with Go and PostgreSQL. It implements
+durable usage receipt, transactional accounting, historical prices, usage-only
+credit, recurring add-ons, gross spend limits, and immutable monthly invoices.
+A separate, restartable Go simulator exercises the public interfaces.
 
-The project uses the selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected). The [architecture comparison](docs/brainstorming/architecture-options.md) records the design rationale.
+## Architecture and implementation status
 
-Transactional accounting, financial APIs, and immutable monthly invoices are implemented. For the design and financial details, start with:
+The selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected)
+uses an HTTP API, PostgreSQL inbox, and an independent accounting worker.
 
-- [Assignment architecture and coverage](docs/architecture/submission-overview.md): the usage flow, interface owners, tools, implemented behaviour and remaining limits.
-- [Billing model — Architectural decisions and rationale](docs/architecture/billing-model.md#architectural-decisions-and-rationale): design choices and trade-offs.
-- [Billing model — Implemented PostgreSQL schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001009): the complete ERD and its editable source.
-- [Financial rules — Exact money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit): tick precision and credit allocation.
-- [Usage-to-invoice guide — One example through the entire flow](docs/architecture/usage-to-invoice.md#2-one-example-through-the-entire-flow): a measurement's path to an issued invoice.
+![Option C: building blocks and interfaces](docs/diagrams/option-c-components/option-c-components.png)
 
-## Local setup
+[Editable Mermaid source](docs/diagrams/option-c-components/option-c-components.mmd) ·
+[Architecture and assignment coverage](docs/architecture/submission-overview.md) ·
+[Diagram explanation](docs/diagrams/option-c-components/README.md).
 
-### Requirements
+The API commits usage before returning `202`; the worker commits each receipt's
+financial effects and completion together. Invoice closing snapshots already
+processed usage. See the [usage-to-invoice walkthrough](docs/architecture/usage-to-invoice.md)
+and [implemented schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001009).
 
-Docker with Docker Compose and Make. The PostgreSQL client and Go toolchain run inside containers; no local Go installation is required. Run all `make` commands from the repository root.
+Current limits: no authentication, automatic invoice scheduling or delivery;
+receipts must fit one UTC month and applicable price version. Retained local
+volumes cover restarts, not disk loss. Production capacity has not been established.
 
-### Get the source
+## Quick start
 
-If you do not already have a local checkout, clone the repository:
+Requirements: Docker with Docker Compose and Make. Go and PostgreSQL clients run
+inside containers. Run commands from the repository root.
 
 ```sh
 git clone https://github.com/pupitooo/e2b-billing-api.git
-```
-
-### Configuration
-
-Docker Compose reads an optional local `.env` file. The defaults are sufficient for local development. Copy [.env.example](.env.example) to `.env` to change the API port (`E2B_API_PORT`, default `8081`), documentation port (`E2B_DOCS_PORT`, default `8082`), PostgreSQL port, or development password. Keep the same configuration for subsequent commands.
-
-### API runtime budgets
-
-The API reads configuration once at startup. Compose passes the settings below
-from `.env` into the API container; restart with `make up SERVICE=api` after
-changing them. A standalone binary reads the same environment variables.
-Durations use Go units, such as `500ms`, `10s`, or `2m`. Missing values use the
-defaults; malformed, nonpositive, or incompatible budgets prevent startup.
-
-| Environment variable | Default | Purpose |
-| --- | --- | --- |
-| `E2B_API_STARTUP_TIMEOUT` | `10s` | Open and verify the database connection. |
-| `E2B_API_READ_HEADER_TIMEOUT` | `5s` | Read HTTP headers. |
-| `E2B_API_READ_TIMEOUT` | `15s` | Read the complete request, including its body. |
-| `E2B_API_INGESTION_TIMEOUT` | `10s` | Acquire a pool connection and commit one validated batch. |
-| `E2B_API_ROLLBACK_TIMEOUT` | `5s` | Clean up a failed transaction independently of request cancellation. |
-| `E2B_API_WRITE_TIMEOUT` | `35s` | Write deadline set after request headers, including body reading and storage. |
-| `E2B_API_IDLE_TIMEOUT` | `90s` | Reuse collector connections across minute-based reports with jitter. |
-| `E2B_API_SHUTDOWN_TIMEOUT` | `45s` | Drain HTTP requests on SIGINT or SIGTERM before closing the database pool. |
-| `E2B_API_STOP_GRACE_PERIOD` | `60s` | Compose's time before forcibly killing the container. |
-| `E2B_API_DB_MAX_CONNS` | `8` | Maximum database connections per API process. |
-| `E2B_API_DB_MIN_CONNS` | `2` | Minimum warm connections; zero is allowed. |
-| `E2B_API_MAX_IN_FLIGHT_BATCHES` | `32` | Admitted batches per process, including body reading and pool waiting. |
-
-The header deadline must fit within the read deadline. The write budget must
-exceed read + ingestion + the configured rollback cleanup budget,
-leaving time for an error response. The shutdown budget must exceed header +
-write; Compose's stop grace period must exceed shutdown + rollback cleanup.
-The application validates its own budgets; configure the container's stop grace
-period separately when increasing shutdown or rollback time. These deadlines limit I/O and
-database work; they do not forcibly terminate arbitrary handler CPU work.
-
-When all admission slots are occupied, ingestion returns `503` / `Retry-After: 1`
-before application body parsing. Health requests remain available. Accepted
-batches still commit atomically; producers retain rejected events and retry
-unchanged identities and content with backoff and jitter.
-
-The API's explicit pool limits override pgx pool sizes in `DATABASE_URL`.
-Budget the database across all API replicas, accounting workers, and
-administration: their combined maximum connections must fit PostgreSQL's
-connection limit. Customer count does not imply one database connection per
-customer. Admission bounds decoded batch memory, with at most 32 MiB of raw
-bodies under the existing 1 MiB limit, plus decoded objects and HTTP overhead.
-
-### Workload assumptions and measurements
-
-The assignment asks the design to consider approximately 50_000 customers,
-each running from a few to thousands of sandboxes, with minute-based reports.
-It does not prescribe an average sandbox count, batching topology, peak rate,
-or latency target, and does not require the implementation to demonstrate that
-capacity. For the following calculations, assume one metric and one event per
-active sandbox per minute, coalesced by platform collectors across customers:
-
-| Average active sandboxes per customer | Events/s | Requests/s at 1_000 events/batch |
-| --- | --- | --- |
-| 3 | 2_500 | 2.5 |
-| 10 | 8_333.3 | 8.3 |
-| 100 | 83_333.3 | 83.3 |
-
-Rate = customers × average active sandboxes × metrics / 60. More metrics and
-retries multiply this rate. A separate batch from every customer each minute
-would instead mean about 833 HTTP requests/s, even with only ten events each.
-The 1_000-event maximum also remains subject to the 1 MiB body limit. Spread
-minute reports with jitter; a synchronized burst and recovery backlog need
-separate capacity measurements and producer buffering.
-
-On 2026-10-09, a local Docker/Linux arm64 sample used 16 concurrent writers, private
-schemas, two runs of 50 new batches, PostgreSQL 18.6, and the existing synchronous
-commit path. For 1_000-event batches, p95 latency including pool waiting was
-306–324 ms with 4 connections, 260–409 ms with 8, and 209–217 ms with 16.
-Short samples vary; more connections do not guarantee lower latency.
-Eight connections are the initial per-process budget: these observed latencies
-leave room under the ten-second deadline while reserving connections for
-other processes. It is not a sustained throughput or production-capacity claim;
-it excludes HTTP parsing, duplicate comparisons, accounting, growing indexes,
-minute bursts, and failover. Increasing the pool alone does not establish support
-for billions of monthly records.
-
-Reproduce the short storage sample after starting PostgreSQL with
-`make up SERVICE=postgres` (all benchmark data lives in owned temporary schemas):
-
-```sh
-docker compose build api
-docker compose run --rm --no-deps api go test -tags=integration -run '^$' \
-  -bench '^BenchmarkPostgresInsertBatch$' -benchtime=50x -cpu=16 -count=2 ./tests/inbox
-```
-
-Tune deployments from measured p95/p99 acceptance latency, connection-acquisition
-waits, CPU, disk/WAL behavior, overload responses, and accounting backlog. At
-8_333 events/s with 1_000-event batches, a measured mean transaction time of
-0.2 s would imply about 1.7 occupied connections on average; p95 is not the mean
-and this example does not cover peaks. Validate representative payloads, retries,
-worker competition, and sustained storage growth before changing budgets or
-adding replicas. See the [scaling proposal](docs/brainstorming/architecture-options.md#scaling-to-billions-of-records).
-
-### Initialize the database
-
-On first setup, start PostgreSQL and apply the schema:
-
-```sh
+cd e2b-billing-api
+# Optional: copy .env.example to .env to change local ports or settings.
 make up SERVICE=postgres
 make migrate
-```
-
-The database is now ready for connections. Run migrations again when an update introduces schema changes; see [Database migrations](#database-migrations). An existing database with all migrations applied needs no initialization on restart.
-
-## Running services
-
-Start all implemented services:
-
-```sh
 make up
 ```
 
-`make up` starts PostgreSQL, the API, worker, Scalar documentation, and the simulator container and waits for readiness. The simulator waits for an explicit `make simulate` command before creating usage. Startup does not apply database migrations. The API verifies its database connection on startup; ingestion returns `503` until the inbox migration has been applied. The worker connects to PostgreSQL independently of the API; migrate explicitly before accounting can proceed.
+Migration is explicit, including on existing volumes; startup never applies it.
+The simulator container waits for `make simulate` before producing usage.
 
-`make up`, `make docs`, `make restart`, and `make ps` print the actual browser addresses of running HTTP services. Use `make links` to show them again.
-
-| Command | Purpose |
+| Service | Default browser address |
 | --- | --- |
-| `make up` | Start all services and wait for readiness. |
-| `make up SERVICE=postgres` | Start PostgreSQL and wait for readiness. |
-| `make up SERVICE=api` | Build and start the Go API and wait for readiness. |
-| `make docs` | Start Scalar documentation and the API for browser requests. |
-| `make up SERVICE=worker` | Build and start only the standalone worker runtime. |
-| `make stop SERVICE=worker` | Stop the worker while the API continues running. |
-| `make restart SERVICE=worker` | Restart the worker without restarting the API. |
-| `make logs SERVICE=worker` | Inspect worker startup, failures, and shutdown. |
-| `make ps` | Show running and stopped services. |
-| `make links` | Show browser links for running HTTP services. |
-| `make logs SERVICE=postgres` | Show the last 100 PostgreSQL log lines. |
-| `make restart SERVICE=postgres` | Restart PostgreSQL and wait for readiness. |
-| `make stop` | Stop services while retaining containers and data. |
-| `make down` | Remove containers and the network while retaining database and sender data. |
-| `make services` | List available service names: `api`, `docs`, `postgres`, `simulator`, and `worker`. |
-| `make help` | Show all available commands. |
+| API health | [http://127.0.0.1:8081/healthz](http://127.0.0.1:8081/healthz) |
+| Documentation portal | [http://127.0.0.1:8082/](http://127.0.0.1:8082/) |
+| Scalar API reference and request client | [http://127.0.0.1:8082/reference/](http://127.0.0.1:8082/reference/) |
 
-PostgreSQL uses the pinned `postgres:18.6-alpine` image, UTC timestamps, and a named volume. Its port is published on `127.0.0.1`. Database data survives `make stop`, `make restart`, and `make down`.
+Use [.env.example](.env.example) for configuration and `make links` for actual
+addresses. The `docs` container serves the guides and proxies the reference;
+`api-docs` serves Scalar internally. `make docs` starts the portal and API.
+`make api-docs` starts the same services and prints the reference link.
 
-`E2B_POSTGRES_PASSWORD` initializes the role password when the volume is empty. Changing the environment variable later does not update the password in an existing database.
+See [local development](docs/guides/local-development.md) for service operations,
+[runtime configuration](docs/guides/runtime-configuration.md) for API and worker
+budgets, and [documentation maintenance](docs/guides/documentation.md) for live
+preview and the upgrade from the former Scalar-only `docs` service.
 
-## Go API
+## Try the API and simulator
 
-Start the API:
-
-```sh
-make up SERVICE=api
-```
-
-The API is available at `http://127.0.0.1:8081` by default. `GET /healthz` returns `200` when the HTTP server is available; it does not check the database. The entry point is [cmd/billing-api/main.go](cmd/billing-api/main.go), with routes in [internal/httpapi/handler.go](internal/httpapi/handler.go).
-
-Compose supplies the PostgreSQL connection through standard `PGHOST`, `PGPORT`,
-`PGDATABASE`, `PGUSER`, `PGPASSWORD`, and `PGSSLMODE` variables. A process
-started outside Compose can supply these variables or `DATABASE_URL`; sessions
-always use UTC. Starting the API or documentation also starts PostgreSQL.
-
-Send a usage request:
+Send a measurement to the seeded Acme account:
 
 ```sh
 curl -i http://127.0.0.1:8081/usage/batches \
   -H 'Content-Type: application/json' \
   --data '{
-    "batch_id": "acme-batch-000001",
     "events": [{
       "schema_version": 1,
-      "source": "platform-simulator",
+      "source": "readme-example",
       "event_id": "acme-cpu-000001",
       "customer_id": "acme",
       "sandbox_id": "acme-sandbox-001",
@@ -206,795 +80,112 @@ curl -i http://127.0.0.1:8081/usage/batches \
   }'
 ```
 
-For a valid batch, the API returns HTTP `202` with `Content-Type: application/json` and this fixed body:
+A valid request returns `202` with `{"status":"accepted"}`. Keep `(source,
+event_id)` and content unchanged on retries; changed content returns `409`.
+Acceptance confirms durable receipt; financial processing is asynchronous.
+See the [OpenAPI specification](docs/api/openapi.yaml) for all financial endpoints,
+validation, error responses, and safe retries after a lost response or `503`.
 
-```json
-{"status":"accepted"}
-```
-
-The whole batch commits or rolls back; `202` confirms durable receipt, while
-accounting runs asynchronously in the worker. Keep `(source, event_id)` and event
-content unchanged on retries; changed content returns `409`. The optional
-`batch_id` is producer metadata, not a deduplication key. See the
-[usage-to-invoice guide — Usage events: what was consumed](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed)
-for stored fields and retry guarantees.
-
-Requests require uncompressed UTF-8 `application/json`, one JSON document,
-case-sensitive field names, and no unknown or duplicate members. The body limit
-is 1 MiB (1_048_576 bytes), with 1–1_000 events and at most 256 UTF-8 bytes per
-identifier or optional `batch_id`. Every required event field must be explicit
-and non-null; zero units are valid. Versions and units use int32/int64 integer
-tokens without decimal or exponent notation. Consumption times require valid
-RFC 3339 calendar values, an explicit offset, and at most six fractional digits.
-Identifiers are preserved and time instants normalize to UTC.
-
-| Status | Behavior |
-| --- | --- |
-| `202` | Whole batch durably committed; identical existing measurements preserved. |
-| `400` | Invalid or ambiguous JSON, incorrect types, or numeric decoding outside int32/int64 ranges. |
-| `413` | The body exceeds 1_048_576 bytes. |
-| `415` | Unsupported content type, charset, or compression. |
-| `422` | Missing/null fields, invalid measurement values, or an event-count limit violation. |
-| `409` | Different measurement content for one event identity, stored or repeated in the request. |
-| `503` | Inbox unavailable, transaction canceled/timed out, or commit failed; outcome may be unknown. |
-
-Errors use `{"error":{"code":"invalid_batch","message":"...","field":"events[0].units"}}`,
-with `field` included when a validation location is available. A `409` uses code
-`event_conflict` and identifies `source` and `event_id`; retain that input for
-investigation. Correct invalid requests before retrying.
-
-Database work has a configurable deadline (10 seconds by default), including
-pool waiting, and honors request cancellation. Admission exhaustion also returns
-`503` before application body parsing. A `503`
-uses code `inbox_unavailable` with `Retry-After: 1`, without exposing SQL details.
-Retain events and retry the same identities and content after backoff. A `503`
-or a lost response may occur after commit; idempotence makes unchanged retries
-safe. See the [OpenAPI specification](docs/api/openapi.yaml) for the full contract.
-
-## Platform simulator
-
-The separate Go executable [cmd/platform-simulator](cmd/platform-simulator/main.go)
-creates synthetic measurement increments and sends them through the actual
-`POST /usage/batches` interface. It supplies no prices or monetary charges.
-The named `simulator_data` volume retains the plan, stable identities, release
-cursor, and delivery receipts across commands and container restarts.
-
-Start the API after [applying migrations](#initialize-the-database):
+Run the transport scenario one step at a time:
 
 ```sh
-make up SERVICE=api
-make simulate SCENARIO=assignment MODE=step
 make simulate SCENARIO=assignment MODE=step
 make simulate ACTION=status
 ```
 
-The first command releases the two October 10 measurements; the second releases
-the two October 20 measurements. Each `MODE=step` invocation releases at most
-one step. `MODE=fast` (the default) releases the current phase at once, stopping
-at the same barrier before late October. No command waits for the real calendar
-to reach the fixture dates, and faster delivery never changes consumption times.
-Invoice closure separately requires the complete UTC month to have ended.
+This creates additional usage. Use an isolated environment for independent
+experiments. The [transport simulator guide](docs/simulator/transport-scenarios.md)
+covers generation, delivery, replay, barriers, and failures.
 
-After October accounting and invoice issuance, explicitly release late usage:
-
-```sh
-make simulate ADVANCE=1 MODE=step
-make simulate MODE=step
-```
-
-These commands deliver Acme's October 30 measurement and then November 3.
-`make simulate ADVANCE=1 MODE=fast` releases both together. The barrier records
-operator intent; the simulator cannot check invoice or accounting completion.
-The legacy transport scenario uses an operator barrier. The separate
-[public billing scenarios](docs/simulator/billing-scenarios.md) automate accounting,
-credit, add-on purchases, invoice issuance, and platform monthly-status reads through
-the documented financial APIs. HTTP `202`
-confirms the whole batch's durable inbox receipt, not financial processing.
-
-Run the complete billing assignment against fresh seeded accounts with the API and
-worker running. Its fixed October/November 2026 invoices require the server clock
-to have reached `2026-12-01T00:00:00Z`; private-schema integration tests use an
-explicit clock and can verify the full workflow earlier:
+The [public billing scenarios](docs/simulator/billing-scenarios.md) exercise the
+complete assignment with literal invoices and balances. Run them against fresh
+seeded accounts with the API and worker running. Their fixed October/November
+2026 invoices require the server clock to have reached `2026-12-01T00:00:00Z`;
+private-schema integration tests declare their own clocks for earlier verification.
 
 ```sh
 make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json
 ```
 
-Its named JSON steps declare requests and literal expected responses together,
-including exact invoice lines, credit ticks, and faults after committed replies.
-The [billing scenario guide](docs/simulator/billing-scenarios.md) lists the remaining
-workflows and commands for outage recovery in a new process.
+## Database and service operations
 
-The default scenario reproduces these exact hourly totals:
-
-| Consumption hour (UTC) | Acme `cpu_seconds` | Cyberdyne `cpu_seconds` |
-| --- | ---: | ---: |
-| October 10, 2026, 12:00 | 100_000_000 | 123_456_789 |
-| October 20, 2026, 12:00 | 200_000_000 | 200_000_000 |
-| October 30, 2026, 12:00 (late) | 50_000_000 | — |
-| November 3, 2026, 12:00 | 100_000_000 | — |
-
-### Generate, pause, resume, and replay
-
-```sh
-make simulate ACTION=generate MODE=step
-make simulate ACTION=status
-make simulate ACTION=send
-make simulate ACTION=replay BATCH_SIZE=1 REVERSE=1
-```
-
-`generate` saves a step without contacting billing, so generation and delivery
-can be controlled separately. `send` drains only previously released pending
-measurements. `replay` resends all released measurements, including confirmed
-ones, with unchanged identities and content. It releases no future steps.
-An ordinary `run` after an interrupted delivery first drains its existing
-pending buffer without advancing the scenario; invoke it again to continue.
-Status reports released steps, generated, pending and delivered measurements,
-HTTP attempt count, the next barrier, and the last delivery error.
-
-The complete plan is saved before sending, and each released step is persisted
-before its first request. Each receipt uses a synced atomic file replacement.
-An OS file lock permits one writer per state file; read-only status remains
-available during retries. Ctrl+C or a killed process releases the lock.
-Timeouts, lost responses, `429`, and server errors retain
-measurements and retry with increasing delay and jitter, honoring `Retry-After`.
-Other responses, including `409` and invalid acknowledgements, stop with the
-buffer retained for investigation. Default retries continue until interrupted;
-`MAX_ATTEMPTS` can bound attempts per batch, including deliberate duplicates.
-
-The guarantee begins after successful storage and assumes the sender volume
-survives. Disk loss is outside this local simulator's guarantee. Keep
-`simulator_data` together with its database: if PostgreSQL is reset while sender
-receipts remain, use `ACTION=replay` to restore released events to the inbox.
-Deleting only sender state and changing identities can add consumption again.
-
-### Controls and fault scenarios
-
-| Make parameter | Default | Effect |
-| --- | --- | --- |
-| `SCENARIO` | `assignment` | `assignment`, `lost-response`, `duplicates`, or `custom`. |
-| `ACTION` | `run` | `run`, `generate`, `send`, `status`, or `replay`. |
-| `MODE`, `ADVANCE` | `fast`, `0` | Release a phase or one step; explicitly pass a barrier. |
-| `SOURCE`, `STATE` | `platform-simulator`, `/state/run.json` | Stable namespace and persistent run file. |
-| `SANDBOXES`, `INTERVAL` | `1`, `1h` | Split hourly assignment totals exactly across sandboxes and intervals. |
-| `BATCH_SIZE`, `DELAY` | `100`, `0s` | Events per batch and delay between successful batches. |
-| `TIMEOUT` | `15s` | Timeout of each network attempt. |
-| `RETRY_MIN`, `RETRY_MAX` | `1s`, `30s` | Initial and maximum backoff; `Retry-After` remains a minimum. |
-| `MAX_ATTEMPTS` | `0` | Zero means retry until interrupted; positive values stop with pending data. |
-| `DUPLICATES`, `LOSE_RESPONSE`, `REVERSE` | `0`, `0`, `0` | Extra identical copies, one ignored success per saved run, or reversed delivery. |
-| `SIM_API_URL` | `http://api:8080` | Billing base URL from inside the simulator container. |
-| `SCENARIO_FILE` | `/scenarios/custom-scenario.json` for `custom` | Operator scenario mounted from `docs/simulator/`. |
-
-```sh
-make simulate SCENARIO=lost-response MODE=step
-make simulate ACTION=replay SCENARIO=duplicates BATCH_SIZE=1
-```
-
-The fault names reuse the assignment plan and saved identities. `lost-response`
-ignores the first valid `202` once per saved run; its retry exercises acceptance
-after a commit whose acknowledgement was lost. `duplicates` sends one extra
-identical copy per batch. Once all released events are confirmed, use `replay`
-to send them again. To demonstrate downtime, stop the API, release a step and
-observe pending retries, then restart the API from another terminal:
-
-```sh
-make stop SERVICE=api
-make simulate MODE=step
-# In another terminal:
-make up SERVICE=api
-```
-
-The service must already be initialized and running before delivery; simulator
-commands deliberately do not start a stopped API. `make simulate-help` lists
-the executable's flags. With a local Go toolchain, the same executable runs as
-`go run ./cmd/platform-simulator --api-url=http://127.0.0.1:8081 --state=/tmp/e2b-sender/run.json`.
-The file lock requires Linux or macOS, as provided by the Compose container.
-
-### Custom scenarios and measurement splitting
-
-Edit the tracked [custom scenario example](docs/simulator/custom-scenario.json)
-or add a local JSON file in the same directory. Each step has a unique `name`,
-an optional operator `barrier`, and an `events` array with every measurement
-field explicitly supplied except `source`, which comes from `SOURCE`.
-Unknown fields, null or missing event values, invalid measurements, and repeated
-event identities are rejected before delivery. Explicit zero units are valid.
-
-```sh
-make simulate SCENARIO=custom SOURCE=custom-example STATE=/state/custom.json MODE=step
-make simulate SCENARIO=custom SOURCE=custom-example STATE=/state/custom.json ADVANCE=1
-```
-
-Every later `run` or `generate` must match the saved plan, including source,
-identities, timestamps, splitting, and units. To explore another plan, select a
-different state file and a distinct source intentionally; it creates additional
-measurements for those customers. Use an isolated database for independent
-experiments. `send`, `status`, and `replay` use the saved plan directly.
-
-`INTERVAL` must divide one hour and lie between `1m` and `1h`; `SANDBOXES` is
-between 1 and 1_000, and the resulting scenario is limited to 10_000 events.
-Division distributes the integer remainder without changing any hourly total.
-Each event represents an increment for its sandbox and interval, never a
-cumulative counter. Both API limits (1_000 events and 1 MiB per request) are
-respected even when long identifiers require smaller batches. Snapshot storage
-is intended for small reproducible scenarios; it is not a measured load capacity
-or a production metering implementation.
-
-## API documentation
-
-Run `make docs` and open the printed documentation address (by default
-[http://127.0.0.1:8082](http://127.0.0.1:8082)). The single Scalar service uses
-the `modern` layout and an embedded **Test Request** client. It serves the
-[OpenAPI 3.1.2 specification](docs/api/openapi.yaml) and bundled assets locally,
-with browser requests forwarded through the same-origin `/api` proxy in
-[docs/api/Caddyfile](docs/api/Caddyfile). Refresh the page after editing the
-mounted specification. Every interface change must update this specification;
-implemented ingestion and asynchronous accounting semantics are described there.
-
-## Standalone worker
-
-The worker is a separate Go process and Compose service, with its own entry point
-in [cmd/billing-worker/main.go](cmd/billing-worker/main.go). It shares the source
-repository and container image contents with the API, but has its own process,
-restart policy, resource limits, and logs. It has no published port and does not
-require a running API. No cron or API request starts the processing loop.
-
-```sh
-make up SERVICE=worker
-make logs SERVICE=worker
-make restart SERVICE=worker
-make stop SERVICE=worker
-```
-
-The worker performs transactional accounting independently of the API, with a
-bounded database pool. See the [financial rules — Transaction and closing contract](docs/architecture/accounting-rules.md#transaction-and-closing-contract)
-for atomic updates and the [recovery procedure](#transactional-usage-accounting)
-for unsupported input. The heartbeat reports loop activity.
-
-The [worker loop](internal/worker/worker.go) runs one batch at a time, starts
-immediately, and continues without an idle delay when a processor reports more
-work. Idle results and errors wait for the configured polling interval. Each
-batch receives a deadline. SIGINT and SIGTERM cancel the loop and in-flight work;
-the executable exits unsuccessfully if work ignores cancellation beyond the
-shutdown timeout. It does not start a replacement loop in that process.
-
-| Setting | Compose default | Purpose |
-| --- | --- | --- |
-| `E2B_WORKER_POLL_INTERVAL` | `1s` | Delay after an idle or failed iteration. |
-| `E2B_WORKER_BATCH_TIMEOUT` | `5s` | Cooperative deadline for one processing batch. |
-| `E2B_WORKER_SHUTDOWN_TIMEOUT` | `5s` | Maximum wait for the loop after a termination signal. |
-| `E2B_WORKER_HEARTBEAT_MAX_AGE` | `15s` | Maximum allowed heartbeat age; must exceed batch timeout plus polling interval. |
-| `E2B_WORKER_HEARTBEAT_FILE` | `/tmp/billing-worker-heartbeat` | Writable heartbeat path shared by the worker and its health probe. |
-| `E2B_WORKER_STOP_GRACE_PERIOD` | `10s` | Compose termination grace period; keep it longer than the shutdown timeout. |
-
-The Go executable has no configuration defaults: all four durations and the
-heartbeat path must be supplied through environment variables. Missing, empty,
-invalid, or incompatible settings prevent startup, including healthcheck mode.
-Compose supplies the local defaults shown above.
-
-Copy the settings from [.env.example](.env.example) to `.env`, then run
-`make up SERVICE=worker` to apply changes. The local worker has a 0.5 CPU and
-128 MiB memory limit. Production limits and replica counts require workload
-measurement; no sustained processing capacity has been established.
-
-Compose uses `billing-worker healthcheck` to check the loop's heartbeat in
-`/tmp/billing-worker-heartbeat`. The file is replaced atomically and removed on a
-clean exit. When running the binary outside Compose, `E2B_WORKER_HEARTBEAT_FILE`
-must select a writable file for each process, and all duration settings must
-also be exported. Health checks report loop activity,
-including idle and error iterations; they do not confirm financial processing or
-database readiness. A stuck processor eventually makes the heartbeat stale.
-Docker's restart policy restarts an exited container; an unhealthy status alone
-does not trigger a restart. Production orchestration should monitor loop health, backlog size, oldest pending input, and failures.
-
-API and worker resource lifecycles are independent. Their PostgreSQL connections share the database with bounded pools and short
-transactions. Restarting the worker leaves committed input available for processing.
-The worker reserves two database connections per process.
-
-## Database
-
-### Database connection
-
-| Setting | Default |
-| --- | --- |
-| Host from a local application | `127.0.0.1` |
-| Host from a service in the Compose network | `postgres` |
-| Port | `5432` |
-| Database | `e2b_billing` |
-| User | `e2b` |
-| Development password | `e2b_local_dev` |
-| Server time zone | `UTC` |
-
-Connection string for a local application, using the default development settings:
-
-```text
-postgres://e2b:e2b_local_dev@127.0.0.1:5432/e2b_billing?sslmode=disable
-```
-
-Use `postgres` as the host from another Compose service. If the host port changes, update the local application connection string accordingly.
-
-### Explore the database with psql
-
-`psql` is PostgreSQL's interactive command-line client. It runs inside the container, so no additional database tool needs to be installed locally.
-
-With PostgreSQL running and the [initial migration applied](#initialize-the-database), open a session from your terminal:
+Default PostgreSQL settings: host `127.0.0.1`, port `5432`, database `e2b_billing`,
+user `e2b`, development password `e2b_local_dev`, session time zone UTC. Inside
+Compose, use host `postgres`. The role password is initialized only on an empty
+volume; changing `.env` does not update an existing role.
 
 ```sh
 make psql
-```
-
-Enter the following commands at the `e2b_billing=>` prompt, rather than in your shell.
-
-List tables:
-
-```text
-\dt
-```
-
-The tables include `usage_inbox` (received events), `schema_migrations` (migration versions), and the [billing model tables](docs/architecture/billing-model.md#tables-and-relationships). Inspect the inbox's columns, types, constraints, and indexes:
-
-```text
-\d usage_inbox
-```
-
-Show up to 50 inbox rows, with the most recently received events first:
-
-```sql
-SELECT *
-FROM usage_inbox
-ORDER BY received_at DESC, source, event_id
-LIMIT 50;
-```
-
-An empty inbox (`0 rows`) is expected after initial setup. Migrations seed the customer, price, metric, and add-on catalog; no usage or example business actions are seeded, and integrity tests roll back their fixtures. Inspect initial account state:
-
-```sql
-TABLE customers;
-TABLE customer_billing_state;
-SELECT price_version_id, customer_id, metric,
-       price_per_million_cents / 100.0 AS usd_per_million, effective_from
-FROM price_versions
-ORDER BY metric, customer_id NULLS FIRST, effective_from;
-TABLE addons;
-```
-
-You can enter any SQL query in this session. End each SQL statement with a semicolon. For example, count stored events:
-
-```sql
-SELECT count(*) AS event_count FROM usage_inbox;
-```
-
-List events waiting for processing, excluding unresolved errors:
-
-```sql
-SELECT source, event_id, customer_id, metric, units, received_at
-FROM usage_inbox
-WHERE processed_at IS NULL AND processing_error IS NULL
-ORDER BY received_at, source, event_id
-LIMIT 50;
-```
-
-Inspect migration records:
-
-```sql
-TABLE schema_migrations;
-```
-
-Useful `psql` commands (these do not need a semicolon):
-
-| Command | Purpose |
-| --- | --- |
-| `\x auto` | Automatically use a vertical layout for wide query results. |
-| `\?` | Show help for `psql` commands. |
-| `\h SELECT` | Show SQL syntax help for `SELECT`. |
-| `\q` | Exit the session and return to your terminal. |
-
-If output opens in a pager, press `q` to return to the SQL prompt. If you are partway through a query, press Ctrl+C to clear it and start again.
-
-### Database migrations
-
-With PostgreSQL running, apply pending migrations after first setup or an update that adds migrations, then inspect the applied versions:
-
-```sh
 make migrate
 make migration-status
 ```
 
-[migrations/migrate.sql](migrations/migrate.sql) applies only pending versions,
-including on existing Docker volumes. Schema changes and version records commit
-atomically; concurrent runners are serialized. Restarting a container does not
-apply migrations. See the [billing model — Initial data and migrations](docs/architecture/billing-model.md#initial-data-and-migrations)
-for migration contents, seed values, and repeat-run behavior.
-
-Before upgrading legacy cent-based credit records, follow the
-[financial rules — Migration and verification](docs/architecture/accounting-rules.md#migration-and-verification),
-including the check for incompatible allocations that would stop migration 004.
-
-To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged.
-
-## Project layout
-
-- `cmd/billing-api/`: application entry point and server setup.
-- `cmd/billing-worker/`: standalone worker startup, configuration, and signal handling.
-- `cmd/platform-simulator/`: separate platform CLI entry point.
-- `internal/`: private application packages, with `*_test.go` package tests next to the code.
-- `migrations/`: numbered SQL migrations and the explicit PostgreSQL migration runner.
-- `tests/api/`: HTTP integration tests against a running API, enabled with the `integration` build tag.
-- `tests/inbox/`: PostgreSQL repository tests in isolated temporary schemas, enabled with the `integration` build tag.
-- `tests/worker/`: executable lifecycle and exec health-check tests, enabled with the `integration` build tag.
-- `tests/sql/`: database integrity tests executed with `psql`.
-- `docs/`: project and interface documentation.
-
-## Go formatting and static checks
-
-Enable the tracked [pre-commit hook](.githooks/pre-commit) once after cloning:
-
-```sh
-make install-hooks
-```
-
-Every subsequent normal commit checks the staged snapshot with `gofmt`, the
-`wsl` whitespace rules, the project's numeric-literal rule, and `go vet`, including integration-tagged test
-code. A formatting violation or vet finding stops the commit. The hook preserves
-partial staging and never formats or stages files automatically. Fix reported problems, then stage the intended
-changes and commit again.
-
-| Command | Behavior |
-| --- | --- |
-| `make fmt` | Group decimal numeric literals, preserve plain calendar years, and apply `gofmt` plus `wsl` whitespace fixes. |
-| `make fmt-check` | Check `gofmt`, `wsl`, and numeric-literal grouping; change no files. |
-| `make vet` | Run `go vet` for `cmd/`, `internal/`, and `tests/` with default and integration build tags. |
-| `make check` | Run `gofmt`, `wsl`, numeric-literal, and vet checks together, as CI does. |
-| `make install-hooks` | Set this clone's `core.hooksPath` to the tracked `.githooks` directory. |
-
-These commands use installed Go when available, otherwise Docker builds the
-`go-tools` stage from the existing [Dockerfile](Dockerfile). No running API or
-database is needed. `E2B_GO_CHECKS_DOCKER=1 make check` explicitly uses Docker;
-CI uses this mode to match the pinned project toolchain. Local private `tools/`
-worktrees and dependency directories are excluded from formatting.
-
-The pinned `wsl` and Go analysis dependencies are defined in an isolated
-[tool module](scripts/whitespace/go.mod); enabled checks are defined in
-[scripts/whitespace.env](scripts/whitespace.env). Local commands and Docker use
-the same versions and policy. They separate completed blocks and returns in longer blocks, keep error
-checks next to their operations, and remove blank lines at block boundaries.
-Declarations and their initialization may stay together. Both ordinary and
-integration-tagged packages are checked. `make fmt` repairs these rules;
-`make fmt-check`, the staged hook, and CI enforce them without editing files.
-The first use with installed Go downloads the pinned tool and its dependencies.
-Semantic grouping of preparation, calculation, persistence, and assertions still
-requires review. See the [wsl documentation](https://github.com/bombsimon/wsl).
-
-Use named constants for values that encode domain rules, supported schema or
-checkpoint versions, protocol limits, retry policy, operational defaults, and
-parsing boundaries. Name each constant for its meaning and keep it near the
-owning responsibility; equal values with different meanings need distinct names.
-Prefer standard-library constants where available.
-
-Ordinary zero values, indexing, and counters may remain literal. Keep test inputs,
-assignment fixtures, and expected outputs explicit; test expectations must not
-derive from production constants. Review this semantic rule manually:
-`make fmt` and `make check` do not enforce constant names.
-
-The [numeric-literal checker](cmd/number-format/main.go) requires underscore
-groups of three for decimal Go literals with five or more digits, for example
-`10_000` and `1_000_000`. Fractional digits group from the decimal point, as in
-`0.000_000_01`. Smaller literals may remain plain; existing separators must use
-the same grouping. Calendar years stay plain, including `2026`, year-named values,
-the year argument to `time.Date`, and comparisons with `Year()`. The checker reads
-Go syntax, so comments, string values, dates inside strings, and non-decimal
-literals are preserved. Markdown prose and calculation examples follow the same
-number style; years, dates, identifiers, URLs, and copyable language examples
-retain their required syntax. `make fmt` repairs Go literals; checks report the
-file, line, and required spelling without editing files.
-
-Hook configuration is local Git metadata and must be enabled in each clone.
-Git permits bypassing local hooks with `--no-verify`; CI independently runs the
-same checks on every push and pull request. The standard tools are documented
-in [gofmt](https://pkg.go.dev/cmd/gofmt) and [go vet](https://pkg.go.dev/cmd/vet).
-
-## Testing
-
-`make test` is the primary test command. Start PostgreSQL with `make up SERVICE=postgres` before running all tests or the database suite; the Go suite builds and starts the API and worker automatically.
-
-Follow the [final acceptance test procedure](docs/guides/final-acceptance-testing.md) to verify every assignment requirement, walk through the October/November example with explicit checkpoints, inspect persisted accounting state, and exercise outages, retries, and restart in isolated Compose projects.
+[Database operations](docs/guides/database-operations.md) cover connection strings,
+inspection queries, migration guarantees, and upgrade procedures.
 
 | Command | Purpose |
 | --- | --- |
-| `make test` | Run all test suites. |
-| `make go-test` | Run Go package tests without starting external services. |
-| `make db-test` | Run only the database integrity suite. |
-| `make api-test` | Start PostgreSQL, migrate, and run HTTP/database acceptance tests against the API. |
-| `make inbox-test` | Start PostgreSQL and run repository tests in private schemas. |
-| `make test SUITE=go` | Run Go unit, PostgreSQL repository, HTTP acceptance, and worker lifecycle tests; services start automatically. |
-| `make test SUITE=db` | Run only the database integrity suite in both configured time zones. |
-| `make test RUN='^TestPostUsageBatches$/^usage_batches_happy_path$'` | Run only the named Go scenario. Supplying `RUN` selects the Go suite by default. |
+| `make ps` / `make links` | Inspect services and browser addresses. |
+| `make logs SERVICE=worker` | Inspect accounting and quarantine errors. |
+| `make restart SERVICE=worker` | Restart accounting independently of the API. |
+| `make stop` | Stop services while retaining containers and data. |
+| `make down` | Remove containers and the network while retaining volumes. |
+| `make services` / `make help` | List services or all supported commands. |
 
-`SUITE` accepts `all` (the default), `go`, or `db`. `RUN` uses the standard [Go `-run` regular-expression filter](https://go.dev/src/cmd/go/internal/test/test.go): anchors select an exact test name; a pattern such as `Usage` selects matching names. Explicit `SUITE=all RUN=Usage` runs the full SQL suite and matching Go tests. Unknown suites and `SUITE=db` combined with `RUN` fail before starting test work.
+Investigate unsupported receipts before releasing them. Missing valid prices are
+P0 catalog incidents; see the complete [accounting recovery procedure](docs/guides/accounting-recovery.md).
+Adding a price or replaying usage does not clear a processing error.
 
-The [handler tests](internal/httpapi/handler_test.go) use `httptest` to check routes, method restrictions, and the current usage response without a running server. With a local Go toolchain, run `go test ./...`; the integration build tag keeps external API tests out of this command. `make go-test` runs the same package tests in a container without starting services.
-
-The SQL suite applies pending migrations and discovers all `tests/sql/*.sql` files. [Inbox tests](tests/sql/usage_inbox.sql), [billing model tests](tests/sql/billing_model.sql), and [assignment seed tests](tests/sql/assignment_seed.sql) run in UTC and `Asia/Shanghai` and roll back their data. Seed checks use a private schema, preserving edited application data. Output identifies the file and time zone; any failure makes the command fail.
-
-The original [API happy-path request](tests/api/usage_batches_test.go) and response
-expectations remain unchanged. The [acceptance tests](tests/api/usage_batches_test.go)
-send HTTP requests to the running service and inspect committed rows through
-a separate PostgreSQL connection. They cover durable receipt, preserved retry
-metadata, atomic conflicts, invalid later events, and concurrent HTTP retries.
-They remove only their owned rows, retaining any pre-existing fixed happy-path
-fixture. The [repository tests](tests/inbox/usage_inbox_test.go) additionally
-exercise deterministic lock waits, competing commits/rollbacks, canceled
-transactions, and each conflicting content field. Each test drops its private
-schema. The API stays running for exploration; `-count=1` executes every test.
-
-Worker package tests cover loop cancellation, deadlines, retry pacing, heartbeat
-health, and bounded shutdown. The [worker process tests](tests/worker/lifecycle_test.go)
-start the compiled executable against PostgreSQL without an API dependency, verify its
-health probe, send SIGTERM, and require a clean exit with heartbeat cleanup. They
-also reject invalid startup configuration. Run them through `make test`, or
-filter with `make test RUN='^TestWorkerExecutable$/^worker_process_lifecycle$'`.
-
-Simulator unit tests verify exact fixture totals, splitting, barriers, durable
-recovery, file locking after a killed process, safe retries, and retained errors.
-The [simulator HTTP acceptance tests](tests/api/simulator_test.go) launch the
-separate executable against the running API, inspect committed PostgreSQL rows,
-and remove only their owned producer namespaces. Run them with
-`make test RUN=Simulator`; they also run automatically in `make test` and CI.
-The [public billing workflow tests](tests/inbox/billing_simulator_test.go) use the
-same CLI with a real HTTP router, accounting worker, and private seeded schema per
-scenario. They verify complete literal invoices and balances, monthly limit reads,
-HTTP `503`/`Retry-After`, lost committed replies, and restart with retained state.
-
-With Go 1.27 or later installed locally, the same test can target a running API directly:
+## Tests and development
 
 ```sh
-E2B_API_URL=http://127.0.0.1:8081 \
-E2B_TEST_DATABASE_URL='postgres://e2b:e2b_local_dev@127.0.0.1:5432/e2b_billing?sslmode=disable' \
-go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
+make install-hooks
+make fmt
+make check
+make up SERVICE=postgres
+make test
+make docs-check
 ```
 
-[CI](.github/workflows/ci.yml) runs `make check` before `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check includes Go formatting and static analysis, SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
+`make check` verifies Go formatting, whitespace, numeric literals, and static
+analysis. `make test` runs SQL integrity in UTC and `Asia/Shanghai`, Go package,
+repository, HTTP, and worker lifecycle tests. `make docs-check` validates the
+published documentation, links, and assets with a strict MkDocs build.
+
+Use named constants for domain rules, schema/checkpoint versions, protocol
+limits, retry policy, operational defaults, and parsing boundaries. Equal values
+with different meanings need separate names; use standard-library constants where
+available. Keep ordinary zero values, indexing, counters, and literal test inputs
+and expectations readable. Review constant names manually; formatting does not
+enforce this rule. Group decimal Go literals and Markdown numbers with five or
+more digits in threes (`10_000`); calendar years and copyable language examples
+retain their required syntax.
+
+See [development conventions](docs/guides/development.md),
+[test suites and filters](docs/guides/testing.md), and the
+[final acceptance procedure](docs/guides/final-acceptance-testing.md).
+The [documentation index](docs/index.md) links all published guides.
 
 ## System contracts
 
-Document system requirements directly, without attributing them to a person's
-requests or decisions. Changes to accounting, transport guarantees, or lifecycle
-boundaries must update this register and the linked contract in the same change.
-Keep proposed extensions separate from current requirements. If a proposed change
-conflicts with the assignment, report the conflict immediately and agree on its
-resolution before implementing the conflicting behavior or adopting it as a contract.
+Changes to financial, transport, or lifecycle requirements must update this
+register and the linked detailed contract together. Keep proposals separate;
+resolve conflicts with the assignment before adopting or implementing them.
 
-| Contract | Required behavior | Basis and detail |
+| Contract | Required behavior and detail | Basis |
 | --- | --- | --- |
-| Durable usage and retries | Preserve increments under stable `(source, event_id)` identities; `event_id` is unique throughout its `source`, across customers, sandboxes, producer instances, and restarts. Acknowledge only committed receipt; unchanged retries preserve the original input and receipt time, while changed content conflicts. The sender retains unacknowledged measurements for retry. | Distributed delivery is required by the assignment; identities and durable inbox receipt are system policies. [Usage inbox](#usage-inbox-contract), [event fields and receipt semantics](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed). |
-| API and worker lifecycle | Run the Go API and accounting worker in separate processes and containers so they can restart independently; they share PostgreSQL capacity. | System architecture. [Option C](docs/brainstorming/architecture-options.md#why-option-c-was-selected), [worker operation](#transactional-usage-accounting). |
-| Historical pricing | Rate consumption at its applicable historical customer override or default. Each price has a finite, explicit start; ordinary new versions cannot start before insertion. Preserve the seed's amounts and timestamps. Receipts must stay within one applicable price version and UTC month. | Historical prices and overrides come from the assignment; interval segmentation is a system policy. [Historical prices and groups](docs/architecture/accounting-rules.md#historical-prices-and-groups). |
-| Price insertion | For ordinary new versions, require `effective_from` at or after the server UTC instant sampled after the catalog lock and identity check. Reject earlier activation with `422`; accept future schedules and identical retries after activation. | System activation policy. [Price insertion contract](docs/architecture/accounting-rules.md#price-insertion-contract), [activation diagram](docs/diagrams/price-version-activation/price-version-activation.png). |
-| Catalog provisioning and recovery | Provision an eligible price before metering. Missing valid prices are P0 incidents: quarantine and report the receipt without financial effects; repair the dated catalog through controlled operator SQL and explicitly release the receipt. | System provisioning and recovery policy; no implied free or undated price. [Catalog contract](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery). |
-| Exact money and credit | Store exact ticks, allocate credit before rounding, and use credit for usage only. Later grants do not rewrite earlier allocations. | Usage-only credit comes from the assignment; precision and allocation order are system policies. [Exact money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit). |
-| Invoice presentation | Round cumulative groups half-up, derive displayed credit from rounded gross and net, and preserve exact audit values. Reproduce the assignment's invoice totals and balances. | Cent invoices and example results come from the assignment; the rounding method is a system policy. [Rounding and presentation](docs/architecture/accounting-rules.md#rounding-and-invoice-presentation). |
-| Fixed monthly periods | Use whole UTC calendar months and one immutable invoice per customer/month. New closures require a completed month; generation or delivery preferences cannot move its boundaries. Retries retain the original number and snapshot. | UTC calendar months and monthly customer invoices come from the assignment; completion checks and immutable retry behavior enforce the system contract. [Fixed calendar months](docs/architecture/accounting-rules.md#fixed-calendar-month-contract), [completed-month validation](docs/architecture/accounting-rules.md#invoice-generation-and-delivery-proposal). |
-| Spend limits and add-ons | Compare original-month gross usage before credit, excluding add-ons; account for all measured usage even beyond the limit. Charge the full purchased monthly add-on price from the purchase month. | Assignment rules. [Months, limits, add-ons, and late usage](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). |
-| Late usage | Preserve the consumption month for prices, limits, and audit; route usage from a closed or skipped earlier month to an eligible billing month after the latest closure and at or after receipt, including repaired usage. Never reopen an issued invoice. | The assignment's late October example; general routing is a system policy. [Late-usage rules](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). |
-| Atomic accounting and closing | Serialize financial writes per customer. Commit each receipt's complete financial effect with inbox completion. Invoice only usage already processed when the customer account lock is acquired. Never drain pending usage; pending and quarantined usage in the target month do not block issuance. The first close cannot skip existing earlier usage; each subsequent new invoice requires its previous month closed. Publish the closed month, frozen groups, snapshot, and number in one transaction. Usage processed after closure bills in an eligible open month. | System transaction and closing policy supporting correct retries and immutable invoices. [Transaction and closing contract](docs/architecture/accounting-rules.md#transaction-and-closing-contract). |
-| Supported timestamps | Validate consumption and receipt times after UTC conversion, within years 1000 through 9999, with at most microsecond precision. | System parsing boundaries. [Usage event validation](internal/usage/event.go), [event contract](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed). |
+| Durable usage and retries | Preserve increments under source-wide `(source, event_id)` identities across customers, sandboxes, processes, and restarts. Acknowledge committed input; unchanged retries preserve receipt time, changed content conflicts, and the sender retains unacknowledged input. [Event contract](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed). | Assignment delivery; system identity and inbox policies. |
+| API and worker lifecycle | Separate processes and containers, independent restarts, shared PostgreSQL capacity. [Option C](docs/brainstorming/architecture-options.md#why-option-c-was-selected). | System architecture. |
+| Historical pricing | Apply consumption-time overrides or defaults with finite, explicit starts. Preserve seed prices and dates; receipts fit one price version and UTC month. [Pricing](docs/architecture/accounting-rules.md#historical-prices-and-groups). | Assignment prices; system segmentation policy. |
+| Price insertion | Ordinary new versions start at or after the server instant sampled under the catalog lock after identity checking. Earlier activation returns `422`; identical retries succeed after activation. [Insertion contract](docs/architecture/accounting-rules.md#price-insertion-contract). | System activation policy. |
+| Catalog recovery | Provision dated prices before metering. Missing prices quarantine without financial effects and report P0; repair through controlled SQL, then explicitly release. [Recovery contract](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery). | System provisioning policy. |
+| Exact money and credit | Allocate exact ticks before rounding; credit pays usage only and later grants do not rewrite allocations. [Money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit). | Assignment credit; system precision/order. |
+| Invoice presentation | Round cumulative groups half-up; displayed credit is rounded gross minus net. Preserve exact audit values and assignment totals. [Presentation](docs/architecture/accounting-rules.md#rounding-and-invoice-presentation). | Assignment cents/examples; system rounding. |
+| Fixed monthly periods | Whole UTC calendar months, one immutable invoice per customer/month after month end; retries retain number and snapshot. [Months](docs/architecture/accounting-rules.md#fixed-calendar-month-contract). | Assignment periods; system closing guarantees. |
+| Spend limits and add-ons | Compare original-month gross usage before credit, excluding add-ons; account beyond the limit. Charge the full add-on price from its purchase month. [Rules](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). | Assignment rules. |
+| Late usage | Preserve consumption-month prices, limits, and audit; route closed/skipped-month usage to an eligible month after the latest closure and at or after receipt. Issued invoices never reopen. [Late usage](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). | Assignment example; system routing policy. |
+| Atomic accounting and closing | Serialize customer financial writes; commit each receipt with its financial effects. Close already processed groups under the account lock without draining or blocking on pending/errors. First closing cannot skip earlier usage; later new invoices require the previous month closed. Publish closure, frozen groups, snapshot, and number atomically. [Closing contract](docs/architecture/accounting-rules.md#transaction-and-closing-contract). | System transaction policy. |
+| Supported timestamps | After UTC conversion, years 1000 through 9999 with at most microsecond precision. [Event validation](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed). | System parsing boundaries. |
 
-Automatic scheduling and delivery, an external invoice reference, configurable
-price denominators and alternative catalog-locking policies remain
-proposals. They do not change these contracts until their behavior and relationship
-to the assignment are resolved and documented.
-
-## Usage inbox contract
-
-Each inbox row stores a non-negative usage increment over `[period_start, period_end)`,
-identified by `(source, event_id)`. Required values are supplied explicitly;
-the table has no database defaults. Identical retries preserve the stored event
-and processing state; changed content conflicts.
-
-See the [usage-to-invoice guide — Usage events: what was consumed](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed)
-for columns, timestamp bounds, and receipt semantics, and the
-[billing model — Tables and relationships](docs/architecture/billing-model.md#tables-and-relationships)
-for database integrity and catalog relationships. The
-[OpenAPI specification](docs/api/openapi.yaml) defines request validation.
-The [Go event model](internal/usage/event.go) implements measurement validation;
-run its tests with `make go-test RUN=EventValidate`.
-
-## Architecture and HTTP interfaces
-
-![Option C: building blocks and interfaces](docs/diagrams/option-c-components/option-c-components.png)
-
-[Native Mermaid source](docs/diagrams/option-c-components/option-c-components.mmd) · [Component and interface explanation](docs/diagrams/option-c-components/README.md).
-
-The diagram records the selected architecture. The available HTTP endpoints are:
-
-| Interface | Behavior |
-| --- | --- |
-| `GET /healthz` | Return HTTP `200` when the HTTP server is available, without checking PostgreSQL. |
-| `POST /usage/batches` | Validate and atomically commit measurements, return durable `202`, report changed content as `409`, and permit unchanged retries after `503`. |
-| `POST /prices` | Append default or customer-specific historical price versions without invalidating rated history. |
-| `POST /customers/{customer_id}/credits` | Apply an E2B grant once per operation identity. |
-| `GET /customers/{customer_id}/credit` | Read exact credit ticks and accounting progress. |
-| `POST /customers/{customer_id}/addons` | Purchase a recurring add-on with its price snapshot. |
-| `POST /customers/{customer_id}/spend-limit` | Set or remove the monthly gross-usage limit idempotently. |
-| `GET /customers/{customer_id}/limit-status` | Let the platform read the current UTC month's status. |
-| `GET /customers/{customer_id}/months/{month}/limit-status` | Read an explicit original usage month with the current limit configuration. |
-| `POST /customers/{customer_id}/invoices` | Close an explicit month from already processed groups and return one immutable numbered invoice. Pending usage is billed later. |
-| `GET /customers/{customer_id}/invoices/{month}` | Read the issued buyer and financial snapshot. |
-
-Keep the architecture diagram's Mermaid source and PNG in sync when changing it. Documentation generation tools are local and excluded from the repository.
-
-## Transactional usage accounting
-
-The worker accounts for accepted usage asynchronously. Financial effects and
-inbox completion commit together; database failures roll back for retry.
-See the [financial rules — Transaction and closing contract](docs/architecture/accounting-rules.md#transaction-and-closing-contract)
-for locking, atomicity, and closing guarantees, and the
-[usage-to-invoice guide — Historical rating](docs/architecture/usage-to-invoice.md#4-rating-the-cost-under-the-historical-price)
-for pricing and supported interval boundaries.
-
-Unsupported input remains in `usage_inbox.processing_error` until explicitly
-released. A missing valid price is a **P0 catalog incident**, reported in worker
-JSON logs with `priority=P0` and `error_code=missing_valid_price`. It quarantines the
-receipt without financial effects and never blocks invoice issuance. Follow the
-[financial rules — Catalog provisioning and P0 recovery](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery)
-for the complete diagnostic and recovery contract.
-
-To recover, correct the cause first. Missing historical prices require the
-[controlled database repair](#controlled-historical-price-repair); ordinary
-`POST /prices` rejects backdated versions. Then explicitly release only the
-investigated receipt:
-
-```sql
-UPDATE usage_inbox SET processing_error = NULL
-WHERE source = 'investigated-source' AND event_id = 'investigated-event'
-  AND processed_at IS NULL;
-```
-
-Adding a price or replaying the usage request does not clear a processing error.
-
-### Price versions
-
-`POST /prices` appends a price version with a stable `price_version_id` and explicit
-`effective_from` at or after the server insertion instant sampled under the
-catalog lock. A past instant returns `422` with field `effective_from`; an identical
-retry remains successful after activation. Set `customer_id: null` for a default or supply a customer ID
-for an override. Provision metrics and prices before metering starts.
-See the [financial rules — Historical prices and groups](docs/architecture/accounting-rules.md#historical-prices-and-groups)
-for selection rules, the [price insertion contract](docs/architecture/accounting-rules.md#price-insertion-contract)
-for activation and retries, and the [Catalog provisioning and P0 recovery chapter](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery)
-for provisioning requirements. Request fields and conflict responses are in the
-[OpenAPI reference](docs/api/openapi.yaml).
-
-Migration `009` replaces pending-usage capture with closing from processed groups.
-It removes `invoice_closings`, `invoice_closing_receipts` and
-`invoice_closing_exclusions`, retaining usage, financial history and issued invoices.
-Stop the API and worker before migrating so the previous application cannot access
-retired tables; then start both from the updated source:
-
-```sh
-make stop SERVICE=api
-make stop SERVICE=worker
-make migrate
-make up
-```
-
-An unfinished old closing has no reserved cutoff after this migration. Its already
-committed accounting remains, and its next successful close uses the processed
-groups available at the new account-lock cutoff. Pending usage may be absent from
-that invoice and is accounted later by the worker. A failed closing leaves no
-partial snapshot or consumed number; only a successfully committed invoice fixes
-its contents. Different billing months retain separate group rounding boundaries.
-
-### Controlled historical price repair
-
-Initial seed data and investigated missing-price repairs are the only historical
-catalog provisioning paths. Ordinary API commands cannot backdate a version.
-The example below must be adapted to the investigated customer, metric, receipt,
-price, and original effective time. It locks the account before the catalog,
-checks the resulting catalog against every affected rated receipt, and rolls
-back if it would reprice or invalidate an interval. It does not recalculate
-charges, credit, or issued invoices. Run it through `make psql`.
-
-```sql
-BEGIN;
-SELECT customer_id FROM customer_billing_state
-WHERE customer_id = 'investigated-customer' FOR UPDATE;
-SELECT pg_advisory_xact_lock(65102, 2);
-
-INSERT INTO price_versions VALUES (
-    'investigated-price', NULL, 'investigated-metric', 5,
-    '2026-10-01T00:00:00Z'
-);
-
-DO $repair$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM usage_ratings r
-        JOIN usage_inbox i USING (source, event_id)
-        JOIN rated_usage_groups g USING (group_id)
-        LEFT JOIN LATERAL (
-            SELECT p.* FROM price_versions p
-            WHERE p.metric = i.metric
-              AND (p.customer_id IS NULL OR p.customer_id = i.customer_id)
-              AND p.effective_from <= i.period_start
-            ORDER BY (p.customer_id IS NOT NULL) DESC, p.effective_from DESC
-            LIMIT 1
-        ) chosen ON true
-        WHERE i.metric = 'investigated-metric'
-          AND (chosen.price_version_id IS DISTINCT FROM g.price_version_id
-               OR EXISTS (
-                   SELECT 1 FROM price_versions boundary
-                   WHERE boundary.metric = i.metric
-                     AND (boundary.customer_id IS NULL OR boundary.customer_id = i.customer_id)
-                     AND boundary.effective_from > i.period_start
-                     AND boundary.effective_from < i.period_end
-                     AND (chosen.customer_id IS NULL OR boundary.customer_id = chosen.customer_id)
-               ))
-    ) THEN
-        RAISE EXCEPTION 'Repair would invalidate rated history';
-    END IF;
-END;
-$repair$;
-
-UPDATE usage_inbox SET processing_error = NULL
-WHERE source = 'investigated-source' AND event_id = 'investigated-event'
-  AND customer_id = 'investigated-customer' AND processed_at IS NULL;
-COMMIT;
-```
-
-Review the transaction's affected rows before committing. Existing closing
-exclusions remain immutable after release; repaired usage retains its historical
-price and usage month but routes to an eligible open billing month.
-
-### Credit
-
-Use `POST /customers/{customer_id}/credits` to grant credit with a stable operation
-ID and `GET /customers/{customer_id}/credit` to read the exact balance and
-accounting progress. Credit pays usage only. See the
-[financial rules — Exact money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit)
-for tick units, allocation order, and later grants, and the
-[usage-to-invoice guide — Credit before rounding](docs/architecture/usage-to-invoice.md#what-credit-before-rounding-means)
-for a worked example.
-
-### Add-on purchases
-
-`POST /customers/{customer_id}/addons` purchases a recurring add-on with a stable
-`subscription_id` and snapshots its monthly price. Credit does not pay add-ons.
-See the [financial rules — UTC months, limits, add-ons, and late usage](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage)
-for full-month charges and the [billing model — Tables and relationships](docs/architecture/billing-model.md#tables-and-relationships)
-for subscription ownership and price snapshots.
-
-### Spend limits and platform queries
-
-Use `POST /customers/{customer_id}/spend-limit` with a stable operation ID and
-`limit_cents`, or explicit `null` for unlimited. Read the current UTC month with
-`GET /customers/{customer_id}/limit-status`, or an explicit `YYYY-MM` month with
-`GET /customers/{customer_id}/months/{month}/limit-status`. Status includes
-accounting progress; reaching a limit does not stop accounting.
-See the [financial rules — UTC months, limits, add-ons, and late usage](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage)
-for limit semantics and the [usage-to-invoice guide — Why the limit uses gross charges](docs/architecture/usage-to-invoice.md#why-the-limit-uses-gross-charges)
-for the rationale and example.
-
-### Monthly invoices
-
-Call `POST /customers/{customer_id}/invoices` with an explicit `YYYY-MM` month
-such as `2026-10`, in increasing month order. Only completed UTC calendar months
-can be closed; an ongoing or future month returns `422`. An empty month is valid.
-Retrying returns the same immutable invoice and number;
-`GET /customers/{customer_id}/invoices/{month}` reads that snapshot.
-
-See the [financial rules — Fixed calendar-month contract](docs/architecture/accounting-rules.md#fixed-calendar-month-contract)
-for period boundaries, the [usage-to-invoice guide — Invoice generation workflow](docs/architecture/usage-to-invoice.md#invoice-generation-workflow)
-for closing phases and retries, and the [Late usage chapter](docs/architecture/usage-to-invoice.md#10-late-usage-why-there-are-two-distinct-periods)
-for input received after closing. All non-null processing errors are durably
-excluded from issuance. Repair and release those receipts separately; successful
-recovery bills them in an eligible open month without changing the issued invoice.
-
-Operators trigger invoices explicitly. Automatic scheduling, customer day settings,
-and document delivery remain unimplemented; alternatives and the precise
-completed-month requirement are described in the
-[financial rules — Invoice generation and delivery (proposal)](docs/architecture/accounting-rules.md#invoice-generation-and-delivery-proposal).
-
-The [scenario style guide](docs/simulator/scenario-style.md) describes the named-step format
-used for durable platform workflows and literal expected results. Simulator transport tests
-run as `TestSimulatorExecutable` with separate workflow subtests; `RUN=Simulator` still selects them.
+Automatic invoice scheduling/delivery, external invoice references, configurable
+price denominators, and alternative catalog locking remain proposals.
