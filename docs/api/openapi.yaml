@@ -909,7 +909,14 @@ paths:
       tags:
       - Billing
       summary: Close a UTC month and issue its immutable invoice
-      description: The customer/month is the stable operation identity. First capture a durable cohort of
+      description: The fixed billing period is a whole UTC calendar month, with one immutable invoice per
+        customer/month. The request accepts only a YYYY-MM month, with no closing-day or usage-cutoff parameter.
+        A chosen issue or delivery day never changes the calendar period. Issue and closure times come from
+        the server clock. A new closure requires the server UTC time to be at or after the first instant
+        of the following month. Ongoing or future months return 422 with invalid_command and field month
+        before cohort capture, receipt processing, or any financial changes. January becomes eligible
+        exactly at 00:00:00Z on 1 February. Customer schedules and document delivery are not implemented.
+        The customer/month is the stable operation identity. First capture a durable cohort of
         committed pending receipts through the target month under the account lock. Drain without holding
         that lock across transactions. Cohort processing errors block issuance with 409; storage deadlines
         return 503 and retain resumable closing state. Later accepted receipts route to another open month
@@ -1024,7 +1031,8 @@ paths:
                   code: unsupported_media_type
                   message: Use uncompressed application/json with optional UTF-8 charset.
         '422':
-          description: Explicit required field or value is invalid.
+          description: Invalid required field or month that has not ended in UTC. Premature closing
+            leaves receipts and financial state unchanged; retry after the month ends.
           content:
             application/json:
               schema:
@@ -1032,7 +1040,8 @@ paths:
               example:
                 error:
                   code: invalid_command
-                  message: Explicit required field or value is invalid.
+                  field: month
+                  message: Only completed UTC calendar months can be closed.
         '503':
           description: Database deadline or storage failure. Retry unchanged operation identity and content;
             outcome may be unknown.
@@ -1582,3 +1591,5 @@ components:
       properties:
         month:
           $ref: '#/components/schemas/BillingMonth'
+          description: For a new closure, the whole UTC calendar month must have ended according to the
+            server clock. An already issued invoice remains available on an identical retry.

@@ -19,6 +19,15 @@ fail immediately if earlier billing actions have changed either account. Each se
 scenario also requires its own fresh seed accounts; acceptance tests create private
 schemas automatically. Changing `SOURCE` isolates receipt identities, not account balances.
 
+Invoice closure requires a completed UTC calendar month. The real API uses its
+server clock, so the fixed October/November 2026 assignment workflow can finish
+only from `2026-12-01T00:00:00Z`. Earlier runs stop at an invoice step with HTTP
+`422`; usage and financial commands already committed by earlier steps remain.
+For review before that date, run `make inbox-test RUN=BillingSimulator`. Those
+isolated integration servers use an explicit `2026-12-01T00:00:00Z` clock, while
+exercising the same month guard, router, worker, and persistence. Requests have no
+clock override.
+
 ```sh
 make up SERVICE=postgres
 make migrate

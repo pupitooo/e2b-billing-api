@@ -130,6 +130,13 @@ Credit is allocated against new exact ticks before rounding. The shared Go helpe
 
 `usage_month` and `billing_month` are finite first-of-month `date` values. Application code derives them in UTC. Late October usage billed in November retains `usage_month = 2026-10-01` and `billing_month = 2026-11-01`; its gross spend belongs to October. Billing months cannot precede usage months. Timestamps are finite `timestamptz` values. Subscription start months are checked against the purchase timestamp in UTC, independently of the SQL session's time zone.
 
+**The fixed billing contract is one immutable invoice per customer for a whole
+UTC calendar month.** A chosen generation or delivery day cannot change the
+period into a cycle starting on that day. `(customer_id, billing_month)` identifies
+both the final closure and invoice; `closed_at` records the actual closure time,
+not the end of a custom usage interval. See the [fixed calendar-month contract](accounting-rules.md#fixed-calendar-month-contract)
+and the [generation and delivery proposals, including the completed-month requirement](accounting-rules.md#invoice-generation-and-delivery-proposal).
+
 Default and customer prices can coexist at the same instant. `UNIQUE NULLS NOT DISTINCT (customer_id, metric, effective_from)` prevents two default prices at that instant as well as duplicate customer versions; see [PostgreSQL unique constraints](https://www.postgresql.org/docs/18/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS). The rater selects the latest eligible customer override first and otherwise the latest eligible default. It rejects unsupported segments crossing a price boundary; the database does not select the applicable price.
 
 ## Initial data and migrations

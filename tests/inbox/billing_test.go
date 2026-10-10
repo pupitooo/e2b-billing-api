@@ -20,6 +20,8 @@ import (
 // declares consumption, credit, closure state, and exact persisted outcomes.
 // UTC month crossings remain quarantined without financial effects, while
 // intervals immediately beside the boundary retain the correct accounting month.
+// Receipts delivered within their usage month stay there while it is open and
+// move to the next calendar month after its closure, including mid-month usage.
 func TestProcessBatch(t *testing.T) {
 	cases := []struct {
 		name             string
@@ -43,6 +45,8 @@ func TestProcessBatch(t *testing.T) {
 		{name: "split receipts round cumulative group", customer: "cyberdyne", units: []int64{60_000, 60_000}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditTicks: "0", wantGross: "600000", wantCredit: "0", wantRemaining: "0", wantCents: 1, wantRatings: 2, wantBillingMonth: "2026-10-01"},
 		{name: "fractional credit stays exact", customer: "acme", units: []int64{1_250}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditTicks: "1000000", wantGross: "5000", wantCredit: "5000", wantRemaining: "995000", wantCents: 0, wantRatings: 1, wantBillingMonth: "2026-10-01"},
 		{name: "late usage retains original price and spend month", customer: "acme", units: []int64{50_000_000}, schemaVersion: 1, start: "2026-10-30T12:00:00Z", end: "2026-10-30T13:00:00Z", receiptTime: "2026-11-01T00:00:00Z", creditTicks: "0", closedMonth: "2026-10-01", wantGross: "200000000", wantCredit: "0", wantRemaining: "0", wantCents: 200, wantRatings: 1, wantBillingMonth: "2026-11-01"},
+		{name: "open January retains usage after the twentieth", customer: "acme", units: []int64{100_000_000}, schemaVersion: 1, start: "2027-01-21T12:00:00Z", end: "2027-01-21T13:00:00Z", receiptTime: "2027-01-21T14:00:00Z", creditTicks: "0", wantGross: "400000000", wantCredit: "0", wantRemaining: "0", wantCents: 400, wantRatings: 1, wantError: false, wantBillingMonth: "2027-01-01"},
+		{name: "closed January routes a January receipt to February", customer: "acme", units: []int64{100_000_000}, schemaVersion: 1, start: "2027-01-21T12:00:00Z", end: "2027-01-21T13:00:00Z", receiptTime: "2027-01-21T14:00:00Z", creditTicks: "0", closedMonth: "2027-01-01", wantGross: "400000000", wantCredit: "0", wantRemaining: "0", wantCents: 400, wantRatings: 1, wantError: false, wantBillingMonth: "2027-02-01"},
 		{name: "unsupported schema is visible without charges", customer: "acme", units: []int64{100}, schemaVersion: 2, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditTicks: "1000000", wantGross: "0", wantCredit: "0", wantRemaining: "1000000", wantRatings: 0, wantError: true},
 		{name: "crossing price boundary is visible without charges", customer: "cyberdyne", units: []int64{100}, schemaVersion: 1, start: "2026-10-14T23:30:00Z", end: "2026-10-15T00:30:00Z", receiptTime: "2026-10-16T00:00:00Z", creditTicks: "0", wantGross: "0", wantCredit: "0", wantRemaining: "0", wantRatings: 0, wantError: true},
 	}

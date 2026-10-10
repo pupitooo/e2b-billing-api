@@ -39,8 +39,7 @@ type invoiceCharges struct {
 
 // buildInvoice reads all facts through the caller's locked transaction, then
 // delegates financial presentation to pure functions before anything is frozen.
-func buildInvoice(ctx context.Context, tx pgx.Tx, customer string, month time.Time) (Invoice, error) {
-	issuedAt := time.Now().UTC().Truncate(time.Microsecond)
+func buildInvoice(ctx context.Context, tx pgx.Tx, customer string, month, issuedAt time.Time) (Invoice, error) {
 	buyer, err := loadInvoiceBuyer(ctx, tx, customer)
 	if err != nil {
 		return Invoice{}, err

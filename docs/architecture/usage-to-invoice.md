@@ -379,6 +379,12 @@ invoice line -> frozen rated group -> usage_ratings -> usage_inbox
 
 ## 9. Invoice: an immutable monthly document
 
+**A whole UTC calendar month is the fixed billing period.** The generation and
+delivery dates never shift its boundaries. For example, a January invoice created
+on 20 February still has the January calendar period; later input follows the
+late-usage rule. See the [fixed contract](accounting-rules.md#fixed-calendar-month-contract)
+and the [generation versus delivery proposals](accounting-rules.md#invoice-generation-and-delivery-proposal).
+
 The `invoices` table stores customer, billing month, number, total cents, and the full
 immutable buyer/financial JSON snapshot. Its primary key permits one invoice per
 `(customer_id, billing_month)` and its unique constraint protects per-customer numbers.

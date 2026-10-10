@@ -21,9 +21,21 @@ var (
 )
 
 // Store borrows its pool; the process owner controls the pool's lifetime.
-type Store struct{ pool *pgxpool.Pool }
+type Store struct {
+	pool *pgxpool.Pool
+	now  func() time.Time
+}
 
-func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
+// NewStore uses the real server clock for closing and invoice timestamps.
+func NewStore(pool *pgxpool.Pool) *Store {
+	return NewStoreWithClock(pool, time.Now)
+}
+
+// NewStoreWithClock makes invoice time explicit for deterministic simulations.
+// Production callers use NewStore; HTTP requests never supply the clock.
+func NewStoreWithClock(pool *pgxpool.Pool, now func() time.Time) *Store {
+	return &Store{pool: pool, now: now}
+}
 
 // transact guarantees durable commit and cleanup independent of cancellation.
 func (s *Store) transact(ctx context.Context, action func(pgx.Tx) error) error {
