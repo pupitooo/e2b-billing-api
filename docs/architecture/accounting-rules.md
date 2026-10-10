@@ -14,14 +14,23 @@ below are implementation assumptions for this reference implementation.
 ## Exact money and credit
 
 All amounts are USD. One cent is 1_000_000 ticks; one tick is USD 0.000_000_01.
-Prices remain whole cents per million resource units:
+Prices remain whole cents per million resource units. The price denominator and
+money resolution are separate constants:
 
 ```text
-gross_charge_ticks = units * price_per_million_cents
+price_unit_count = 1_000_000
+ticks_per_cent = 1_000_000
+gross_charge_ticks = units * price_per_million_cents * ticks_per_cent / price_unit_count
 used_credit_ticks = min(new_charge_ticks, available_credit_ticks)
 remaining_credit_ticks = available_credit_ticks - used_credit_ticks
 net_charge_ticks = new_charge_ticks - used_credit_ticks
 ```
+
+`accounting.PriceUnitCount` and `accounting.TicksPerCent` currently cancel in the
+charge formula. Multiply before dividing with arbitrary-precision integers and
+reject a nonzero remainder. [Issue #29](https://github.com/pupitooo/e2b-billing-api/issues/29)
+proposes a denominator stored on each historical price version, preserving the
+current money resolution and backfilling legacy versions with 1_000_000.
 
 Go amounts are immutable arbitrary-precision integers; PostgreSQL uses finite
 integer `numeric` values. Negative amounts, fractional ticks, and overflow when

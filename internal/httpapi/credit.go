@@ -17,11 +17,13 @@ func registerCreditRoutes(mux *http.ServeMux, store *billing.Store, timeout time
 		if !commandJSON(w, r, &input, []string{"operation_id", "amount_cents", "recorded_at"}) {
 			return
 		}
+
 		recorded, err := commandTime(input.RecordedAt, "recorded_at")
 		if err != nil {
 			writeFinancialError(w, err)
 			return
 		}
+
 		grant := billing.CreditGrant{OperationID: input.OperationID, AmountCents: input.AmountCents, RecordedAt: recorded}
 		ctx, cancel := financialContext(r, timeout)
 		defer cancel()

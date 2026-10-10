@@ -34,13 +34,16 @@ func run(args []string, getenv func(string) string) int {
 		logger.Error("Invalid worker configuration", "error", err)
 		return 1
 	}
+
 	if len(args) == 1 && args[0] == "healthcheck" {
 		if err := worker.CheckHealth(cfg.heartbeatFile, cfg.heartbeatMaxAge, time.Now); err != nil {
 			logger.Error("Worker health check failed", "error", err)
 			return 1
 		}
+
 		return 0
 	}
+
 	if len(args) != 0 {
 		logger.Error("Usage: billing-worker [healthcheck]")
 		return 1
@@ -55,6 +58,7 @@ func run(args []string, getenv func(string) string) int {
 		logger.Error("Initialize accounting database", "error", err)
 		return 1
 	}
+
 	defer pool.Close()
 	logger.Info("Starting standalone billing worker", "accounting_enabled", true,
 		"poll_interval", cfg.pollInterval.String(), "batch_timeout", cfg.batchTimeout.String())
@@ -69,7 +73,9 @@ func run(args []string, getenv func(string) string) int {
 		logger.Error("Billing worker stopped with an error", "error", err)
 		return 1
 	}
+
 	logger.Info("Billing worker stopped")
+
 	return 0
 }
 
@@ -89,18 +95,23 @@ func loadConfig(getenv func(string) string) (config, error) {
 		if value == "" {
 			return config{}, fmt.Errorf("%s is required", setting.name)
 		}
+
 		duration, err := time.ParseDuration(value)
 		if err != nil || duration <= 0 {
 			return config{}, fmt.Errorf("%s must be a positive Go duration", setting.name)
 		}
+
 		*setting.value = duration
 	}
+
 	cfg.heartbeatFile = getenv("E2B_WORKER_HEARTBEAT_FILE")
 	if strings.TrimSpace(cfg.heartbeatFile) == "" {
 		return config{}, fmt.Errorf("E2B_WORKER_HEARTBEAT_FILE is required")
 	}
+
 	if cfg.batchTimeout >= cfg.heartbeatMaxAge || cfg.pollInterval >= cfg.heartbeatMaxAge-cfg.batchTimeout {
 		return config{}, fmt.Errorf("E2B_WORKER_HEARTBEAT_MAX_AGE must exceed the batch timeout plus polling interval")
 	}
+
 	return cfg, nil
 }

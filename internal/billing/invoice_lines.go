@@ -21,7 +21,9 @@ func invoiceHeader(customer string, month, issuedAt time.Time, buyer invoiceBuye
 	if buyer.NextNumber == math.MaxInt64 {
 		return invoice, fmt.Errorf("invoice sequence exhausted")
 	}
+
 	invoice.Number = fmt.Sprintf("%s-%04d", strings.ToUpper(customer), buyer.NextNumber)
+
 	return invoice, nil
 }
 
@@ -32,6 +34,7 @@ func assembleInvoice(invoice Invoice, month time.Time, charges invoiceCharges) (
 	if err != nil {
 		return invoice, err
 	}
+
 	invoice.Lines = append(invoice.Lines, usage.Lines...)
 	invoice.GrossUsageTicks = usage.Gross.Ticks().String()
 	invoice.CreditUsedTicks = usage.Credit.Ticks().String()
@@ -41,10 +44,12 @@ func assembleInvoice(invoice Invoice, month time.Time, charges invoiceCharges) (
 			Description: addon.Name, AmountCents: addon.PriceCents,
 		})
 	}
+
 	invoice.Lines = append(invoice.Lines, InvoiceLine{
 		Kind: "credit", Description: "Used credit", AmountCents: -usage.DeductionCents,
 	})
 	invoice.TotalCents, err = invoiceTotal(invoice.Lines)
+
 	return invoice, err
 }
 
@@ -64,14 +69,17 @@ func invoiceUsageLines(month time.Time, groups []invoiceUsage) (invoiceUsageSumm
 		if err != nil {
 			return summary, err
 		}
+
 		summary.DeductionCents, err = addCents(summary.DeductionCents, deduction)
 		if err != nil {
 			return summary, err
 		}
+
 		summary.Lines = append(summary.Lines, line)
 		summary.Gross = summary.Gross.Add(group.Gross)
 		summary.Credit = summary.Credit.Add(group.Credit)
 	}
+
 	return summary, nil
 }
 
@@ -80,6 +88,7 @@ func invoiceUsageLine(month time.Time, group invoiceUsage) (InvoiceLine, int64, 
 	if err != nil {
 		return InvoiceLine{}, 0, err
 	}
+
 	line := InvoiceLine{
 		Kind: "usage", Description: "Usage", AmountCents: display.GrossCents,
 		PriceVersionID: group.PriceVersionID, Metric: group.Metric,
@@ -89,6 +98,7 @@ func invoiceUsageLine(month time.Time, group invoiceUsage) (InvoiceLine, int64, 
 	if group.UsageMonth.Before(month) {
 		line.Description = "Late usage from " + line.UsageMonth
 	}
+
 	return line, display.CreditCents, nil
 }
 
@@ -99,9 +109,11 @@ func invoiceTotal(lines []InvoiceLine) (int64, error) {
 	for _, line := range lines {
 		total.Add(total, big.NewInt(line.AmountCents))
 	}
+
 	if !total.IsInt64() || total.Sign() < 0 {
 		return 0, fmt.Errorf("invoice total is outside nonnegative signed 64-bit cents")
 	}
+
 	return total.Int64(), nil
 }
 
@@ -109,5 +121,6 @@ func addCents(a, b int64) (int64, error) {
 	if (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {
 		return 0, fmt.Errorf("invoice cents exceed the signed 64-bit range")
 	}
+
 	return a + b, nil
 }

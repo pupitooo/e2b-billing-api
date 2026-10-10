@@ -280,20 +280,23 @@ func TestEventValidate(t *testing.T) {
 			if (err != nil) != tt.wantError {
 				t.Fatalf("Validate(%+v) error = %v; want error=%t", input, err, tt.wantError)
 			}
+
 			if !tt.wantError {
 				return
 			}
+
 			var validationError *usage.ValidationError
 			if !errors.As(err, &validationError) {
 				t.Fatalf("Validate error = %v; want ValidationError", err)
 			}
+
 			if validationError.Field != tt.wantErrorField {
 				t.Errorf("Validate(%+v) error field = %q; want %q", input, validationError.Field, tt.wantErrorField)
 			}
 		})
 	}
-	t.Run("invalid identifiers", func(t *testing.T) {
 
+	t.Run("invalid identifiers", func(t *testing.T) {
 		fields := []struct {
 			name           string
 			wantErrorField string
@@ -371,10 +374,12 @@ func TestEventValidate(t *testing.T) {
 						if (err != nil) != value.wantError {
 							t.Fatalf("Validate(%+v) error = %v; want error=%t", event, err, value.wantError)
 						}
+
 						var validationError *usage.ValidationError
 						if !errors.As(err, &validationError) {
 							t.Fatalf("Validate error = %v; want ValidationError", err)
 						}
+
 						if validationError.Field != field.wantErrorField {
 							t.Errorf("Error field = %q; want %q", validationError.Field, field.wantErrorField)
 						}
@@ -382,6 +387,5 @@ func TestEventValidate(t *testing.T) {
 				}
 			})
 		}
-
 	})
 }

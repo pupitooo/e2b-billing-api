@@ -79,6 +79,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 				if response.Code != tt.wantStatus {
 					t.Fatalf("Status = %d, want %d", response.Code, tt.wantStatus)
 				}
+
 				if tt.wantAllow != "" && response.Header().Get("Allow") != tt.wantAllow {
 					t.Errorf("Allow = %q, want %q", response.Header().Get("Allow"), tt.wantAllow)
 				}
@@ -105,15 +106,18 @@ func TestHandlerServeHTTP(t *testing.T) {
 		if response.Code != tt.wantStatus {
 			t.Fatalf("Status = %d, want %d", response.Code, http.StatusAccepted)
 		}
+
 		if got := response.Header().Get("Content-Type"); got != tt.wantContentType {
 			t.Errorf("Content-Type = %q, want application/json", got)
 		}
+
 		var body struct {
 			Status string `json:"status"`
 		}
 		if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 			t.Fatalf("Decode response: %v", err)
 		}
+
 		if body.Status != tt.wantBodyStatus {
 			t.Errorf("Response status = %q, want accepted", body.Status)
 		}
@@ -159,6 +163,14 @@ func TestHandlerServeHTTP(t *testing.T) {
 				body: changeEvent(t, func(e map[string]any) {
 					e["period_start"] = "2026-10-31T23:59:59.999999Z"
 					e["period_end"] = "2026-11-01T08:00:00+08:00"
+				}),
+				wantStatus: http.StatusAccepted,
+			},
+			{
+				name: "cross-month usage is accepted for asynchronous accounting",
+				body: changeEvent(t, func(e map[string]any) {
+					e["period_start"] = "2026-10-31T23:59:00Z"
+					e["period_end"] = "2026-11-01T00:01:00Z"
 				}),
 				wantStatus: http.StatusAccepted,
 			},
@@ -669,6 +681,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 					assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, tt.wantErrorField)
 					return
 				}
+
 				if response.Code != tt.wantStatus {
 					t.Errorf("Status = %d; want %d", response.Code, tt.wantStatus)
 				}
@@ -731,6 +744,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 					assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, "")
 					return
 				}
+
 				if response.Code != tt.wantStatus {
 					t.Errorf("Status = %d; want %d", response.Code, tt.wantStatus)
 				}
@@ -821,6 +835,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 					return ctx.Err()
 				}
 			}
+
 			return nil
 		})
 		handler := httpapi.NewHandler(store, time.Second, tt.maxInFlight)
@@ -834,6 +849,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("First batch did not reach storage")
 		}
+
 		rejected := httptest.NewRecorder()
 		reader := &observedBody{}
 		handler.ServeHTTP(rejected, httptest.NewRequest(http.MethodPost, "/usage/batches", reader))
@@ -841,20 +857,24 @@ func TestHandlerServeHTTP(t *testing.T) {
 		if reader.read != tt.wantBodyRead || rejected.Header().Get("Retry-After") != tt.wantRetryAfter || calls.Load() != tt.wantCallsWhileBlocked {
 			t.Error("Rejected batch read its body, reached storage, or omitted retry guidance")
 		}
+
 		health := httptest.NewRecorder()
 		handler.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 		if health.Code != tt.wantHealthStatus {
 			t.Errorf("Health during overload = %d, want 200", health.Code)
 		}
+
 		unblock()
 		select {
 		case <-finished:
 		case <-time.After(time.Second):
 			t.Fatal("Admitted batch did not complete")
 		}
+
 		if first.Code != tt.wantAcceptedStatus {
 			t.Errorf("Admitted batch = %d, want 202", first.Code)
 		}
+
 		response := httptest.NewRecorder()
 		request = httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(tt.body))
 		request.Header.Set("Content-Type", "application/json")
@@ -890,18 +910,22 @@ func TestHandlerServeHTTP(t *testing.T) {
 			if len(events) != 1 {
 				t.Fatalf("Stored batch length = %d, want 1", len(events))
 			}
+
 			event := events[0]
 			if event != tt.wantEvent {
 				t.Errorf("Parsed store input = %+v", event)
 			}
+
 			if event.PeriodStart.Location() != time.UTC || receipt.Location() != time.UTC ||
 				receipt.Before(before) || receipt.After(time.Now()) || receipt.Nanosecond()%1_000 != 0 {
 				t.Errorf("Receipt or consumption time was not supplied canonically: %s", receipt)
 			}
+
 			deadline, bounded := ctx.Deadline()
 			if !bounded || time.Until(deadline) <= 0 || time.Until(deadline) > tt.wantMaximumDeadline {
 				t.Errorf("Store context deadline = %s, bounded %v", deadline, bounded)
 			}
+
 			return nil
 		})
 		response := httptest.NewRecorder()
@@ -926,6 +950,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 				for key, value := range first.(map[string]any) {
 					second[key] = value
 				}
+
 				second["event_id"], second["units"] = "second", -1
 				batch["events"] = []any{first, second}
 			}),
@@ -986,17 +1011,20 @@ func TestHandlerServeHTTP(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal("Handler never reached storage")
 		}
+
 		select {
 		case status := <-response.statuses:
 			t.Fatalf("Response %d was sent before commit", status)
 		default:
 		}
+
 		close(committed)
 		select {
 		case <-done:
 		case <-ctx.Done():
 			t.Fatal("Handler did not finish after commit")
 		}
+
 		if response.Code != tt.wantStatusAfterCommit {
 			t.Errorf("Committed response = %d, want 202", response.Code)
 		}
@@ -1057,6 +1085,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 				if strings.Contains(response.Body.String(), "secret") || strings.Contains(response.Body.String(), "accepted") {
 					t.Errorf("Failure response leaked details or acknowledged: %s", response.Body)
 				}
+
 				var body struct {
 					Error struct {
 						Source  string `json:"source"`
@@ -1066,12 +1095,15 @@ func TestHandlerServeHTTP(t *testing.T) {
 				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 					t.Fatalf("Decode storage failure: %v", err)
 				}
+
 				if tt.wantStatus == 409 && (body.Error.Source != tt.wantSource || body.Error.EventID != tt.wantEventID) {
 					t.Errorf("Conflict identity = %+v", body.Error)
 				}
+
 				if tt.wantStatus == 503 && response.Header().Get("Retry-After") != tt.wantRetryAfter {
 					t.Errorf("Retry-After = %q, want 1", response.Header().Get("Retry-After"))
 				}
+
 				assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, "")
 			})
 		}
@@ -1146,6 +1178,7 @@ func postBatch(body, mediaType string) *httptest.ResponseRecorder {
 	request.Header.Set("Content-Type", mediaType)
 	response := httptest.NewRecorder()
 	httpapi.NewHandler(acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
+
 	return response
 }
 
@@ -1157,11 +1190,13 @@ func changeBatch(t *testing.T, change func(map[string]any)) string {
 	if err := json.Unmarshal([]byte(validUsageBatch), &batch); err != nil {
 		t.Fatalf("Decode fixture: %v", err)
 	}
+
 	change(batch)
 	body, err := json.Marshal(batch)
 	if err != nil {
 		t.Fatalf("Encode fixture: %v", err)
 	}
+
 	return string(body)
 }
 
@@ -1169,6 +1204,7 @@ func changeBatch(t *testing.T, change func(map[string]any)) string {
 // valid surrounding fields so the resulting error can be attributed correctly.
 func changeEvent(t *testing.T, change func(map[string]any)) string {
 	t.Helper()
+
 	return changeBatch(t, func(batch map[string]any) {
 		change(batch["events"].([]any)[0].(map[string]any))
 	})
@@ -1181,15 +1217,18 @@ func assertRequestError(t *testing.T, response *httptest.ResponseRecorder, statu
 	if response.Code != status {
 		t.Fatalf("Status = %d, want %d; response: %s", response.Code, status, response.Body)
 	}
+
 	if contentType := response.Header().Get("Content-Type"); contentType != "application/json" {
 		t.Fatalf("Error Content-Type = %q, want application/json", contentType)
 	}
+
 	var body struct {
 		Error struct{ Code, Message, Field string } `json:"error"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("Decode error response: %v", err)
 	}
+
 	if body.Error.Code != code || body.Error.Field != field || body.Error.Message == "" {
 		t.Errorf("Error = %+v, want code %q, field %q, and a description", body.Error, code, field)
 	}
@@ -1199,12 +1238,14 @@ func assertRequestError(t *testing.T, response *httptest.ResponseRecorder, statu
 // a boundary case; it leaves the expected HTTP outcome in that case's table.
 func repeatedEvents(t *testing.T, count int) string {
 	t.Helper()
+
 	return changeBatch(t, func(batch map[string]any) {
 		event := batch["events"].([]any)[0]
 		events := make([]any, count)
 		for index := range events {
 			events[index] = event
 		}
+
 		batch["events"] = events
 	})
 }

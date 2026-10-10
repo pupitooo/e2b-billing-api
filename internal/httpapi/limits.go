@@ -13,6 +13,7 @@ func registerLimitRoutes(mux *http.ServeMux, store *billing.Store, timeout time.
 		if !commandJSON(w, r, &change, []string{"operation_id", "limit_cents"}, "limit_cents") {
 			return
 		}
+
 		ctx, cancel := financialContext(r, timeout)
 		defer cancel()
 		err := store.SetSpendLimit(ctx, r.PathValue("customer_id"), change)
@@ -23,6 +24,7 @@ func registerLimitRoutes(mux *http.ServeMux, store *billing.Store, timeout time.
 		if month == "" {
 			month = time.Now().UTC().Format("2006-01")
 		}
+
 		ctx, cancel := financialContext(r, timeout)
 		defer cancel()
 		result, err := store.MonthlyLimitStatus(ctx, r.PathValue("customer_id"), month)

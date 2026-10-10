@@ -30,6 +30,7 @@ func run(getenv func(string) string) error {
 	if err != nil {
 		return fmt.Errorf("invalid API configuration: %w", err)
 	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	startup, cancel := context.WithTimeout(ctx, cfg.startupTimeout)
@@ -41,8 +42,10 @@ func run(getenv func(string) string) error {
 		if ctx.Err() != nil {
 			return nil
 		}
+
 		return fmt.Errorf("initialize inbox: %w", err)
 	}
+
 	defer func() {
 		pool.Close()
 		log.Print("Inbox database pool closed")
@@ -65,6 +68,7 @@ func run(getenv func(string) string) error {
 	log.Printf("API limits: read_header=%s read=%s write=%s idle=%s ingestion=%s rollback=%s shutdown=%s db_min=%d db_max=%d in_flight=%d",
 		cfg.readHeaderTimeout, cfg.readTimeout, cfg.writeTimeout, cfg.idleTimeout,
 		cfg.ingestionTimeout, cfg.rollbackTimeout, cfg.shutdownTimeout, cfg.poolMinConns, cfg.poolMaxConns, cfg.maxInFlight)
+
 	return serveUntilStopped(ctx, server, listener, cfg.shutdownTimeout)
 }
 
@@ -79,6 +83,7 @@ func serveUntilStopped(ctx context.Context, server *http.Server, listener net.Li
 	case <-ctx.Done():
 		log.Print("Stopping HTTP API; waiting for active requests")
 	}
+
 	shutdown, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if err := server.Shutdown(shutdown); err != nil {
@@ -87,11 +92,14 @@ func serveUntilStopped(ctx context.Context, server *http.Server, listener net.Li
 		_ = server.Close()
 		return fmt.Errorf("shut down HTTP server: %w", err)
 	}
+
 	if serveErr == nil {
 		serveErr = <-stopped
 	}
+
 	if !errors.Is(serveErr, http.ErrServerClosed) {
 		return fmt.Errorf("serve HTTP requests: %w", serveErr)
 	}
+
 	return nil
 }

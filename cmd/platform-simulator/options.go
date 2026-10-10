@@ -45,9 +45,11 @@ func parseCommandOptions(args []string, errorOutput io.Writer) (commandOptions, 
 	if err := flags.Parse(args); err != nil {
 		return options, err
 	}
+
 	if flags.NArg() != 0 {
 		return options, fmt.Errorf("unexpected positional arguments")
 	}
+
 	return options, nil
 }
 
@@ -56,6 +58,7 @@ func (options commandOptions) sender(output io.Writer) *simulator.Sender {
 	if options.Scenario == "duplicates" && duplicates == 0 {
 		duplicates = 1
 	}
+
 	return &simulator.Sender{
 		BaseURL: options.BaseURL, Client: &http.Client{Timeout: options.Timeout},
 		BatchSize: options.BatchSize, BatchDelay: options.BatchDelay, RetryMin: options.RetryMin, RetryMax: options.RetryMax,
@@ -68,14 +71,17 @@ func runBillingWorkflow(ctx context.Context, options commandOptions, output io.W
 	if options.changesTransportInputs() {
 		return fmt.Errorf("billing workflows declare their inputs; transport generation flags require a transport scenario")
 	}
+
 	path := options.ScenarioFile
 	if path == "" {
 		path = filepath.Join("docs/simulator", options.Scenario+".json")
 	}
+
 	plan, err := simulator.LoadWorkflow(path)
 	if err != nil {
 		return err
 	}
+
 	return simulator.RunWorkflow(ctx, simulator.WorkflowOptions{
 		Plan: plan, StatePath: options.StatePath, Source: options.Source, BaseURL: options.BaseURL,
 		Client: &http.Client{Timeout: options.Timeout}, Action: options.Action, Mode: options.Mode,

@@ -100,6 +100,21 @@ INSERT INTO usage_ratings (source, event_id, group_id) VALUES
     ('billing-model-test', 'acme-2', 'billing-model-acme-oct'),
     ('billing-model-test', 'acme-late', 'billing-model-acme-late');
 
+SELECT pg_temp.assert_result(
+    scenario => 'receipt ending exactly at the UTC month boundary enters October',
+    input_sql => $input$
+        SELECT g.usage_month::text, g.billing_month::text
+        FROM usage_ratings r JOIN rated_usage_groups g USING (group_id)
+        WHERE r.source = 'billing-model-test' AND r.event_id = 'acme-2'
+    $input$,
+    want_result => $want$
+    {
+        "usage_month": "2026-10-01",
+        "billing_month": "2026-10-01"
+    }
+    $want$::jsonb
+);
+
 INSERT INTO monthly_usage (customer_id, usage_month, gross_charge_ticks) VALUES
     ('billing-model-acme', '2026-10-01', 1400000000),
     ('billing-model-cyberdyne', '2026-10-01', 617283945);

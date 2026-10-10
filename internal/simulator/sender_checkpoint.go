@@ -9,6 +9,7 @@ func (s *Store) checkpointSendAttempt(state *State) error {
 	if err := s.Save(state); err != nil {
 		return fmt.Errorf("save send attempt: %w", err)
 	}
+
 	return nil
 }
 
@@ -17,6 +18,7 @@ func (s *Store) checkpointDeliveryFailure(state *State, failure error, stage str
 	if err := s.Save(state); err != nil {
 		return fmt.Errorf("save %s: %w", stage, err)
 	}
+
 	return nil
 }
 
@@ -28,13 +30,17 @@ func (s *Store) checkpointDeliveryReceipt(state *State, batch []int) error {
 		previous[position] = state.Delivered[index]
 		state.Delivered[index] = true
 	}
+
 	state.LastError = ""
 	if err := s.Save(state); err != nil {
 		for position, index := range batch {
 			state.Delivered[index] = previous[position]
 		}
+
 		state.LastError = "Delivery receipt could not be saved; retain and retry the original measurements."
+
 		return fmt.Errorf("save delivery receipt: %w", err)
 	}
+
 	return nil
 }

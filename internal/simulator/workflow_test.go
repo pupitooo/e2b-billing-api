@@ -71,20 +71,24 @@ func TestOpenWorkflowState(t *testing.T) {
 			} else if _, err := openWorkflowState(store, options); err != nil {
 				t.Fatal(err)
 			}
+
 			before, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			options.Source = tc.restartSource
 			options.Plan.Steps[0].Request.Path = tc.restartPath
 			_, err = openWorkflowState(store, options)
 			if (err != nil) != tc.wantError {
 				t.Fatalf("openWorkflowState(source=%s path=%s): error=%v wantError=%t", tc.restartSource, tc.restartPath, err, tc.wantError)
 			}
+
 			after, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			if string(before) != string(after) {
 				t.Fatal("opening a saved workflow changed its durable checkpoint")
 			}

@@ -57,9 +57,11 @@ func (e Event) Validate() error {
 		if !utf8.ValidString(identifier.value) {
 			return &ValidationError{identifier.field, "must be valid UTF-8"}
 		}
+
 		if strings.ContainsRune(identifier.value, '\x00') {
 			return &ValidationError{identifier.field, "must not contain a NUL character"}
 		}
+
 		if strings.TrimSpace(identifier.value) == "" {
 			return &ValidationError{identifier.field, "must contain a non-whitespace character"}
 		}
@@ -68,18 +70,23 @@ func (e Event) Validate() error {
 	if e.SchemaVersion <= 0 {
 		return &ValidationError{"schema_version", "must be positive"}
 	}
+
 	if e.Units < 0 {
 		return &ValidationError{"units", "must be non-negative"}
 	}
+
 	if err := validateTimestamp("period_start", e.PeriodStart); err != nil {
 		return err
 	}
+
 	if err := validateTimestamp("period_end", e.PeriodEnd); err != nil {
 		return err
 	}
+
 	if !e.PeriodEnd.After(e.PeriodStart) {
 		return &ValidationError{"period_end", "must be later than period_start"}
 	}
+
 	return nil
 }
 
@@ -87,14 +94,17 @@ func validateTimestamp(field string, value time.Time) error {
 	if value.IsZero() {
 		return &ValidationError{field, "is required"}
 	}
+
 	// Apply the supported year range to the instant after UTC conversion.
 	if year := value.UTC().Year(); year < MinUTCYear || year > MaxUTCYear {
 		return &ValidationError{field, fmt.Sprintf("must have a UTC year between %d and %d", MinUTCYear, MaxUTCYear)}
 	}
+
 	// PostgreSQL stores microseconds. Reject finer values so a later retry can
 	// compare the original measurement without losing timestamp precision.
 	if value.Nanosecond()%int(time.Microsecond) != 0 {
 		return &ValidationError{field, "must use at most microsecond precision"}
 	}
+
 	return nil
 }

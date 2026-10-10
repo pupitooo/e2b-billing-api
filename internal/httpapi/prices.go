@@ -22,19 +22,23 @@ func registerPriceRoutes(mux *http.ServeMux, store *billing.Store, timeout time.
 		if !commandJSON(w, r, &input, []string{"price_version_id", "customer_id", "metric", "price_per_million_cents", "effective_from"}, "customer_id") {
 			return
 		}
+
 		effective, err := commandTime(input.EffectiveFrom, "effective_from")
 		if err != nil {
 			writeFinancialError(w, err)
 			return
 		}
+
 		price := accounting.PriceVersion{ID: input.ID, Metric: input.Metric, PricePerMillionCents: input.PricePerMillionCents, EffectiveFrom: effective}
 		if input.CustomerID != nil {
 			if err := billing.ValidateIdentifier("customer_id", *input.CustomerID); err != nil {
 				writeFinancialError(w, err)
 				return
 			}
+
 			price.CustomerID = *input.CustomerID
 		}
+
 		ctx, cancel := financialContext(r, timeout)
 		defer cancel()
 		err = store.CreatePrice(ctx, price)

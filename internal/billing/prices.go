@@ -15,27 +15,34 @@ func (s *Store) CreatePrice(ctx context.Context, price accounting.PriceVersion) 
 	if err := validatePrice(price); err != nil {
 		return err
 	}
+
 	return s.transact(ctx, func(tx pgx.Tx) error {
 		if err := catalogLock(ctx, tx, true); err != nil {
 			return err
 		}
+
 		existing, err := priceByID(ctx, tx, price.ID)
 		if err == nil {
 			if samePrice(existing, price) {
 				return nil
 			}
+
 			return ErrConflict
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+
 		if err := preserveRatedHistory(ctx, tx, price); err != nil {
 			return err
 		}
+
 		var owner any
 		if price.CustomerID != "" {
 			owner = price.CustomerID
 		}
+
 		_, err = tx.Exec(ctx, `INSERT INTO price_versions VALUES ($1,$2,$3,$4,$5)`,
 			price.ID, owner, price.Metric, price.PricePerMillionCents, price.EffectiveFrom)
 		var databaseError *pgconn.PgError
@@ -43,10 +50,12 @@ func (s *Store) CreatePrice(ctx context.Context, price accounting.PriceVersion) 
 			if databaseError.Code == "23505" {
 				return ErrConflict
 			}
+
 			if databaseError.Code == "23503" {
 				return ErrNotFound
 			}
 		}
+
 		return err
 	})
 }
@@ -57,14 +66,17 @@ func validatePrice(p accounting.PriceVersion) error {
 			return err
 		}
 	}
+
 	if p.CustomerID != "" {
 		if err := ValidateIdentifier("customer_id", p.CustomerID); err != nil {
 			return err
 		}
 	}
+
 	if err := validateTime("effective_from", p.EffectiveFrom); err != nil {
 		return err
 	}
+
 	return validateCents("price_per_million_cents", p.PricePerMillionCents, false)
 }
 
@@ -73,6 +85,7 @@ func priceByID(ctx context.Context, tx pgx.Tx, id string) (accounting.PriceVersi
 	err := tx.QueryRow(ctx, `SELECT price_version_id,COALESCE(customer_id,''),metric,
         price_per_million_cents,effective_from FROM price_versions WHERE price_version_id=$1`, id).
 		Scan(&p.ID, &p.CustomerID, &p.Metric, &p.PricePerMillionCents, &p.EffectiveFrom)
+
 	return p, err
 }
 
@@ -93,6 +106,7 @@ func preserveRatedHistory(ctx context.Context, tx pgx.Tx, proposed accounting.Pr
 	if err != nil {
 		return err
 	}
+
 	var affected []struct {
 		item    receipt
 		priceID string
@@ -107,21 +121,26 @@ func preserveRatedHistory(ctx context.Context, tx pgx.Tx, proposed accounting.Pr
 			rows.Close()
 			return err
 		}
+
 		affected = append(affected, item)
 	}
+
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
+
 	for _, record := range affected {
 		prices, err := loadPrices(ctx, tx, record.item.event.CustomerID, proposed.Metric)
 		if err != nil {
 			return err
 		}
+
 		rated, err := accounting.Rate(record.item.event, append(prices, proposed))
 		if err != nil || rated.Price.ID != record.priceID {
 			return ErrConflict
 		}
 	}
+
 	return nil
 }

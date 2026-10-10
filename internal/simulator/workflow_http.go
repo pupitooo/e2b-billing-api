@@ -40,25 +40,32 @@ func (r *workflowRunner) runStep(ctx context.Context, step WorkflowStep) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		r.state.Attempts++
 		response, retryable, err := r.observeStep(ctx, step)
 		if err == nil {
 			return r.completeStep(step, response.body)
 		}
+
 		if saveError := r.recordStepFailure(step, attempt, err); saveError != nil {
 			return saveError
 		}
+
 		if !retryable {
 			return fmt.Errorf("step %s: %w", step.Name, err)
 		}
+
 		if r.options.MaxAttempts > 0 && attempt == r.options.MaxAttempts {
 			break
 		}
+
 		if err := (&Sender{}).sleep(ctx, max(delay, response.retryDelay)); err != nil {
 			return err
 		}
+
 		delay = workflowBackoff(delay, r.options.RetryMax)
 	}
+
 	return fmt.Errorf("step %s exceeded attempt limit: %s", step.Name, r.state.LastError)
 }
 
@@ -68,9 +75,11 @@ func (r *workflowRunner) observeStep(ctx context.Context, step WorkflowStep) (wo
 	if err == nil {
 		err = matchWorkflowResponse(response, step.Want, r.state.Captures)
 	}
+
 	if step.Await && response.status == step.Want.Status && !hasUnexpectedProcessingError(response.body, step.Want.Body) {
 		retryable = true
 	}
+
 	return response, retryable, err
 }
 
@@ -83,7 +92,9 @@ func (r *workflowRunner) recordStepFailure(step WorkflowStep, attempt int, err e
 	if saveError := r.store.saveJSON(r.state); saveError != nil {
 		return saveError
 	}
+
 	fmt.Fprintf(r.options.Output, "Step %q attempt %d: %v\n", step.Name, attempt, err)
+
 	return nil
 }
 
@@ -91,6 +102,7 @@ func workflowBackoff(delay, maximum time.Duration) time.Duration {
 	if delay >= maximum/2 {
 		return maximum
 	}
+
 	return delay * 2
 }
 
@@ -101,6 +113,7 @@ func (r *workflowRunner) request(ctx context.Context, step WorkflowStep) (workfl
 	if err != nil {
 		return workflowResponse{}, err
 	}
+
 	request.Header.Set("Content-Type", "application/json")
 	response, err := r.options.Client.Do(request)
 	if err != nil {
@@ -111,13 +124,16 @@ func (r *workflowRunner) request(ctx context.Context, step WorkflowStep) (workfl
 	if err != nil {
 		return workflowResponse{}, err
 	}
+
 	if len(data) > 1<<20 {
 		return workflowResponse{}, fmt.Errorf("workflow response exceeds one MiB")
 	}
+
 	result := workflowResponse{status: response.StatusCode, body: data, retryDelay: retryAfter(response.Header.Get("Retry-After"))}
 	if r.shouldLoseResponse(step, response.StatusCode) {
 		return result, r.injectResponseLoss()
 	}
+
 	return result, nil
 }
 
@@ -126,9 +142,11 @@ func (r *workflowRunner) injectResponseLoss() error {
 	if r.options.LoseResponse {
 		r.state.LostResponseInjected = true
 	}
+
 	if err := r.store.saveJSON(r.state); err != nil {
 		return err
 	}
+
 	return fmt.Errorf("injected lost committed response; retrying unchanged identity/content")
 }
 
@@ -136,6 +154,7 @@ func (r *workflowRunner) shouldLoseResponse(step WorkflowStep, status int) bool 
 	if step.Request.Method != "POST" || (status != 200 && status != 202) || r.state.LostSteps[r.state.NextStep] {
 		return false
 	}
+
 	return step.Fault.LoseResponse || (r.options.LoseResponse && !r.state.LostResponseInjected)
 }
 
@@ -144,12 +163,15 @@ func (r *workflowRunner) completeStep(step WorkflowStep, body []byte) error {
 	if step.Capture != "" {
 		r.state.Captures[step.Capture] = append(json.RawMessage(nil), body...)
 	}
+
 	r.state.NextStep++
 	r.state.LastError = ""
 	if err := r.store.saveJSON(r.state); err != nil {
 		r.state.NextStep = previous
 		return err
 	}
+
 	fmt.Fprintf(r.options.Output, "Passed step %q (%s %s, HTTP %d)\n", step.Name, step.Request.Method, step.Request.Path, step.Want.Status)
+
 	return nil
 }

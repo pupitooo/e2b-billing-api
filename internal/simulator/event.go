@@ -33,11 +33,13 @@ func (e Event) validate() error {
 	if err := event.Validate(); err != nil {
 		return fmt.Errorf("event %q: %w", e.EventID, err)
 	}
+
 	for _, value := range []string{e.Source, e.EventID, e.CustomerID, e.SandboxID, e.Metric} {
 		if len(value) > 256 {
 			return fmt.Errorf("event %q: identifiers must fit in 256 UTF-8 bytes", e.EventID)
 		}
 	}
+
 	return nil
 }
 
@@ -47,14 +49,17 @@ func decodeStrict(reader io.Reader, target any) error {
 	if err := decoder.Decode(target); err != nil {
 		return err
 	}
+
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return fmt.Errorf("expected exactly one JSON document")
 	}
+
 	return nil
 }
 
 func sameJSON(left, right any) bool {
 	a, _ := json.Marshal(left)
 	b, _ := json.Marshal(right)
+
 	return bytes.Equal(a, b)
 }

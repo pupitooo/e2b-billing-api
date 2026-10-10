@@ -63,14 +63,18 @@ func TestUTCMonth(t *testing.T) {
 				if err == nil {
 					t.Fatalf("UTCMonth(%s) error = nil; want an error", tt.timestamp)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("UTCMonth(%s) error = %v; want nil", tt.timestamp, err)
 			}
+
 			if !got.Equal(instant(t, tt.wantMonth)) {
 				t.Errorf("UTCMonth(%s) = %s; want %s", tt.timestamp, got, tt.wantMonth)
 			}
+
 			if got.Location() != time.UTC {
 				t.Errorf("UTCMonth(%s) location = %s; want UTC", tt.timestamp, got.Location())
 			}
@@ -121,6 +125,19 @@ func TestUsageMonth(t *testing.T) {
 			wantError: true,
 		},
 		{
+			name:      "two-minute interval spanning UTC months is rejected",
+			start:     "2026-10-31T23:59:00Z",
+			end:       "2026-11-01T00:01:00Z",
+			wantError: true,
+		},
+		{
+			name:      "interval starting at the next UTC month belongs to November",
+			start:     "2026-11-01T00:00:00Z",
+			end:       "2026-11-01T00:01:00Z",
+			wantMonth: "2026-11-01T00:00:00Z",
+			wantError: false,
+		},
+		{
 			name:      "missing end is rejected",
 			start:     "2026-11-01T07:00:00+08:00",
 			end:       "",
@@ -141,14 +158,18 @@ func TestUsageMonth(t *testing.T) {
 				if err == nil {
 					t.Fatalf("UsageMonth(%q, %q) error = nil; want an error", tt.start, tt.end)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("UsageMonth(%q, %q) error = %v; want nil", tt.start, tt.end, err)
 			}
+
 			if !got.Equal(instant(t, tt.wantMonth)) {
 				t.Errorf("UsageMonth(%q, %q) = %s; want %s", tt.start, tt.end, got, tt.wantMonth)
 			}
+
 			if got.Location() != time.UTC {
 				t.Errorf("UsageMonth(%q, %q) location = %s; want UTC", tt.start, tt.end, got.Location())
 			}
@@ -270,16 +291,20 @@ func TestBillingMonth(t *testing.T) {
 			for i, month := range tt.closedMonths {
 				closedMonths[i] = instant(t, month)
 			}
+
 			got, err := accounting.BillingMonth(instant(t, tt.usageMonth), instant(t, tt.receivedAt), closedMonths)
 			if tt.wantError {
 				if err == nil {
 					t.Fatalf("BillingMonth(%q, %q, %v) error = nil; want an error", tt.usageMonth, tt.receivedAt, tt.closedMonths)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("BillingMonth(%q, %q, %v) error = %v; want nil", tt.usageMonth, tt.receivedAt, tt.closedMonths, err)
 			}
+
 			if !got.Equal(instant(t, tt.wantMonth)) {
 				t.Errorf("BillingMonth(%q, %q, %v) = %s; want %s", tt.usageMonth, tt.receivedAt, tt.closedMonths, got, tt.wantMonth)
 			}
@@ -367,11 +392,14 @@ func TestAddonCharge(t *testing.T) {
 				if err == nil {
 					t.Fatalf("AddonCharge(%q, %q, %d) error = nil; want an error", tt.purchasedAt, tt.billingMonth, tt.priceCents)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("AddonCharge(%q, %q, %d) error = %v; want nil", tt.purchasedAt, tt.billingMonth, tt.priceCents, err)
 			}
+
 			if got != tt.wantCents {
 				t.Errorf("AddonCharge(%q, %q, %d) = %d cents; want %d cents", tt.purchasedAt, tt.billingMonth, tt.priceCents, got, tt.wantCents)
 			}
@@ -386,9 +414,11 @@ func instant(t *testing.T, value string) time.Time {
 	if value == "" {
 		return time.Time{}
 	}
+
 	timestamp, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {
 		t.Fatalf("Invalid timestamp fixture %q: %v", value, err)
 	}
+
 	return timestamp
 }

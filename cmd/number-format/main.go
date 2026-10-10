@@ -30,31 +30,39 @@ func run(args []string, diagnostics io.Writer) int {
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
+
 	paths := flags.Args()
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
+
 	failed := false
 	for _, path := range paths {
 		err := filepath.WalkDir(path, func(name string, entry fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
+
 			if entry.IsDir() {
 				base := entry.Name()
 				if name != path && (strings.HasPrefix(base, ".") || base == "tools" || base == "vendor" || base == "node_modules") {
 					return filepath.SkipDir
 				}
+
 				return nil
 			}
+
 			if !strings.HasSuffix(name, ".go") {
 				return nil
 			}
+
 			bad, err := processFile(name, *fix, diagnostics)
 			if err != nil {
 				return err
 			}
+
 			failed = failed || bad
+
 			return nil
 		})
 		if err != nil {
@@ -62,9 +70,11 @@ func run(args []string, diagnostics io.Writer) int {
 			failed = true
 		}
 	}
+
 	if failed {
 		return 1
 	}
+
 	return 0
 }
 
@@ -73,11 +83,13 @@ func processFile(path string, fix bool, diagnostics io.Writer) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
 	set := token.NewFileSet()
 	file, err := parser.ParseFile(set, path, source, 0)
 	if err != nil {
 		return false, err
 	}
+
 	years := yearLiterals(file)
 	var edits []replacement
 	ast.Inspect(file, func(node ast.Node) bool {
@@ -85,6 +97,7 @@ func processFile(path string, fix bool, diagnostics io.Writer) (bool, error) {
 		if !ok {
 			return true
 		}
+
 		expected := expectedLiteral(literal.Kind, literal.Value, years[literal])
 		if expected != literal.Value {
 			position := set.Position(literal.Pos())
@@ -93,23 +106,28 @@ func processFile(path string, fix bool, diagnostics io.Writer) (bool, error) {
 				fmt.Fprintf(diagnostics, "%s: numeric literal %s must be written as %s\n", position, literal.Value, expected)
 			}
 		}
+
 		return true
 	})
 	if len(edits) == 0 || !fix {
 		return len(edits) != 0, nil
 	}
+
 	for index := len(edits) - 1; index >= 0; index-- {
 		edit := edits[index]
 		source = append(append(append([]byte{}, source[:edit.start]...), edit.value...), source[edit.end:]...)
 	}
+
 	formatted, err := format.Source(source)
 	if err != nil {
 		return false, err
 	}
+
 	info, err := os.Stat(path)
 	if err != nil {
 		return false, err
 	}
+
 	return false, os.WriteFile(path, formatted, info.Mode())
 }
 
@@ -124,15 +142,18 @@ func yearLiterals(file *ast.File) map[*ast.BasicLit]bool {
 			if spec.Name != nil {
 				name = spec.Name.Name
 			}
+
 			aliases[name] = true
 		}
 	}
+
 	years := make(map[*ast.BasicLit]bool)
 	mark := func(expression ast.Expr) {
 		ast.Inspect(expression, func(node ast.Node) bool {
 			if literal, ok := node.(*ast.BasicLit); ok && literal.Kind == token.INT {
 				years[literal] = true
 			}
+
 			return true
 		})
 	}
@@ -147,6 +168,7 @@ func yearLiterals(file *ast.File) map[*ast.BasicLit]bool {
 			case *ast.Ident:
 				date = aliases["."] && function.Name == "Date"
 			}
+
 			if date && len(node.Args) > 0 {
 				mark(node.Args[0])
 			}
@@ -171,13 +193,16 @@ func yearLiterals(file *ast.File) map[*ast.BasicLit]bool {
 				if yearExpression(node.X) {
 					mark(node.Y)
 				}
+
 				if yearExpression(node.Y) {
 					mark(node.X)
 				}
 			}
 		}
+
 		return true
 	})
+
 	return years
 }
 
@@ -187,11 +212,14 @@ func yearExpression(expression ast.Expr) bool {
 	if name, ok := expression.(*ast.Ident); ok {
 		return yearName(name.Name)
 	}
+
 	call, ok := expression.(*ast.CallExpr)
 	if !ok {
 		return false
 	}
+
 	function, ok := call.Fun.(*ast.SelectorExpr)
+
 	return ok && function.Sel.Name == "Year"
 }
 
@@ -199,19 +227,23 @@ func expectedLiteral(kind token.Token, value string, year bool) string {
 	if kind != token.INT && kind != token.FLOAT && kind != token.IMAG {
 		return value
 	}
+
 	if year {
 		return strings.ReplaceAll(value, "_", "")
 	}
+
 	digits := strings.ReplaceAll(value, "_", "")
 	lower := strings.ToLower(digits)
 	if strings.HasPrefix(lower, "0x") || strings.HasPrefix(lower, "0b") || strings.HasPrefix(lower, "0o") ||
 		(kind == token.INT && len(digits) > 1 && digits[0] == '0') {
 		return value
 	}
+
 	imaginary := ""
 	if strings.HasSuffix(value, "i") {
 		value, imaginary = strings.TrimSuffix(value, "i"), "i"
 	}
+
 	mantissa, exponent := value, ""
 	if index := strings.IndexAny(value, "eE"); index >= 0 {
 		mantissa, exponent = value[:index], value[index:]
@@ -219,10 +251,12 @@ func expectedLiteral(kind token.Token, value string, year bool) string {
 		if strings.HasPrefix(magnitude, "+") || strings.HasPrefix(magnitude, "-") {
 			prefix, magnitude = prefix+magnitude[:1], magnitude[1:]
 		}
+
 		if len(strings.ReplaceAll(magnitude, "_", "")) >= 5 || strings.Contains(magnitude, "_") {
 			exponent = prefix + groupDigits(strings.ReplaceAll(magnitude, "_", ""), false)
 		}
 	}
+
 	integer, fraction, point := strings.Cut(mantissa, ".")
 	plainInteger, plainFraction := strings.ReplaceAll(integer, "_", ""), strings.ReplaceAll(fraction, "_", "")
 	if len(plainInteger)+len(plainFraction) >= 5 || strings.Contains(mantissa, "_") {
@@ -231,6 +265,7 @@ func expectedLiteral(kind token.Token, value string, year bool) string {
 			mantissa += "." + groupDigits(plainFraction, true)
 		}
 	}
+
 	return mantissa + exponent + imaginary
 }
 
@@ -238,13 +273,16 @@ func groupDigits(digits string, fractional bool) string {
 	if len(digits) <= 3 {
 		return digits
 	}
+
 	first := len(digits) % 3
 	if fractional || first == 0 {
 		first = 3
 	}
+
 	result := digits[:first]
 	for index := first; index < len(digits); index += 3 {
 		result += "_" + digits[index:min(index+3, len(digits))]
 	}
+
 	return result
 }

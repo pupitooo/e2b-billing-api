@@ -184,19 +184,24 @@ func TestAssembleInvoice(t *testing.T) {
 			for _, fixture := range tc.usage {
 				charges.Usage = append(charges.Usage, invoiceUsageInput(t, fixture))
 			}
+
 			got, err := assembleInvoice(tc.header, invoiceMonthInput(t, tc.month), charges)
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("assembleInvoice(%s, %+v) error = nil; want %q", tc.month, tc.usage, tc.wantErrorMessage)
 				}
+
 				if err.Error() != tc.wantErrorMessage {
 					t.Errorf("assembleInvoice(%s, %+v) error = %q; want %q", tc.month, tc.usage, err, tc.wantErrorMessage)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("assembleInvoice(%s, %+v) error = %v; want nil", tc.month, tc.usage, err)
 			}
+
 			if !reflect.DeepEqual(got, tc.wantInvoice) {
 				t.Errorf("assembleInvoice(%s, usage=%+v, addons=%+v) = %+v; want %+v", tc.month, tc.usage, tc.addons, got, tc.wantInvoice)
 			}
@@ -247,14 +252,18 @@ func TestInvoiceTotal(t *testing.T) {
 				if err == nil {
 					t.Fatalf("invoiceTotal(%+v) error = nil; want %q", tc.lines, tc.wantErrorMessage)
 				}
+
 				if err.Error() != tc.wantErrorMessage {
 					t.Errorf("invoiceTotal(%+v) error = %q; want %q", tc.lines, err, tc.wantErrorMessage)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("invoiceTotal(%+v) error = %v; want nil", tc.lines, err)
 			}
+
 			if got != tc.wantTotalCents {
 				t.Errorf("invoiceTotal(%+v) = %d cents; want %d cents", tc.lines, got, tc.wantTotalCents)
 			}
@@ -266,6 +275,7 @@ func TestInvoiceTotal(t *testing.T) {
 // builder. It performs no rating, allocation, rounding, or expected-value calculation.
 func invoiceUsageInput(t *testing.T, fixture invoiceUsageFixture) invoiceUsage {
 	t.Helper()
+
 	return invoiceUsage{
 		PriceVersionID: fixture.priceVersionID, Metric: fixture.metric,
 		UsageMonth: invoiceMonthInput(t, fixture.usageMonth), Units: fixture.units,
@@ -281,6 +291,7 @@ func invoiceMonthInput(t *testing.T, value string) time.Time {
 	if err != nil {
 		t.Fatalf("Parse invoice input month %q: %v", value, err)
 	}
+
 	return month
 }
 
@@ -292,9 +303,11 @@ func invoiceTicksInput(t *testing.T, value string) accounting.Amount {
 	if !ok {
 		t.Fatalf("Parse invoice input ticks %q: invalid integer", value)
 	}
+
 	amount, err := accounting.FromTicks(ticks)
 	if err != nil {
 		t.Fatalf("Construct invoice input amount from %q ticks: %v", value, err)
 	}
+
 	return amount
 }

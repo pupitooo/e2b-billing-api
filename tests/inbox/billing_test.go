@@ -18,6 +18,8 @@ import (
 
 // TestProcessBatch rates receipts in a private seeded schema. Every scenario
 // declares consumption, credit, closure state, and exact persisted outcomes.
+// UTC month crossings remain quarantined without financial effects, while
+// intervals immediately beside the boundary retain the correct accounting month.
 func TestProcessBatch(t *testing.T) {
 	cases := []struct {
 		name             string
@@ -101,6 +103,200 @@ func TestProcessBatch(t *testing.T) {
 			}
 		})
 	}
+	t.Run("UTC month boundary", func(t *testing.T) {
+		type financialState struct {
+			groups               int
+			ratings              int
+			monthlyUsageRows     int
+			creditEntries        int
+			totalUnits           string
+			grossTicks           string
+			creditTicks          string
+			monthlyGrossTicks    string
+			remainingCreditTicks string
+			stateVersion         int64
+		}
+
+		cases := []struct {
+			name                string
+			customer            string
+			start               string
+			end                 string
+			units               int64
+			receiptTime         string
+			initialCreditTicks  string
+			wantError           bool
+			wantProcessResults  []bool
+			wantCompleted       bool
+			wantProcessingError string
+			wantUsageMonth      string
+			wantBillingMonth    string
+			wantSpendMonth      string
+			wantFinancialState  financialState
+		}{
+			{
+				name:                "cross-month interval is quarantined without charges",
+				customer:            "acme",
+				start:               "2026-10-31T23:59:00Z",
+				end:                 "2026-11-01T00:01:00Z",
+				units:               100_000_000,
+				receiptTime:         "2026-11-01T00:02:00Z",
+				initialCreditTicks:  "2500000000",
+				wantError:           false,
+				wantProcessResults:  []bool{true, false},
+				wantCompleted:       false,
+				wantProcessingError: "usage interval must fit within one UTC month",
+				wantUsageMonth:      "",
+				wantBillingMonth:    "",
+				wantSpendMonth:      "",
+				wantFinancialState: financialState{
+					groups: 0, ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
+					totalUnits: "0", grossTicks: "0", creditTicks: "0", monthlyGrossTicks: "0",
+					remainingCreditTicks: "2500000000", stateVersion: 0,
+				},
+			},
+			{
+				name:                "one microsecond past UTC month is quarantined without charges",
+				customer:            "acme",
+				start:               "2026-10-31T23:59:00Z",
+				end:                 "2026-11-01T00:00:00.000001Z",
+				units:               100_000_000,
+				receiptTime:         "2026-11-01T00:02:00Z",
+				initialCreditTicks:  "2500000000",
+				wantError:           false,
+				wantProcessResults:  []bool{true, false},
+				wantCompleted:       false,
+				wantProcessingError: "usage interval must fit within one UTC month",
+				wantUsageMonth:      "",
+				wantBillingMonth:    "",
+				wantSpendMonth:      "",
+				wantFinancialState: financialState{
+					groups: 0, ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
+					totalUnits: "0", grossTicks: "0", creditTicks: "0", monthlyGrossTicks: "0",
+					remainingCreditTicks: "2500000000", stateVersion: 0,
+				},
+			},
+			{
+				name:                "interval ending at UTC month boundary is booked in October",
+				customer:            "acme",
+				start:               "2026-10-31T23:59:00Z",
+				end:                 "2026-11-01T00:00:00Z",
+				units:               100_000_000,
+				receiptTime:         "2026-11-01T00:02:00Z",
+				initialCreditTicks:  "2500000000",
+				wantError:           false,
+				wantProcessResults:  []bool{true, false},
+				wantCompleted:       true,
+				wantProcessingError: "",
+				wantUsageMonth:      "2026-10-01",
+				wantBillingMonth:    "2026-10-01",
+				wantSpendMonth:      "2026-10-01",
+				wantFinancialState: financialState{
+					groups: 1, ratings: 1, monthlyUsageRows: 1, creditEntries: 1,
+					totalUnits: "100000000", grossTicks: "400000000", creditTicks: "400000000", monthlyGrossTicks: "400000000",
+					remainingCreditTicks: "2100000000", stateVersion: 1,
+				},
+			},
+			{
+				name:                "interval starting at UTC month boundary is booked in November",
+				customer:            "acme",
+				start:               "2026-11-01T00:00:00Z",
+				end:                 "2026-11-01T00:01:00Z",
+				units:               100_000_000,
+				receiptTime:         "2026-11-01T00:02:00Z",
+				initialCreditTicks:  "2500000000",
+				wantError:           false,
+				wantProcessResults:  []bool{true, false},
+				wantCompleted:       true,
+				wantProcessingError: "",
+				wantUsageMonth:      "2026-11-01",
+				wantBillingMonth:    "2026-11-01",
+				wantSpendMonth:      "2026-11-01",
+				wantFinancialState: financialState{
+					groups: 1, ratings: 1, monthlyUsageRows: 1, creditEntries: 1,
+					totalUnits: "100000000", grossTicks: "400000000", creditTicks: "400000000", monthlyGrossTicks: "400000000",
+					remainingCreditTicks: "2100000000", stateVersion: 1,
+				},
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				pool := billingDatabase(t)
+				ctx := context.Background()
+				if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric WHERE customer_id=$1", tc.customer, tc.initialCreditTicks); err != nil {
+					t.Fatalf("Set initial credit for customer %q to %s ticks: %v", tc.customer, tc.initialCreditTicks, err)
+				}
+
+				event := usage.Event{
+					Source: "month-boundary", EventID: "one", SchemaVersion: 1,
+					CustomerID: tc.customer, SandboxID: "sandbox", Metric: "cpu_seconds",
+					PeriodStart: parseBillingTime(t, tc.start), PeriodEnd: parseBillingTime(t, tc.end), Units: tc.units,
+				}
+				if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receiptTime)); err != nil {
+					t.Fatalf("Insert month-boundary receipt %+v at %s: %v", event, tc.receiptTime, err)
+				}
+
+				processor := billing.NewStore(pool)
+				for step, wantProcessed := range tc.wantProcessResults {
+					gotProcessed, err := processor.ProcessBatch(ctx)
+					if (err != nil) != tc.wantError {
+						t.Fatalf("ProcessBatch(%+v) step %d error = %v; wantError %t", event, step+1, err, tc.wantError)
+					}
+					if gotProcessed != wantProcessed {
+						t.Fatalf("ProcessBatch(%+v) step %d processed = %t; want %t", event, step+1, gotProcessed, wantProcessed)
+					}
+				}
+
+				var completed bool
+				var processingError string
+				if err := pool.QueryRow(ctx, "SELECT processed_at IS NOT NULL,COALESCE(processing_error,'') FROM usage_inbox WHERE source=$1 AND event_id=$2", event.Source, event.EventID).Scan(&completed, &processingError); err != nil {
+					t.Fatalf("Read processing state for receipt %+v: %v", event, err)
+				}
+				if completed != tc.wantCompleted || processingError != tc.wantProcessingError {
+					t.Errorf("ProcessBatch(%+v) receipt: completed=%t processing_error=%q; want %t %q", event, completed, processingError, tc.wantCompleted, tc.wantProcessingError)
+				}
+
+				var got financialState
+				err := pool.QueryRow(ctx, `SELECT
+					(SELECT count(*) FROM rated_usage_groups),
+					(SELECT count(*) FROM usage_ratings),
+					(SELECT count(*) FROM monthly_usage),
+					(SELECT count(*) FROM credit_entries),
+					(SELECT COALESCE(sum(total_units),0)::text FROM rated_usage_groups),
+					(SELECT COALESCE(sum(exact_charge_ticks),0)::text FROM rated_usage_groups),
+					(SELECT COALESCE(sum(allocated_credit_ticks),0)::text FROM rated_usage_groups),
+					(SELECT COALESCE(sum(gross_charge_ticks),0)::text FROM monthly_usage),
+					credit_balance_ticks::text,state_version
+					FROM customer_billing_state WHERE customer_id=$1`, tc.customer).Scan(
+					&got.groups, &got.ratings, &got.monthlyUsageRows, &got.creditEntries,
+					&got.totalUnits, &got.grossTicks, &got.creditTicks, &got.monthlyGrossTicks,
+					&got.remainingCreditTicks, &got.stateVersion,
+				)
+				if err != nil {
+					t.Fatalf("Read financial state after ProcessBatch(%+v): %v", event, err)
+				}
+				if got != tc.wantFinancialState {
+					t.Errorf("ProcessBatch(%+v) financial state = %+v; want %+v", event, got, tc.wantFinancialState)
+				}
+
+				var usageMonth, billingMonth, spendMonth string
+				err = pool.QueryRow(ctx, `SELECT
+					COALESCE((SELECT usage_month::text FROM rated_usage_groups),''),
+					COALESCE((SELECT billing_month::text FROM rated_usage_groups),''),
+					COALESCE((SELECT usage_month::text FROM monthly_usage),'')`).Scan(&usageMonth, &billingMonth, &spendMonth)
+				if err != nil {
+					t.Fatalf("Read month projections after ProcessBatch(%+v): %v", event, err)
+				}
+				if usageMonth != tc.wantUsageMonth || billingMonth != tc.wantBillingMonth || spendMonth != tc.wantSpendMonth {
+					t.Errorf("ProcessBatch(%+v) months: usage=%q billing=%q spend=%q; want %q %q %q", event, usageMonth, billingMonth, spendMonth, tc.wantUsageMonth, tc.wantBillingMonth, tc.wantSpendMonth)
+				}
+			})
+		}
+	})
+
+	testPriceBoundaryProcessing(t)
+
 	t.Run("late database failure rolls back all financial effects", func(t *testing.T) {
 		scenario := struct {
 			units         int64

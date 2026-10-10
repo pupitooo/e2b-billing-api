@@ -32,17 +32,21 @@ func TestRun(t *testing.T) {
 		if err := run(context.Background(), append(tt.generateArgs, "--state="+path), &output, &output); err != nil {
 			t.Fatal(err)
 		}
+
 		if !strings.Contains(output.String(), tt.wantGenerationOutput) {
 			t.Fatalf("Generation output = %s", output.String())
 		}
+
 		before, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		output.Reset()
 		if err := run(context.Background(), append(tt.statusArgs, "--state="+path), &output, &output); err != nil {
 			t.Fatal(err)
 		}
+
 		after, err := os.ReadFile(path)
 		if err != nil || bytes.Equal(before, after) != tt.wantStateUnchanged || !strings.Contains(output.String(), tt.wantStatusOutput) {
 			t.Fatalf("Status changed generation: %s, %v", output.String(), err)
@@ -99,6 +103,7 @@ func TestRun(t *testing.T) {
 				if err := run(context.Background(), []string{"--state=" + path, tt.argument}, &output, &output); (err != nil) != tt.wantError {
 					t.Error("Invalid CLI argument was accepted")
 				}
+
 				if _, err := os.Stat(path); os.IsNotExist(err) != tt.wantStateMissing {
 					t.Errorf("Invalid CLI created sender state: %v", err)
 				}

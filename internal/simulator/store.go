@@ -32,14 +32,17 @@ func OpenStore(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, fmt.Errorf("create state directory: %w", err)
 	}
+
 	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("open state lock: %w", err)
 	}
+
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		lock.Close()
 		return nil, fmt.Errorf("another simulator command may be using this state: %w", err)
 	}
+
 	return &Store{path: path, lock: lock}, nil
 }
 
@@ -57,9 +60,11 @@ func (s *Store) Load() (*State, error) {
 	if err := decodeStrict(io.LimitReader(file, 32<<20), &state); err != nil {
 		return nil, fmt.Errorf("invalid sender state; retain the file for investigation: %w", err)
 	}
+
 	if err := state.validate(); err != nil {
 		return nil, err
 	}
+
 	return &state, nil
 }
 
@@ -69,6 +74,7 @@ func (s *Store) Save(state *State) error {
 	if err := state.validate(); err != nil {
 		return err
 	}
+
 	return s.saveJSON(state)
 }
 
@@ -85,20 +91,25 @@ func (s *Store) saveJSON(state any) error {
 	if err := json.NewEncoder(file).Encode(state); err != nil {
 		return err
 	}
+
 	if err := file.Sync(); err != nil {
 		return err
 	}
+
 	if err := file.Close(); err != nil {
 		return err
 	}
+
 	if err := os.Rename(file.Name(), s.path); err != nil {
 		return err
 	}
+
 	dir, err := os.Open(directory)
 	if err != nil {
 		return err
 	}
 	defer dir.Close()
+
 	return dir.Sync()
 }
 
@@ -106,17 +117,21 @@ func (s *State) validate() error {
 	if s.Version != 1 {
 		return fmt.Errorf("unsupported sender state version %d", s.Version)
 	}
+
 	if err := s.Plan.validate(); err != nil {
 		return fmt.Errorf("invalid saved plan: %w", err)
 	}
+
 	if s.NextStep < 0 || s.NextStep > len(s.Plan.Steps) || len(s.Delivered) != len(s.Plan.events()) {
 		return fmt.Errorf("invalid sender release cursor or delivery receipts")
 	}
+
 	for index := s.released(); index < len(s.Delivered); index++ {
 		if s.Delivered[index] {
 			return fmt.Errorf("unreleased event %d has a delivery receipt", index)
 		}
 	}
+
 	return nil
 }
 
@@ -125,6 +140,7 @@ func (s *State) released() int {
 	for _, step := range s.Plan.Steps[:s.NextStep] {
 		count += len(step.Events)
 	}
+
 	return count
 }
 
@@ -135,5 +151,6 @@ func (s *State) pending(replay bool) []int {
 			indices = append(indices, index)
 		}
 	}
+
 	return indices
 }

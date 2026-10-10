@@ -173,26 +173,32 @@ var date = clock.Date(2_026, 1, 1, 0, 0, 0, 0, clock.UTC)
 		if code := run([]string{path}, &diagnostics); code != tt.wantCheckExitCode || !strings.Contains(diagnostics.String(), tt.wantDiagnostic) {
 			t.Fatalf("Expected positioned failure, got %d: %s", code, &diagnostics)
 		}
+
 		before, _ := os.ReadFile(path)
 		if string(before) != source {
 			t.Fatal("Check mode edited a source file")
 		}
+
 		if code := run([]string{"-fix", path}, &diagnostics); code != tt.wantFixExitCode {
 			t.Fatalf("Fix failed with %d: %s", code, &diagnostics)
 		}
+
 		after, _ := os.ReadFile(path)
 		for _, want := range tt.wantSourceContains {
 			if !strings.Contains(string(after), want) {
 				t.Errorf("Formatted source omitted %q: %s", want, after)
 			}
 		}
+
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if info.Mode().Perm() != tt.wantFileMode {
 			t.Fatalf("File mode changed: %v", info.Mode())
 		}
+
 		if code := run([]string{path}, &diagnostics); code != tt.wantFixExitCode {
 			t.Fatalf("Rechecking formatted source failed: %s", &diagnostics)
 		}
@@ -220,6 +226,7 @@ func check() { year = 2_027; _ = date.Year() < 9_999; _ = year >= 1_000; _ = str
 		if code := run([]string{"-fix", path}, &diagnostics); code != tt.wantExitCode {
 			t.Fatalf("Year formatting failed: %s", &diagnostics)
 		}
+
 		after, _ := os.ReadFile(path)
 		for _, want := range tt.wantSourceContains {
 			if !strings.Contains(string(after), want) {
@@ -248,14 +255,17 @@ var units = 1000000
 		for _, directory := range tt.excludedDirectories {
 			writeFixture(t, filepath.Join(root, directory), "ignored.go", "package ignored\nvar units = 1000000\n")
 		}
+
 		writeFixture(t, filepath.Join(root, "path with spaces"), "quantity_test.go", tt.inputSource)
 		var diagnostics bytes.Buffer
 		if code := run([]string{root}, &diagnostics); code != tt.wantCheckExitCode || strings.Contains(diagnostics.String(), tt.wantExcludedDiagnostic) {
 			t.Fatalf("Incorrect check scope, code %d: %s", code, &diagnostics)
 		}
+
 		if code := run([]string{"-fix", root}, &diagnostics); code != tt.wantFixExitCode {
 			t.Fatalf("Recursive fix failed: %s", &diagnostics)
 		}
+
 		if code := run([]string{root}, &diagnostics); code != tt.wantFixExitCode {
 			t.Fatalf("Formatted tree failed: %s", &diagnostics)
 		}
@@ -279,10 +289,12 @@ var units = 100__000
 		if code := run([]string{"-fix", path}, &diagnostics); code != tt.wantExitCode || (diagnostics.Len() > 0) != tt.wantDiagnostic {
 			t.Fatalf("Invalid Go was accepted: %d, %s", code, &diagnostics)
 		}
+
 		after, _ := os.ReadFile(path)
 		if string(after) != source {
 			t.Fatal("Invalid source was overwritten")
 		}
+
 		if code := run([]string{path + ".missing"}, &diagnostics); code != tt.wantExitCode {
 			t.Fatalf("Missing source was accepted: %d", code)
 		}
@@ -296,9 +308,11 @@ func writeFixture(t *testing.T, directory, name, source string) string {
 	if err := os.MkdirAll(directory, 0o750); err != nil {
 		t.Fatal(err)
 	}
+
 	path := filepath.Join(directory, name)
 	if err := os.WriteFile(path, []byte(source), 0o640); err != nil {
 		t.Fatal(err)
 	}
+
 	return path
 }
