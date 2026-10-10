@@ -311,3 +311,41 @@ func invoiceTicksInput(t *testing.T, value string) accounting.Amount {
 
 	return amount
 }
+
+// TestAddCents verifies exact signed addition at each representable boundary;
+// invoice deductions may reach the maximum and must fail only beyond it.
+func TestAddCents(t *testing.T) {
+	cases := []struct {
+		name        string
+		left, right int64
+		wantCents   int64
+		wantError   bool
+		wantMessage string
+	}{
+		{name: "positive maximum is inclusive", left: 9_223_372_036_854_775_806, right: 1, wantCents: 9_223_372_036_854_775_807},
+		{name: "positive overflow", left: 9_223_372_036_854_775_807, right: 1, wantError: true, wantMessage: "invoice cents exceed the signed 64-bit range"},
+		{name: "negative minimum is inclusive", left: -9_223_372_036_854_775_807, right: -1, wantCents: -9_223_372_036_854_775_808},
+		{name: "negative overflow", left: -9_223_372_036_854_775_808, right: -1, wantError: true, wantMessage: "invoice cents exceed the signed 64-bit range"},
+		{name: "adding zero to maximum", left: 9_223_372_036_854_775_807, right: 0, wantCents: 9_223_372_036_854_775_807},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := addCents(tc.left, tc.right)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("addCents(%d, %d): error=%v; wantError=%t", tc.left, tc.right, err, tc.wantError)
+			}
+
+			if tc.wantError {
+				if err.Error() != tc.wantMessage {
+					t.Errorf("addCents(%d, %d): error=%q; want %q", tc.left, tc.right, err, tc.wantMessage)
+				}
+
+				return
+			}
+
+			if got != tc.wantCents {
+				t.Errorf("addCents(%d, %d)=%d; want %d", tc.left, tc.right, got, tc.wantCents)
+			}
+		})
+	}
+}

@@ -1,0 +1,3379 @@
+{
+  "auditDate": "2026-10-10",
+  "baseCommit": "8f5d601fff8f90ce800dd584eab5bcd7ec656327",
+  "scope": "Selected single-edit behavior mutations, not exhaustive repository mutation coverage.",
+  "guiScope": "Uncommitted completed GUI snapshot; app.mjs was not mutated. Source/test hashes are before the regression patch.",
+  "guiSnapshotHashes": {
+    "demo/transport.mjs": "65069f0d7d7fc733832556bbcdd31e9263a30239069603945e9cea931e370cdf",
+    "demo/index.html": "930eef383c6d2575d981f65a50f704445e8d30bb317aec7d584238b0bf43cd4d",
+    "demo/styles.css": "bf85b8759aeec09ad38a2eabf35c48edd2271a0a52d7ed308abb4d219a3b118a",
+    "demo/core.mjs": "46849099f69c3fbf34b2f5e9e65e3a9024a0cb3ed69a8f2cea0492372754ff8b",
+    "demo/workflow.mjs": "64a453fc2ebdaaab8c4dce6575f002050d5812c6262498649280d792770b578c",
+    "demo/app.mjs": "16d014cac67a1189e73c546e633406ae2e49cf27bc990ab6cc7bf658344d1254",
+    "demo/sql.mjs": "2033c93b3f008cd4bad27839a7012300c0908bf18cac1024d8142ec1d6688b02",
+    "tests/demo/core.test.mjs": "aa1918b76bf92705fdb510f765bcf59c6f8e49d0e3cdf1b52db87887459b86bf",
+    "tests/demo/transport.test.mjs": "547fb3dc793593d152e2cb9672e471eaae9f2a325180094b42a3eb98cbb267d3",
+    "tests/demo/sql.test.mjs": "b63c1a86948527360880371e323239f4aa2c818105ae6cc7c3ee75e9dd0b5330",
+    "tests/demo/workflow.test.mjs": "292181937632b0ad3e6bdd8476c181c3c5dc7d891d575790a16de061c1318245"
+  },
+  "mutants": [
+    {
+      "id": "M001",
+      "layer": "unit",
+      "source": "internal/accounting/calendar.go",
+      "lineAtBaseline": 13,
+      "description": "Change boundary < to <=",
+      "original": "\tif timestamp.IsZero() || utc.Year() < usage.MinUTCYear || utc.Year() > usage.MaxUTCYear {",
+      "replacement": "\tif timestamp.IsZero() || utc.Year() <= usage.MinUTCYear || utc.Year() > usage.MaxUTCYear {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestUTCMonth/first_supported_year_has_a_valid_January_boundary",
+        "TestUTCMonth/offset_moves_local_year_0999_into_supported_UTC_year_1000",
+        "TestUTCMonth",
+        "TestUsageMonth/consumption_in_the_first_supported_month_is_valid",
+        "TestUsageMonth",
+        "TestBillingMonth/closed_January_in_year_1000_routes_to_February",
+        "TestBillingMonth",
+        "TestAddonCharge/purchase_in_year_1000_incurs_that_month's_full_charge",
+        "TestAddonCharge"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestUTCMonth/first_supported_year_has_a_valid_January_boundary",
+        "TestUTCMonth"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M002",
+      "layer": "unit",
+      "source": "internal/accounting/calendar.go",
+      "lineAtBaseline": 13,
+      "description": "Change boundary > to >=",
+      "original": "\tif timestamp.IsZero() || utc.Year() < usage.MinUTCYear || utc.Year() > usage.MaxUTCYear {",
+      "replacement": "\tif timestamp.IsZero() || utc.Year() < usage.MinUTCYear || utc.Year() >= usage.MaxUTCYear {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestBillingMonth/last_supported_month_remains_valid_while_open",
+        "TestBillingMonth"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestUTCMonth/last_supported_UTC_instant_remains_valid",
+        "TestUTCMonth"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M003",
+      "layer": "unit",
+      "source": "internal/accounting/calendar.go",
+      "lineAtBaseline": 71,
+      "description": "Change boundary > to >=",
+      "original": "\tif candidate.Year() > usage.MaxUTCYear {",
+      "replacement": "\tif candidate.Year() >= usage.MaxUTCYear {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestBillingMonth/closed_November_can_still_route_into_December_of_year_9999",
+        "TestBillingMonth"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M004",
+      "layer": "unit",
+      "source": "internal/accounting/calendar.go",
+      "lineAtBaseline": 106,
+      "description": "Change boundary < to <=",
+      "original": "\tif utc.Year() < usage.MinUTCYear || utc.Year() > usage.MaxUTCYear || !canonical.Equal(month) {",
+      "replacement": "\tif utc.Year() <= usage.MinUTCYear || utc.Year() > usage.MaxUTCYear || !canonical.Equal(month) {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestBillingMonth/closed_January_in_year_1000_routes_to_February",
+        "TestBillingMonth",
+        "TestAddonCharge/purchase_in_year_1000_incurs_that_month's_full_charge",
+        "TestAddonCharge"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestBillingMonth/closed_January_in_year_1000_routes_to_February",
+        "TestBillingMonth"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M005",
+      "layer": "unit",
+      "source": "internal/accounting/calendar.go",
+      "lineAtBaseline": 106,
+      "description": "Change boundary > to >=",
+      "original": "\tif utc.Year() < usage.MinUTCYear || utc.Year() > usage.MaxUTCYear || !canonical.Equal(month) {",
+      "replacement": "\tif utc.Year() < usage.MinUTCYear || utc.Year() >= usage.MaxUTCYear || !canonical.Equal(month) {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestBillingMonth/last_supported_month_remains_valid_while_open",
+        "TestBillingMonth"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestBillingMonth/closed_November_can_still_route_into_December_of_year_9999",
+        "TestBillingMonth"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M006",
+      "layer": "unit",
+      "source": "internal/accounting/money.go",
+      "lineAtBaseline": 25,
+      "description": "Change boundary < to <=",
+      "original": "\tif ticks == nil || ticks.Sign() < 0 {",
+      "replacement": "\tif ticks == nil || ticks.Sign() <= 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestFromTicks/zero_ticks_are_valid",
+        "TestFromTicks",
+        "TestAmountAdd/zero_plus_zero_remains_zero",
+        "TestAmountAdd",
+        "TestAmountRoundCents/zero_remains_zero_cents",
+        "TestAmountRoundCents",
+        "TestAllocateCredit/charge_without_credit_remains_payable",
+        "TestAllocateCredit/later_credit_grant_leaves_the_earlier_allocation_unchanged",
+        "TestAllocateCredit",
+        "TestInvoiceAmounts/Cyberdyne_first_price_group_rounds_to_six_dollars_seventeen_cents",
+        "TestInvoiceAmounts/Cyberdyne_second_price_group_owes_twelve_dollars",
+        "TestInvoiceAmounts/rounded_gross_exceeding_int64_cents_is_rejected",
+        "TestInvoiceAmounts/Acme_October_invoice_totals_twenty_dollars_including_the_add-on",
+        "TestInvoiceAmounts/Acme_November_invoice_totals_twenty_dollars_including_late_usage",
+        "TestInvoiceAmounts/Cyberdyne_invoice_totals_eighteen_dollars_seventeen_cents",
+        "TestInvoiceAmounts",
+        "TestLimitReached/zero_limit_is_reached_without_usage",
+        "TestLimitReached/negative_limit_is_rejected",
+        "TestLimitReached"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestFromTicks/zero_ticks_are_valid",
+        "TestFromTicks"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M007",
+      "layer": "unit",
+      "source": "internal/accounting/money.go",
+      "lineAtBaseline": 37,
+      "description": "Change boundary < to <=",
+      "original": "\tif cents < 0 {",
+      "replacement": "\tif cents <= 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestFromCents/zero_cents_remain_zero",
+        "TestFromCents",
+        "TestLimitReached/zero_limit_is_reached_without_usage",
+        "TestLimitReached"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestFromCents/zero_cents_remain_zero",
+        "TestFromCents"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M008",
+      "layer": "unit",
+      "source": "internal/accounting/money.go",
+      "lineAtBaseline": 51,
+      "description": "Change boundary < to <=",
+      "original": "\tif units < 0 || pricePerMillionCents < 0 {",
+      "replacement": "\tif units <= 0 || pricePerMillionCents < 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestUsageCharge/zero_units_incur_no_charge",
+        "TestUsageCharge"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestUsageCharge/zero_units_incur_no_charge",
+        "TestUsageCharge"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M009",
+      "layer": "unit",
+      "source": "internal/accounting/money.go",
+      "lineAtBaseline": 51,
+      "description": "Change boundary < to <=",
+      "original": "\tif units < 0 || pricePerMillionCents < 0 {",
+      "replacement": "\tif units < 0 || pricePerMillionCents <= 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestUsageCharge/free_price_incurs_no_charge",
+        "TestUsageCharge",
+        "TestRate/an_explicitly_configured_zero_price_remains_valid",
+        "TestRate"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestUsageCharge/free_price_incurs_no_charge",
+        "TestUsageCharge"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M010",
+      "layer": "unit",
+      "source": "internal/accounting/money.go",
+      "lineAtBaseline": 80,
+      "description": "Change boundary < to <=",
+      "original": "\tif a.Compare(b) < 0 {",
+      "replacement": "\tif a.Compare(b) <= 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestAmountSubtract/subtracting_an_equal_amount_leaves_zero",
+        "TestAmountSubtract",
+        "TestInvoiceAmounts/fully_credited_sub-cent_charge_presents_zero_cents",
+        "TestInvoiceAmounts/Acme_October_consumption_is_fully_credited",
+        "TestInvoiceAmounts/Acme_November_consumption_including_late_usage_is_fully_credited",
+        "TestInvoiceAmounts/Acme_October_invoice_totals_twenty_dollars_including_the_add-on",
+        "TestInvoiceAmounts/Acme_November_invoice_totals_twenty_dollars_including_late_usage",
+        "TestInvoiceAmounts"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestAmountSubtract/subtracting_an_equal_amount_leaves_zero",
+        "TestAmountSubtract"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M011",
+      "layer": "unit",
+      "source": "internal/accounting/money.go",
+      "lineAtBaseline": 111,
+      "description": "Change boundary < to <=",
+      "original": "\tif available.Compare(charge) < 0 {",
+      "replacement": "\tif available.Compare(charge) <= 0 {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "equivalent",
+      "afterFailingTests": [],
+      "equivalenceReason": "At equal credit and charge, either branch selects an amount with the same exact ticks; Amount is immutable."
+    },
+    {
+      "id": "M012",
+      "layer": "unit",
+      "source": "internal/usage/event.go",
+      "lineAtBaseline": 72,
+      "description": "Change boundary <= to <",
+      "original": "\n\tif e.SchemaVersion <= 0 {",
+      "replacement": "\n\tif e.SchemaVersion < 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestEventValidate/missing_schema_version",
+        "TestEventValidate"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestEventValidate/missing_schema_version",
+        "TestEventValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M013",
+      "layer": "unit",
+      "source": "internal/usage/event.go",
+      "lineAtBaseline": 76,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif e.Units < 0 {",
+      "replacement": "\n\tif e.Units <= 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestEventValidate/zero_units",
+        "TestEventValidate"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestEventValidate/zero_units",
+        "TestEventValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M014",
+      "layer": "unit",
+      "source": "internal/billing/idempotency.go",
+      "lineAtBaseline": 22,
+      "description": "Change boundary > to >=",
+      "original": "\tif len(key) == 0 || len(key) > maxIdempotencyKeyBytes {",
+      "replacement": "\tif len(key) == 0 || len(key) >= maxIdempotencyKeyBytes {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestValidateIdempotencyKey/exact_maximum",
+        "TestValidateIdempotencyKey"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateIdempotencyKey/exact_maximum",
+        "TestValidateIdempotencyKey"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M015",
+      "layer": "unit",
+      "source": "internal/billing/idempotency.go",
+      "lineAtBaseline": 27,
+      "description": "Change boundary < to <=",
+      "original": "\t\tif character < firstVisibleASCII || character > lastVisibleASCII {",
+      "replacement": "\t\tif character <= firstVisibleASCII || character > lastVisibleASCII {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestValidateIdempotencyKey/lower_visible_character",
+        "TestValidateIdempotencyKey"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateIdempotencyKey/lower_visible_character",
+        "TestValidateIdempotencyKey"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M016",
+      "layer": "unit",
+      "source": "internal/billing/idempotency.go",
+      "lineAtBaseline": 27,
+      "description": "Change boundary > to >=",
+      "original": "\t\tif character < firstVisibleASCII || character > lastVisibleASCII {",
+      "replacement": "\t\tif character < firstVisibleASCII || character >= lastVisibleASCII {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestValidateIdempotencyKey/upper_visible_character",
+        "TestValidateIdempotencyKey"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateIdempotencyKey/upper_visible_character",
+        "TestValidateIdempotencyKey"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M017",
+      "layer": "unit",
+      "source": "internal/billing/invoice_lines.go",
+      "lineAtBaseline": 112,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif !total.IsInt64() || total.Sign() < 0 {",
+      "replacement": "\n\tif !total.IsInt64() || total.Sign() <= 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestAssembleInvoice/empty_month_still_displays_the_zero_credit_line",
+        "TestAssembleInvoice",
+        "TestInvoiceTotal/no_financial_lines_sum_to_zero",
+        "TestInvoiceTotal"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestAssembleInvoice/empty_month_still_displays_the_zero_credit_line",
+        "TestAssembleInvoice"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M018",
+      "layer": "unit",
+      "source": "internal/billing/invoice_lines.go",
+      "lineAtBaseline": 121,
+      "description": "Change boundary > to >=",
+      "original": "\tif (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {",
+      "replacement": "\tif (b >= 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "equivalent",
+      "afterFailingTests": [],
+      "equivalenceReason": "With b=0 the added positive-branch guard cannot satisfy a > MaxInt64 for an int64 input."
+    },
+    {
+      "id": "M019",
+      "layer": "unit",
+      "source": "internal/billing/invoice_lines.go",
+      "lineAtBaseline": 121,
+      "description": "Change boundary > to >=",
+      "original": "\tif (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {",
+      "replacement": "\tif (b > 0 && a >= math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestAddCents/positive_maximum_is_inclusive",
+        "TestAddCents"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M020",
+      "layer": "unit",
+      "source": "internal/billing/invoice_lines.go",
+      "lineAtBaseline": 121,
+      "description": "Change boundary < to <=",
+      "original": "\tif (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {",
+      "replacement": "\tif (b > 0 && a > math.MaxInt64-b) || (b <= 0 && a < math.MinInt64-b) {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "equivalent",
+      "afterFailingTests": [],
+      "equivalenceReason": "With b=0 the added negative-branch guard cannot satisfy a < MinInt64 for an int64 input."
+    },
+    {
+      "id": "M021",
+      "layer": "unit",
+      "source": "internal/billing/invoice_lines.go",
+      "lineAtBaseline": 121,
+      "description": "Change boundary < to <=",
+      "original": "\tif (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {",
+      "replacement": "\tif (b > 0 && a > math.MaxInt64-b) || (b < 0 && a <= math.MinInt64-b) {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestAddCents/negative_minimum_is_inclusive",
+        "TestAddCents"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M022",
+      "layer": "unit",
+      "source": "internal/billing/validation.go",
+      "lineAtBaseline": 22,
+      "description": "Change boundary > to >=",
+      "original": "\tif strings.TrimSpace(value) == \"\" || !utf8.ValidString(value) || strings.ContainsRune(value, 0) || len(value) > maxIdentifierBytes {",
+      "replacement": "\tif strings.TrimSpace(value) == \"\" || !utf8.ValidString(value) || strings.ContainsRune(value, 0) || len(value) >= maxIdentifierBytes {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestValidateIdentifier/ASCII_at_byte_limit",
+        "TestValidateIdentifier/Unicode_at_byte_limit",
+        "TestValidateIdentifier"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateIdentifier/ASCII_at_byte_limit",
+        "TestValidateIdentifier"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M023",
+      "layer": "unit",
+      "source": "internal/billing/validation.go",
+      "lineAtBaseline": 42,
+      "description": "Change boundary < to <=",
+      "original": "\tif value < 0 || (positive && value == 0) {",
+      "replacement": "\tif value <= 0 || (positive && value == 0) {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateCents/zero_price",
+        "TestValidateCents"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M024",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 117,
+      "description": "Change boundary > to >=",
+      "original": "\n\tif strings.TrimSpace(id) == \"\" || strings.ContainsRune(id, '\\x00') || len(id) > maxIdentifierBytes {",
+      "replacement": "\n\tif strings.TrimSpace(id) == \"\" || strings.ContainsRune(id, '\\x00') || len(id) >= maxIdentifierBytes {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_valid_input/batch_identifier_at_the_exact_ASCII_byte_limit",
+        "TestHandlerServeHTTP/usage_batch_valid_input",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M025",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 135,
+      "description": "Change boundary > to >=",
+      "original": "\n\tif len(events) == 0 || len(events) > maxBatchEvents {",
+      "replacement": "\n\tif len(events) == 0 || len(events) >= maxBatchEvents {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_limits/one_thousand_events",
+        "TestHandlerServeHTTP/usage_batch_limits",
+        "TestHandlerServeHTTP"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_limits/one_thousand_events",
+        "TestHandlerServeHTTP/usage_batch_limits",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M026",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 184,
+      "description": "Change boundary > to >=",
+      "original": "\t\tif len(identifier.value) > maxIdentifierBytes {",
+      "replacement": "\t\tif len(identifier.value) >= maxIdentifierBytes {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_valid_input/Unicode_byte_boundary",
+        "TestHandlerServeHTTP/usage_batch_valid_input",
+        "TestHandlerServeHTTP"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_valid_input/Unicode_byte_boundary",
+        "TestHandlerServeHTTP/usage_batch_valid_input",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M027",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 281,
+      "description": "Change boundary >= to >",
+      "original": "\t\tif value >= lowSurrogateMin && value <= lowSurrogateMax {",
+      "replacement": "\t\tif value > lowSurrogateMin && value <= lowSurrogateMax {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/unpaired_lowest_low_surrogate",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M028",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 281,
+      "description": "Change boundary <= to <",
+      "original": "\t\tif value >= lowSurrogateMin && value <= lowSurrogateMax {",
+      "replacement": "\t\tif value >= lowSurrogateMin && value < lowSurrogateMax {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/unpaired_low_surrogate",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/unpaired_low_surrogate",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M029",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 284,
+      "description": "Change boundary >= to >",
+      "original": "\n\t\tif value >= highSurrogateMin && value <= highSurrogateMax {",
+      "replacement": "\n\t\tif value > highSurrogateMin && value <= highSurrogateMax {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/unpaired_high_surrogate",
+        "TestHandlerServeHTTP/usage_batch_invalid_json/high_surrogate_followed_by_ordinary_escape",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_valid_input/lowest_valid_surrogate_pair",
+        "TestHandlerServeHTTP/usage_batch_valid_input",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M030",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 284,
+      "description": "Change boundary <= to <",
+      "original": "\n\t\tif value >= highSurrogateMin && value <= highSurrogateMax {",
+      "replacement": "\n\t\tif value >= highSurrogateMin && value < highSurrogateMax {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_valid_input/highest_valid_surrogate_pair",
+        "TestHandlerServeHTTP/usage_batch_valid_input",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M031",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 286,
+      "description": "Change boundary > to >=",
+      "original": "\t\t\tif index+2*unicodeEscapeBytes > len(raw) || raw[index+unicodeEscapeBytes] != '\\\\' || raw[index+unicodeEscapeBytes+1] != 'u' {",
+      "replacement": "\t\t\tif index+2*unicodeEscapeBytes >= len(raw) || raw[index+unicodeEscapeBytes] != '\\\\' || raw[index+unicodeEscapeBytes+1] != 'u' {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "equivalent",
+      "afterFailingTests": [],
+      "equivalenceReason": "This helper receives valid JSON. A completed pair of escapes must still be followed by closing JSON syntax, so its end cannot equal the complete input length."
+    },
+    {
+      "id": "M032",
+      "layer": "unit",
+      "source": "internal/worker/worker.go",
+      "lineAtBaseline": 65,
+      "description": "Change boundary <= to <",
+      "original": "\n\tif w.PollInterval <= 0 || w.BatchTimeout <= 0 || w.HeartbeatFile == \"\" {",
+      "replacement": "\n\tif w.PollInterval < 0 || w.BatchTimeout <= 0 || w.HeartbeatFile == \"\" {",
+      "beforeStatus": "timeout",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestWorkerRun/worker_rejects_invalid_configuration/zero_poll",
+        "TestWorkerRun/worker_rejects_invalid_configuration",
+        "TestWorkerRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M033",
+      "layer": "unit",
+      "source": "internal/worker/worker.go",
+      "lineAtBaseline": 65,
+      "description": "Change boundary <= to <",
+      "original": "\n\tif w.PollInterval <= 0 || w.BatchTimeout <= 0 || w.HeartbeatFile == \"\" {",
+      "replacement": "\n\tif w.PollInterval <= 0 || w.BatchTimeout < 0 || w.HeartbeatFile == \"\" {",
+      "beforeStatus": "timeout",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestWorkerRun/worker_rejects_invalid_configuration/zero_batch_timeout",
+        "TestWorkerRun/worker_rejects_invalid_configuration",
+        "TestWorkerRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M034",
+      "layer": "unit",
+      "source": "internal/worker/worker.go",
+      "lineAtBaseline": 101,
+      "description": "Change boundary <= to <",
+      "original": "\tif shutdownTimeout <= 0 {",
+      "replacement": "\tif shutdownTimeout < 0 {",
+      "beforeStatus": "timeout",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRunUntilStopped/run_until_stopped_rejects_invalid_timeout/zero_timeout",
+        "TestRunUntilStopped/run_until_stopped_rejects_invalid_timeout",
+        "TestRunUntilStopped"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M035",
+      "layer": "unit",
+      "source": "internal/worker/worker.go",
+      "lineAtBaseline": 125,
+      "description": "Change boundary <= to <",
+      "original": "\tif maxAge <= 0 || now == nil {",
+      "replacement": "\tif maxAge < 0 || now == nil {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestCheckHealth/check_health/zero_maximum_age",
+        "TestCheckHealth/check_health",
+        "TestCheckHealth"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestCheckHealth/check_health/zero_maximum_age",
+        "TestCheckHealth/check_health",
+        "TestCheckHealth"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M036",
+      "layer": "unit",
+      "source": "internal/worker/worker.go",
+      "lineAtBaseline": 142,
+      "description": "Change boundary < to <=",
+      "original": "\tif age < 0 || age > maxAge {",
+      "replacement": "\tif age <= 0 || age > maxAge {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestCheckHealth/check_health/surrounding_whitespace",
+        "TestCheckHealth/check_health/offset_timestamp",
+        "TestCheckHealth/check_health",
+        "TestCheckHealth"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestCheckHealth/check_health/surrounding_whitespace",
+        "TestCheckHealth/check_health",
+        "TestCheckHealth"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M037",
+      "layer": "unit",
+      "source": "internal/worker/worker.go",
+      "lineAtBaseline": 142,
+      "description": "Change boundary > to >=",
+      "original": "\tif age < 0 || age > maxAge {",
+      "replacement": "\tif age < 0 || age >= maxAge {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestCheckHealth/check_health/maximum_age",
+        "TestCheckHealth/check_health",
+        "TestCheckHealth"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestCheckHealth/check_health/maximum_age",
+        "TestCheckHealth/check_health",
+        "TestCheckHealth"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M038",
+      "layer": "unit",
+      "source": "internal/simulator/event.go",
+      "lineAtBaseline": 40,
+      "description": "Change boundary > to >=",
+      "original": "\t\tif len(value) > maxIdentifierBytes {",
+      "replacement": "\t\tif len(value) >= maxIdentifierBytes {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_both_batch_limits",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRun/simulator_both_batch_limits",
+        "TestRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M039",
+      "layer": "unit",
+      "source": "internal/simulator/run.go",
+      "lineAtBaseline": 178,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif state.NextStep < len(state.Plan.Steps) {",
+      "replacement": "\n\tif state.NextStep <= len(state.Plan.Steps) {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M040",
+      "layer": "unit",
+      "source": "internal/simulator/scenario.go",
+      "lineAtBaseline": 37,
+      "description": "Change boundary < to <=",
+      "original": "\tif sandboxes < 1 || sandboxes > maxAssignmentSandboxes {",
+      "replacement": "\tif sandboxes <= 1 || sandboxes > maxAssignmentSandboxes {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_lost_response_recovery",
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun/simulator_permanent_errors_retain_buffer/409{\"error\":{\"code\":\"event_conflict\"}}",
+        "TestRun/simulator_permanent_errors_retain_buffer/422{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/302{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"wrong\"}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"accepted\"}_{}",
+        "TestRun/simulator_permanent_errors_retain_buffer",
+        "TestRun/simulator_cancellation_retains_pending",
+        "TestRun/simulator_receipt_write_failure_recovers",
+        "TestRun/simulator_both_batch_limits",
+        "TestRun/simulator_corrupt_state_is_retained/truncated_snapshot",
+        "TestRun/simulator_corrupt_state_is_retained/unsupported_version",
+        "TestRun/simulator_corrupt_state_is_retained",
+        "TestRun/simulator_status_during_delivery",
+        "TestRun/simulator_changed_plan_cannot_replace_pending",
+        "TestRun/simulator_advance_passes_only_one_barrier",
+        "TestRun",
+        "TestCheckpointDeliveryReceipt/acknowledged_replay_and_new_event_are_saved_together",
+        "TestCheckpointDeliveryReceipt/failed_save_restores_existing_confirmation_and_leaves_the_new_event_pending",
+        "TestCheckpointDeliveryReceipt",
+        "TestStoreLoad/simulator_store_recovery",
+        "TestStoreLoad",
+        "TestOpenStore/simulator_killed_process_releases_lock",
+        "TestOpenStore",
+        "TestStoreSave"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderDeliver/no_duplicate",
+        "TestSenderDeliver"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M041",
+      "layer": "unit",
+      "source": "internal/simulator/scenario.go",
+      "lineAtBaseline": 37,
+      "description": "Change boundary > to >=",
+      "original": "\tif sandboxes < 1 || sandboxes > maxAssignmentSandboxes {",
+      "replacement": "\tif sandboxes < 1 || sandboxes >= maxAssignmentSandboxes {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestAssignment/simulator_assignment_totals_and_splitting/maximum_sandbox_count_remains_valid_with_hourly_intervals",
+        "TestAssignment/simulator_assignment_totals_and_splitting",
+        "TestAssignment"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M042",
+      "layer": "unit",
+      "source": "internal/simulator/scenario.go",
+      "lineAtBaseline": 40,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif interval < time.Minute || interval > time.Hour || time.Hour%interval != 0 {",
+      "replacement": "\n\tif interval <= time.Minute || interval > time.Hour || time.Hour%interval != 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestAssignment/simulator_assignment_totals_and_splitting/minute_splits_across_three_sandboxes",
+        "TestAssignment/simulator_assignment_totals_and_splitting",
+        "TestAssignment"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestAssignment/simulator_assignment_totals_and_splitting/minute_splits_across_three_sandboxes",
+        "TestAssignment/simulator_assignment_totals_and_splitting",
+        "TestAssignment"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M043",
+      "layer": "unit",
+      "source": "internal/simulator/scenario.go",
+      "lineAtBaseline": 40,
+      "description": "Change boundary > to >=",
+      "original": "\n\tif interval < time.Minute || interval > time.Hour || time.Hour%interval != 0 {",
+      "replacement": "\n\tif interval < time.Minute || interval >= time.Hour || time.Hour%interval != 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_lost_response_recovery",
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun/simulator_permanent_errors_retain_buffer/409{\"error\":{\"code\":\"event_conflict\"}}",
+        "TestRun/simulator_permanent_errors_retain_buffer/422{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/302{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"wrong\"}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"accepted\"}_{}",
+        "TestRun/simulator_permanent_errors_retain_buffer",
+        "TestRun/simulator_cancellation_retains_pending",
+        "TestRun/simulator_receipt_write_failure_recovers",
+        "TestRun/simulator_both_batch_limits",
+        "TestRun/simulator_corrupt_state_is_retained/truncated_snapshot",
+        "TestRun/simulator_corrupt_state_is_retained/unsupported_version",
+        "TestRun/simulator_corrupt_state_is_retained",
+        "TestRun/simulator_status_during_delivery",
+        "TestRun/simulator_changed_plan_cannot_replace_pending",
+        "TestRun/simulator_advance_passes_only_one_barrier",
+        "TestRun",
+        "TestAssignment/simulator_assignment_totals_and_splitting/hourly_splits_across_three_sandboxes",
+        "TestAssignment/simulator_assignment_totals_and_splitting",
+        "TestAssignment",
+        "TestCheckpointDeliveryReceipt/acknowledged_replay_and_new_event_are_saved_together",
+        "TestCheckpointDeliveryReceipt/failed_save_restores_existing_confirmation_and_leaves_the_new_event_pending",
+        "TestCheckpointDeliveryReceipt",
+        "TestStoreLoad/simulator_store_recovery",
+        "TestStoreLoad",
+        "TestOpenStore/simulator_killed_process_releases_lock",
+        "TestOpenStore",
+        "TestStoreSave"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderDeliver/no_duplicate",
+        "TestSenderDeliver"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M044",
+      "layer": "unit",
+      "source": "internal/simulator/scenario.go",
+      "lineAtBaseline": 46,
+      "description": "Change boundary > to >=",
+      "original": "\tif assignmentMeasurementCount*sandboxes*segments > maxScenarioEvents {",
+      "replacement": "\tif assignmentMeasurementCount*sandboxes*segments >= maxScenarioEvents {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "equivalent",
+      "afterFailingTests": [],
+      "equivalenceReason": "Assignment event counts are multiples of six. The 10000-event ceiling cannot be reached exactly by this generator; the separately tested custom Plan can reach it."
+    },
+    {
+      "id": "M045",
+      "layer": "unit",
+      "source": "internal/simulator/scenario.go",
+      "lineAtBaseline": 115,
+      "description": "Change boundary < to <=",
+      "original": "\t\t\tif int64(index) < input.units%int64(count) {",
+      "replacement": "\t\t\tif int64(index) <= input.units%int64(count) {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestAssignment/simulator_assignment_totals_and_splitting/hourly_splits_across_three_sandboxes",
+        "TestAssignment/simulator_assignment_totals_and_splitting/minute_splits_across_three_sandboxes",
+        "TestAssignment/simulator_assignment_totals_and_splitting",
+        "TestAssignment"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestAssignment/simulator_assignment_totals_and_splitting/maximum_sandbox_count_remains_valid_with_hourly_intervals",
+        "TestAssignment/simulator_assignment_totals_and_splitting",
+        "TestAssignment"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M046",
+      "layer": "unit",
+      "source": "internal/simulator/scenario.go",
+      "lineAtBaseline": 204,
+      "description": "Change boundary > to >=",
+      "original": "\t\t\tif len(identities) > maxScenarioEvents {",
+      "replacement": "\t\t\tif len(identities) >= maxScenarioEvents {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestPlanValidate/exact_event_budget",
+        "TestPlanValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M047",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 41,
+      "description": "Change boundary <= to <",
+      "original": "\n\tif s.Client == nil || s.Client.Timeout <= 0 {",
+      "replacement": "\n\tif s.Client == nil || s.Client.Timeout < 0 {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderValidate/zero_request_timeout",
+        "TestSenderValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M048",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 45,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif s.BatchSize < 1 || s.BatchSize > maxBatchEvents {",
+      "replacement": "\n\tif s.BatchSize <= 1 || s.BatchSize > maxBatchEvents {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_lost_response_recovery",
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderValidate/zero_retry_minimum",
+        "TestSenderValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M049",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 45,
+      "description": "Change boundary > to >=",
+      "original": "\n\tif s.BatchSize < 1 || s.BatchSize > maxBatchEvents {",
+      "replacement": "\n\tif s.BatchSize < 1 || s.BatchSize >= maxBatchEvents {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_both_batch_limits",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderValidate/maximum_duplicates",
+        "TestSenderValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M050",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 49,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif s.BatchDelay < 0 || s.RetryMin <= 0 || s.RetryMax < s.RetryMin || s.RetryMax > time.Hour {",
+      "replacement": "\n\tif s.BatchDelay <= 0 || s.RetryMin <= 0 || s.RetryMax < s.RetryMin || s.RetryMax > time.Hour {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_lost_response_recovery",
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun/simulator_permanent_errors_retain_buffer/409{\"error\":{\"code\":\"event_conflict\"}}",
+        "TestRun/simulator_permanent_errors_retain_buffer/422{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/302{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"wrong\"}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"accepted\"}_{}",
+        "TestRun/simulator_permanent_errors_retain_buffer",
+        "TestRun/simulator_cancellation_retains_pending",
+        "TestRun/simulator_receipt_write_failure_recovers",
+        "TestRun/simulator_both_batch_limits",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderValidate/equal_retry_bounds",
+        "TestSenderValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M051",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 49,
+      "description": "Change boundary <= to <",
+      "original": "\n\tif s.BatchDelay < 0 || s.RetryMin <= 0 || s.RetryMax < s.RetryMin || s.RetryMax > time.Hour {",
+      "replacement": "\n\tif s.BatchDelay < 0 || s.RetryMin < 0 || s.RetryMax < s.RetryMin || s.RetryMax > time.Hour {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderValidate/zero_retry_minimum",
+        "TestSenderValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M052",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 49,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif s.BatchDelay < 0 || s.RetryMin <= 0 || s.RetryMax < s.RetryMin || s.RetryMax > time.Hour {",
+      "replacement": "\n\tif s.BatchDelay < 0 || s.RetryMin <= 0 || s.RetryMax <= s.RetryMin || s.RetryMax > time.Hour {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderValidate/equal_retry_bounds",
+        "TestSenderValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M053",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 49,
+      "description": "Change boundary > to >=",
+      "original": "\n\tif s.BatchDelay < 0 || s.RetryMin <= 0 || s.RetryMax < s.RetryMin || s.RetryMax > time.Hour {",
+      "replacement": "\n\tif s.BatchDelay < 0 || s.RetryMin <= 0 || s.RetryMax < s.RetryMin || s.RetryMax >= time.Hour {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderValidate/maximum_retry_hour",
+        "TestSenderValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M054",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 53,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif s.MaxAttempts < 0 || s.Duplicates < 0 || s.Duplicates > maxDuplicateCopies {",
+      "replacement": "\n\tif s.MaxAttempts <= 0 || s.Duplicates < 0 || s.Duplicates > maxDuplicateCopies {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun/simulator_permanent_errors_retain_buffer/409{\"error\":{\"code\":\"event_conflict\"}}",
+        "TestRun/simulator_permanent_errors_retain_buffer/422{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/302{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"wrong\"}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"accepted\"}_{}",
+        "TestRun/simulator_permanent_errors_retain_buffer",
+        "TestRun/simulator_cancellation_retains_pending",
+        "TestRun/simulator_receipt_write_failure_recovers",
+        "TestRun/simulator_both_batch_limits",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderValidate/equal_retry_bounds",
+        "TestSenderValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M055",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 53,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif s.MaxAttempts < 0 || s.Duplicates < 0 || s.Duplicates > maxDuplicateCopies {",
+      "replacement": "\n\tif s.MaxAttempts < 0 || s.Duplicates <= 0 || s.Duplicates > maxDuplicateCopies {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_lost_response_recovery",
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun/simulator_permanent_errors_retain_buffer/409{\"error\":{\"code\":\"event_conflict\"}}",
+        "TestRun/simulator_permanent_errors_retain_buffer/422{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/302{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"wrong\"}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"accepted\"}_{}",
+        "TestRun/simulator_permanent_errors_retain_buffer",
+        "TestRun/simulator_cancellation_retains_pending",
+        "TestRun/simulator_receipt_write_failure_recovers",
+        "TestRun/simulator_both_batch_limits",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderValidate/equal_retry_bounds",
+        "TestSenderValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M056",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 53,
+      "description": "Change boundary > to >=",
+      "original": "\n\tif s.MaxAttempts < 0 || s.Duplicates < 0 || s.Duplicates > maxDuplicateCopies {",
+      "replacement": "\n\tif s.MaxAttempts < 0 || s.Duplicates < 0 || s.Duplicates >= maxDuplicateCopies {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderValidate/maximum_duplicates",
+        "TestSenderValidate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M057",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 104,
+      "description": "Change boundary > to >=",
+      "original": "\t\tif len(indices) > 0 {",
+      "replacement": "\t\tif len(indices) >= 0 {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M058",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 124,
+      "description": "Change boundary > to >=",
+      "original": "\t\tif len(items) > 0 {",
+      "replacement": "\t\tif len(items) >= 0 {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestNextBatch/exact_body_limit",
+        "TestNextBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M059",
+      "layer": "unit",
+      "source": "internal/simulator/sender.go",
+      "lineAtBaseline": 127,
+      "description": "Change boundary > to >=",
+      "original": "\n\t\tif length+extra > maxBatchBytes {",
+      "replacement": "\n\t\tif length+extra >= maxBatchBytes {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestNextBatch/exact_body_limit",
+        "TestNextBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M060",
+      "layer": "unit",
+      "source": "internal/simulator/sender_delivery.go",
+      "lineAtBaseline": 34,
+      "description": "Change boundary > to >=",
+      "original": "\t\t\tif successes > s.Duplicates {",
+      "replacement": "\t\t\tif successes >= s.Duplicates {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderDeliver/one_extra_copy",
+        "TestSenderDeliver"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M061",
+      "layer": "unit",
+      "source": "internal/simulator/sender_delivery.go",
+      "lineAtBaseline": 42,
+      "description": "Change boundary > to >=",
+      "original": "\n\t\tif s.MaxAttempts > 0 && attempt >= s.MaxAttempts {",
+      "replacement": "\n\t\tif s.MaxAttempts >= 0 && attempt >= s.MaxAttempts {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun/simulator_cancellation_retains_pending",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderDeliver/one_extra_copy",
+        "TestSenderDeliver"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M062",
+      "layer": "unit",
+      "source": "internal/simulator/sender_delivery.go",
+      "lineAtBaseline": 42,
+      "description": "Change boundary >= to >",
+      "original": "\n\t\tif s.MaxAttempts > 0 && attempt >= s.MaxAttempts {",
+      "replacement": "\n\t\tif s.MaxAttempts > 0 && attempt > s.MaxAttempts {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_lost_response_recovery",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRun/simulator_lost_response_recovery",
+        "TestRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M063",
+      "layer": "unit",
+      "source": "internal/simulator/sender_http.go",
+      "lineAtBaseline": 46,
+      "description": "Change boundary >= to >",
+      "original": "\tif response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {",
+      "replacement": "\tif response.StatusCode == http.StatusTooManyRequests || response.StatusCode > http.StatusInternalServerError {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestClassifyDeliveryResponse/first_server_error",
+        "TestClassifyDeliveryResponse"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M064",
+      "layer": "unit",
+      "source": "internal/simulator/store.go",
+      "lineAtBaseline": 131,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif s.NextStep < 0 || s.NextStep > len(s.Plan.Steps) || len(s.Delivered) != len(s.Plan.events()) {",
+      "replacement": "\n\tif s.NextStep <= 0 || s.NextStep > len(s.Plan.Steps) || len(s.Delivered) != len(s.Plan.events()) {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_lost_response_recovery",
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun/simulator_permanent_errors_retain_buffer/409{\"error\":{\"code\":\"event_conflict\"}}",
+        "TestRun/simulator_permanent_errors_retain_buffer/422{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/302{}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"wrong\"}",
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"accepted\"}_{}",
+        "TestRun/simulator_permanent_errors_retain_buffer",
+        "TestRun/simulator_cancellation_retains_pending",
+        "TestRun/simulator_receipt_write_failure_recovers",
+        "TestRun/simulator_both_batch_limits",
+        "TestRun/simulator_changed_plan_cannot_replace_pending",
+        "TestRun/simulator_advance_passes_only_one_barrier",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRun/simulator_lost_response_recovery",
+        "TestRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M065",
+      "layer": "unit",
+      "source": "internal/simulator/store.go",
+      "lineAtBaseline": 131,
+      "description": "Change boundary > to >=",
+      "original": "\n\tif s.NextStep < 0 || s.NextStep > len(s.Plan.Steps) || len(s.Delivered) != len(s.Plan.events()) {",
+      "replacement": "\n\tif s.NextStep < 0 || s.NextStep >= len(s.Plan.Steps) || len(s.Delivered) != len(s.Plan.events()) {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun/simulator_both_batch_limits",
+        "TestRun/simulator_advance_passes_only_one_barrier",
+        "TestRun",
+        "TestCheckpointDeliveryReceipt/acknowledged_replay_and_new_event_are_saved_together",
+        "TestCheckpointDeliveryReceipt/failed_save_restores_existing_confirmation_and_leaves_the_new_event_pending",
+        "TestCheckpointDeliveryReceipt"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRun/simulator_steps_barrier_and_replay",
+        "TestRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M066",
+      "layer": "unit",
+      "source": "internal/simulator/workflow.go",
+      "lineAtBaseline": 64,
+      "description": "Change boundary > to >=",
+      "original": "\n\tif len(data) > maxWorkflowBytes {",
+      "replacement": "\n\tif len(data) >= maxWorkflowBytes {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestLoadWorkflow/last_allowed_file_byte",
+        "TestLoadWorkflow"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M067",
+      "layer": "unit",
+      "source": "internal/simulator/workflow.go",
+      "lineAtBaseline": 177,
+      "description": "Change boundary <= to <",
+      "original": "\n\tif o.Client == nil || o.RetryMin <= 0 || o.RetryMax < o.RetryMin || o.MaxAttempts < 0 {",
+      "replacement": "\n\tif o.Client == nil || o.RetryMin < 0 || o.RetryMax < o.RetryMin || o.MaxAttempts < 0 {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateWorkflowTransport/zero_retry_minimum",
+        "TestValidateWorkflowTransport"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M068",
+      "layer": "unit",
+      "source": "internal/simulator/workflow.go",
+      "lineAtBaseline": 177,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif o.Client == nil || o.RetryMin <= 0 || o.RetryMax < o.RetryMin || o.MaxAttempts < 0 {",
+      "replacement": "\n\tif o.Client == nil || o.RetryMin <= 0 || o.RetryMax <= o.RetryMin || o.MaxAttempts < 0 {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateWorkflowTransport/equal_retry_delays",
+        "TestValidateWorkflowTransport"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M069",
+      "layer": "unit",
+      "source": "internal/simulator/workflow.go",
+      "lineAtBaseline": 177,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif o.Client == nil || o.RetryMin <= 0 || o.RetryMax < o.RetryMin || o.MaxAttempts < 0 {",
+      "replacement": "\n\tif o.Client == nil || o.RetryMin <= 0 || o.RetryMax < o.RetryMin || o.MaxAttempts <= 0 {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateWorkflowTransport/unlimited_attempts",
+        "TestValidateWorkflowTransport"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M070",
+      "layer": "unit",
+      "source": "internal/simulator/workflow_http.go",
+      "lineAtBaseline": 60,
+      "description": "Change boundary > to >=",
+      "original": "\n\t\tif r.options.MaxAttempts > 0 && attempt == r.options.MaxAttempts {",
+      "replacement": "\n\t\tif r.options.MaxAttempts >= 0 && attempt == r.options.MaxAttempts {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "equivalent",
+      "afterFailingTests": [],
+      "equivalenceReason": "The attempt counter starts at one. Changing MaxAttempts > 0 to >= 0 cannot make attempt equal the unlimited value zero."
+    },
+    {
+      "id": "M071",
+      "layer": "unit",
+      "source": "internal/simulator/workflow_http.go",
+      "lineAtBaseline": 105,
+      "description": "Change boundary >= to >",
+      "original": "\tif delay >= maximum/retryBackoffMultiplier {",
+      "replacement": "\tif delay > maximum/retryBackoffMultiplier {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestWorkflowBackoff/at_odd_half_cap",
+        "TestWorkflowBackoff"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M072",
+      "layer": "unit",
+      "source": "internal/simulator/workflow_http.go",
+      "lineAtBaseline": 130,
+      "description": "Change boundary > to >=",
+      "original": "\n\tif len(data) > maxWorkflowResponseBytes {",
+      "replacement": "\n\tif len(data) >= maxWorkflowResponseBytes {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestWorkflowRunnerRequest/last_allowed_response_byte",
+        "TestWorkflowRunnerRequest"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M073",
+      "layer": "unit",
+      "source": "internal/simulator/workflow_validation.go",
+      "lineAtBaseline": 19,
+      "description": "Change boundary < to <=",
+      "original": "\n\tif !validWorkflowPath(step.Request.Path) || step.Want.Status < minHTTPStatus || step.Want.Status > maxHTTPStatus {",
+      "replacement": "\n\tif !validWorkflowPath(step.Request.Path) || step.Want.Status <= minHTTPStatus || step.Want.Status > maxHTTPStatus {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateWorkflowStep/lowest_status",
+        "TestValidateWorkflowStep"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M074",
+      "layer": "unit",
+      "source": "internal/simulator/workflow_validation.go",
+      "lineAtBaseline": 19,
+      "description": "Change boundary > to >=",
+      "original": "\n\tif !validWorkflowPath(step.Request.Path) || step.Want.Status < minHTTPStatus || step.Want.Status > maxHTTPStatus {",
+      "replacement": "\n\tif !validWorkflowPath(step.Request.Path) || step.Want.Status < minHTTPStatus || step.Want.Status >= maxHTTPStatus {",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateWorkflowStep/highest_status",
+        "TestValidateWorkflowStep"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M075",
+      "layer": "unit",
+      "source": "internal/billing/validation.go",
+      "lineAtBaseline": 22,
+      "description": "Accept invalid UTF-8 identifiers",
+      "original": "!utf8.ValidString(value) || ",
+      "replacement": "(false && !utf8.ValidString(value)) || ",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateIdentifier/invalid_UTF-8",
+        "TestValidateIdentifier"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M076",
+      "layer": "unit",
+      "source": "internal/billing/validation.go",
+      "lineAtBaseline": 22,
+      "description": "Accept NUL in identifiers",
+      "original": "strings.ContainsRune(value, 0) || ",
+      "replacement": "",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateIdentifier/embedded_NUL",
+        "TestValidateIdentifier"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M077",
+      "layer": "unit",
+      "source": "internal/billing/validation.go",
+      "lineAtBaseline": 22,
+      "description": "Accept blank identifiers",
+      "original": "strings.TrimSpace(value) == \"\" || ",
+      "replacement": "",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateIdentifier/empty_identifier",
+        "TestValidateIdentifier"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M078",
+      "layer": "unit",
+      "source": "internal/billing/validation.go",
+      "lineAtBaseline": 22,
+      "description": "Ignore identifier byte limit",
+      "original": "len(value) > maxIdentifierBytes",
+      "replacement": "false",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestValidateIdentifier/ASCII_above_byte_limit",
+        "TestValidateIdentifier/Unicode_one_byte_above_limit_despite_fewer_than_256_characters",
+        "TestValidateIdentifier"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateIdentifier/ASCII_above_byte_limit",
+        "TestValidateIdentifier"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M079",
+      "layer": "unit",
+      "source": "internal/billing/validation.go",
+      "lineAtBaseline": 34,
+      "description": "Accept sub-microsecond financial timestamps",
+      "original": "value.Nanosecond()%int(time.Microsecond) != 0",
+      "replacement": "false",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateTime/nanosecond_beyond_microsecond",
+        "TestValidateTime"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M080",
+      "layer": "unit",
+      "source": "internal/billing/validation.go",
+      "lineAtBaseline": 42,
+      "description": "Allow zero credit grants",
+      "original": "(positive && value == 0)",
+      "replacement": "false",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestValidateCents/zero_grant",
+        "TestValidateCents"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M081",
+      "layer": "unit",
+      "source": "internal/accounting/money.go",
+      "lineAtBaseline": 56,
+      "description": "Add units and price instead of multiplying",
+      "original": "amount.ticks.Mul(big.NewInt(units), big.NewInt(pricePerMillionCents))",
+      "replacement": "amount.ticks.Add(big.NewInt(units), big.NewInt(pricePerMillionCents))",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestUsageCharge/one_unit_retains_an_exact_sub-cent_charge",
+        "TestUsageCharge/small_consumption_retains_fractional_cents",
+        "TestUsageCharge/maximum_units_and_price_remain_exact_beyond_int64",
+        "TestUsageCharge/zero_units_incur_no_charge",
+        "TestUsageCharge/free_price_incurs_no_charge",
+        "TestUsageCharge",
+        "TestRate/Acme_October_usage_selects_its_customer_override",
+        "TestRate/later_default_changes_never_replace_Acme_override",
+        "TestRate/Cyberdyne_usage_before_the_change_selects_the_old_default",
+        "TestRate/Cyberdyne_usage_at_the_change_selects_the_new_default",
+        "TestRate/price_change_at_the_excluded_interval_end_preserves_the_old_price",
+        "TestRate/Acme_override_masks_a_default_change_inside_the_interval",
+        "TestRate/an_explicitly_configured_zero_price_remains_valid",
+        "TestRate/interval_ending_exactly_at_the_UTC_month_boundary_retains_October",
+        "TestRate/interval_starting_exactly_at_the_UTC_month_boundary_belongs_to_November",
+        "TestRate/Acme_second_October_event_costs_eight_dollars",
+        "TestRate/late_Acme_October_usage_retains_its_original_price_and_month",
+        "TestRate/Cyberdyne_first_assignment_event_retains_fractional_cents",
+        "TestRate/Cyberdyne_second_assignment_event_uses_the_new_default",
+        "TestRate"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestUsageCharge/one_unit_retains_an_exact_sub-cent_charge",
+        "TestUsageCharge"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M082",
+      "layer": "unit",
+      "source": "internal/accounting/money.go",
+      "lineAtBaseline": 92,
+      "description": "Round exact half-cent downward",
+      "original": "TicksPerCent/2",
+      "replacement": "TicksPerCent/2-1",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestAmountRoundCents/exact_half_cent_rounds_up",
+        "TestAmountRoundCents/one_and_a_half_cents_round_to_two_cents",
+        "TestAmountRoundCents/half_cent_above_maximum_cents_causes_overflow",
+        "TestAmountRoundCents",
+        "TestInvoiceAmounts/half-cent_credit_does_not_independently_round_the_credit_line",
+        "TestInvoiceAmounts/rounded_gross_and_net_derive_a_one-cent_credit_line",
+        "TestInvoiceAmounts/rounded_gross_exceeding_int64_cents_is_rejected",
+        "TestInvoiceAmounts"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestAmountRoundCents/exact_half_cent_rounds_up",
+        "TestAmountRoundCents"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M083",
+      "layer": "unit",
+      "source": "internal/accounting/money.go",
+      "lineAtBaseline": 149,
+      "description": "Deduct gross instead of allocated credit",
+      "original": "CreditCents: grossCents - netCents",
+      "replacement": "CreditCents: grossCents",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestInvoiceAmounts/half-cent_credit_does_not_independently_round_the_credit_line",
+        "TestInvoiceAmounts/rounded_gross_and_net_derive_a_one-cent_credit_line",
+        "TestInvoiceAmounts/whole-cent_group_displays_its_gross_credit_and_net",
+        "TestInvoiceAmounts/split-event_group_owes_four_cents_after_one_cent_of_credit",
+        "TestInvoiceAmounts/Cyberdyne_first_price_group_rounds_to_six_dollars_seventeen_cents",
+        "TestInvoiceAmounts/Cyberdyne_second_price_group_owes_twelve_dollars",
+        "TestInvoiceAmounts"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestInvoiceAmounts/half-cent_credit_does_not_independently_round_the_credit_line",
+        "TestInvoiceAmounts"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M084",
+      "layer": "unit",
+      "source": "internal/accounting/money.go",
+      "lineAtBaseline": 68,
+      "description": "Expose mutable money storage",
+      "original": "return new(big.Int).Set(&a.ticks)",
+      "replacement": "return &a.ticks",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestAmountTicks/overwriting_a_nonzero_word_cannot_change_the_amount_or_its_value_copy",
+        "TestAmountTicks"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M085",
+      "layer": "unit",
+      "source": "internal/accounting/pricing.go",
+      "lineAtBaseline": 129,
+      "description": "Prefer default over customer price",
+      "original": "return candidate.CustomerID != \"\"",
+      "replacement": "return candidate.CustomerID == \"\"",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRate/Acme_October_usage_selects_its_customer_override",
+        "TestRate/later_default_changes_never_replace_Acme_override",
+        "TestRate/Acme_override_masks_a_default_change_inside_the_interval",
+        "TestRate/interval_ending_exactly_at_the_UTC_month_boundary_retains_October",
+        "TestRate/interval_starting_exactly_at_the_UTC_month_boundary_belongs_to_November",
+        "TestRate/Acme_second_October_event_costs_eight_dollars",
+        "TestRate/late_Acme_October_usage_retains_its_original_price_and_month",
+        "TestRate"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRate/Acme_October_usage_selects_its_customer_override",
+        "TestRate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M086",
+      "layer": "unit",
+      "source": "internal/accounting/pricing.go",
+      "lineAtBaseline": 48,
+      "description": "Rate unsupported positive schema versions",
+      "original": "event.SchemaVersion != usage.SchemaVersionV1",
+      "replacement": "false",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRate/unsupported_event_schema_is_rejected",
+        "TestRate"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRate/unsupported_event_schema_is_rejected",
+        "TestRate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M087",
+      "layer": "unit",
+      "source": "internal/accounting/pricing.go",
+      "lineAtBaseline": 142,
+      "description": "Reject masked default price changes",
+      "original": "selected.CustomerID == \"\" || version.CustomerID == selected.CustomerID",
+      "replacement": "true",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRate/Acme_override_masks_a_default_change_inside_the_interval",
+        "TestRate"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRate/Acme_override_masks_a_default_change_inside_the_interval",
+        "TestRate"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M088",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 100,
+      "description": "Accept invalid UTF-8 JSON",
+      "original": "utf8.Valid(body) && ",
+      "replacement": "(true || utf8.Valid(body)) && ",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/invalid_UTF-8",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/invalid_UTF-8",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M089",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 100,
+      "description": "Accept unpaired JSON surrogates",
+      "original": " && !hasUnpairedSurrogate(body)",
+      "replacement": "",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/unpaired_high_surrogate",
+        "TestHandlerServeHTTP/usage_batch_invalid_json/unpaired_low_surrogate",
+        "TestHandlerServeHTTP/usage_batch_invalid_json/high_surrogate_followed_by_ordinary_escape",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/unpaired_lowest_low_surrogate",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M090",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 230,
+      "description": "Accept unknown JSON fields",
+      "original": "!ok || !slices.Contains(allowed, name)",
+      "replacement": "!ok && !slices.Contains(allowed, name)",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/unknown_envelope_member",
+        "TestHandlerServeHTTP/usage_batch_invalid_json/case-aliased_envelope_member",
+        "TestHandlerServeHTTP/usage_batch_invalid_json/unknown_event_member",
+        "TestHandlerServeHTTP/usage_batch_invalid_json/case-aliased_event_member",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/unknown_envelope_member",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M091",
+      "layer": "unit",
+      "source": "internal/httpapi/batches.go",
+      "lineAtBaseline": 234,
+      "description": "Accept duplicate JSON fields",
+      "original": "if _, exists := fields[name]; exists {",
+      "replacement": "if _, exists := fields[name]; exists && false {",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/duplicate_envelope_member",
+        "TestHandlerServeHTTP/usage_batch_invalid_json/duplicate_event_member",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/usage_batch_invalid_json/duplicate_envelope_member",
+        "TestHandlerServeHTTP/usage_batch_invalid_json",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M092",
+      "layer": "unit",
+      "source": "internal/httpapi/handler.go",
+      "lineAtBaseline": 70,
+      "description": "Acknowledge usage with HTTP 200",
+      "original": "http.StatusAccepted)",
+      "replacement": "http.StatusOK)",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestHandlerServeHTTP/handler_routes/usage_batch",
+        "TestHandlerServeHTTP/handler_routes",
+        "TestHandlerServeHTTP/usage_batch_response",
+        "TestHandlerServeHTTP/usage_batch_valid_input/assignment_input",
+        "TestHandlerServeHTTP/usage_batch_valid_input/optional_batch_identifier",
+        "TestHandlerServeHTTP/usage_batch_valid_input/zero_units",
+        "TestHandlerServeHTTP/usage_batch_valid_input/maximum_units",
+        "TestHandlerServeHTTP/usage_batch_valid_input/maximum_version",
+        "TestHandlerServeHTTP/usage_batch_valid_input/Unicode_byte_boundary",
+        "TestHandlerServeHTTP/usage_batch_valid_input/UTC_month_boundary",
+        "TestHandlerServeHTTP/usage_batch_valid_input/cross-month_usage_is_accepted_for_asynchronous_accounting",
+        "TestHandlerServeHTTP/usage_batch_valid_input/offset_wall_clock_comparison",
+        "TestHandlerServeHTTP/usage_batch_valid_input/minimum_UTC_year",
+        "TestHandlerServeHTTP/usage_batch_valid_input/local_year_below_minimum_becomes_valid_in_UTC",
+        "TestHandlerServeHTTP/usage_batch_valid_input/valid_surrogate_pair",
+        "TestHandlerServeHTTP/usage_batch_valid_input/escaped_literal_surrogate_text",
+        "TestHandlerServeHTTP/usage_batch_valid_input",
+        "TestHandlerServeHTTP/usage_batch_limits/body_at_one_MiB",
+        "TestHandlerServeHTTP/usage_batch_limits/one_thousand_events",
+        "TestHandlerServeHTTP/usage_batch_limits",
+        "TestHandlerServeHTTP/usage_batch_media_type/UTF-8_JSON",
+        "TestHandlerServeHTTP/usage_batch_media_type",
+        "TestHandlerServeHTTP/usage_batch_admission_budget",
+        "TestHandlerServeHTTP/usage_batch_store_input",
+        "TestHandlerServeHTTP/usage_batch_waits_for_commit",
+        "TestHandlerServeHTTP"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestHandlerServeHTTP/handler_routes/usage_batch",
+        "TestHandlerServeHTTP/handler_routes",
+        "TestHandlerServeHTTP"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M093",
+      "layer": "unit",
+      "source": "internal/simulator/sender_checkpoint.go",
+      "lineAtBaseline": 37,
+      "description": "Mark delivery successful after failed checkpoint",
+      "original": "state.Delivered[index] = previous[position]",
+      "replacement": "state.Delivered[index] = true || previous[position]",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_receipt_write_failure_recovers",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRun/simulator_receipt_write_failure_recovers",
+        "TestRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M094",
+      "layer": "unit",
+      "source": "internal/simulator/sender_checkpoint.go",
+      "lineAtBaseline": 8,
+      "description": "Lose persisted send attempt",
+      "original": "state.Attempts++",
+      "replacement": "state.Attempts += 0",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_lost_response_recovery",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestSenderDeliver/no_duplicate",
+        "TestSenderDeliver"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M095",
+      "layer": "unit",
+      "source": "internal/simulator/sender_http.go",
+      "lineAtBaseline": 66,
+      "description": "Accept incorrect acknowledgement status",
+      "original": "result.Status != \"accepted\"",
+      "replacement": "false",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"wrong\"}",
+        "TestRun/simulator_permanent_errors_retain_buffer",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRun/simulator_permanent_errors_retain_buffer/202{\"status\":\"wrong\"}",
+        "TestRun/simulator_permanent_errors_retain_buffer",
+        "TestRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M096",
+      "layer": "unit",
+      "source": "internal/simulator/sender_http.go",
+      "lineAtBaseline": 65,
+      "description": "Accept non-JSON acknowledgement media type",
+      "original": "mediaType != \"application/json\"",
+      "replacement": "(mediaType != \"application/json\" && false)",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestClassifyDeliveryResponse/accepted_non-JSON",
+        "TestClassifyDeliveryResponse"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M097",
+      "layer": "unit",
+      "source": "internal/simulator/sender_http.go",
+      "lineAtBaseline": 48,
+      "description": "Never retry 429 or server errors",
+      "original": "Retry: true, RetryAfter:",
+      "replacement": "Retry: false, RetryAfter:",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestClassifyDeliveryResponse/first_server_error",
+        "TestClassifyDeliveryResponse"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M098",
+      "layer": "unit",
+      "source": "internal/simulator/sender_delivery.go",
+      "lineAtBaseline": 96,
+      "description": "Ignore Retry-After lower bound",
+      "original": "pause := max(min(delay+jitter, s.RetryMax), minimum)",
+      "replacement": "pause := min(delay+jitter, s.RetryMax)",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestRun/simulator_retry_after_retains_content",
+        "TestRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M099",
+      "layer": "unit",
+      "source": "internal/worker/worker.go",
+      "lineAtBaseline": 80,
+      "description": "Treat expired successful processor as success",
+      "original": "err = batchCtx.Err()",
+      "replacement": "err = nil",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestWorkerRun/worker_batch_deadline_delays_retry",
+        "TestWorkerRun"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestWorkerRun/worker_batch_deadline_delays_retry",
+        "TestWorkerRun"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M100",
+      "layer": "integration",
+      "source": "internal/billing/processor.go",
+      "lineAtBaseline": 270,
+      "description": "Discard previously accumulated charge",
+      "original": "return group, previous.Add(charge), nil",
+      "replacement": "_ = previous\n\treturn group, charge, nil",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestProcessBatch/split_receipts_round_cumulative_group",
+        "TestProcessBatch"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestProcessBatch/split_receipts_round_cumulative_group",
+        "TestProcessBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M101",
+      "layer": "integration",
+      "source": "internal/billing/processor.go",
+      "lineAtBaseline": 229,
+      "description": "Overwrite monthly gross",
+      "original": "gross_charge_ticks=monthly_usage.gross_charge_ticks+EXCLUDED.gross_charge_ticks",
+      "replacement": "gross_charge_ticks=EXCLUDED.gross_charge_ticks",
+      "beforeStatus": "timeout",
+      "beforeFailingTests": [
+        "TestBillingSimulatorExecutable/complete_assignment",
+        "TestBillingSimulatorExecutable/platform_reads_and_resets_monthly_limit_status"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestProcessBatch/sequence_IDs_and_earlier_groups/split_usage_and_replay_reuse_one_group",
+        "TestProcessBatch/sequence_IDs_and_earlier_groups",
+        "TestProcessBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M102",
+      "layer": "integration",
+      "source": "internal/billing/processor.go",
+      "lineAtBaseline": 280,
+      "description": "Overwrite group units",
+      "original": "total_units=rated_usage_groups.total_units+EXCLUDED.total_units",
+      "replacement": "total_units=EXCLUDED.total_units",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestBillingSimulatorExecutable/complete_assignment",
+        "TestBillingSimulatorExecutable/exact_sub-cent_credit",
+        "TestBillingSimulatorExecutable/HTTP_outage_recovers_without_financial_drift",
+        "TestBillingSimulatorExecutable/new_producer_process_confirms_a_lost_committed_grant",
+        "TestBillingSimulatorExecutable/unavailable_API_retains_the_plan_for_a_new_process",
+        "TestBillingSimulatorExecutable",
+        "TestProcessBatch/sequence_IDs_and_earlier_groups/split_usage_and_replay_reuse_one_group",
+        "TestProcessBatch/sequence_IDs_and_earlier_groups/earlier_group_and_grant_keep_their_IDs",
+        "TestProcessBatch/sequence_IDs_and_earlier_groups",
+        "TestProcessBatch/concurrent_sequence_allocation",
+        "TestProcessBatch"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestProcessBatch/sequence_IDs_and_earlier_groups/split_usage_and_replay_reuse_one_group",
+        "TestProcessBatch/sequence_IDs_and_earlier_groups",
+        "TestProcessBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M103",
+      "layer": "integration",
+      "source": "internal/billing/processor.go",
+      "lineAtBaseline": 283,
+      "description": "Overwrite allocated credit",
+      "original": "allocated_credit_ticks=rated_usage_groups.allocated_credit_ticks+EXCLUDED.allocated_credit_ticks",
+      "replacement": "allocated_credit_ticks=EXCLUDED.allocated_credit_ticks",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestBillingSimulatorExecutable/complete_assignment",
+        "TestBillingSimulatorExecutable/exact_sub-cent_credit",
+        "TestBillingSimulatorExecutable/HTTP_outage_recovers_without_financial_drift",
+        "TestBillingSimulatorExecutable/new_producer_process_confirms_a_lost_committed_grant",
+        "TestBillingSimulatorExecutable/unavailable_API_retains_the_plan_for_a_new_process",
+        "TestBillingSimulatorExecutable",
+        "TestProcessBatch/sequence_IDs_and_earlier_groups/split_usage_and_replay_reuse_one_group",
+        "TestProcessBatch/sequence_IDs_and_earlier_groups",
+        "TestProcessBatch/concurrent_sequence_allocation",
+        "TestProcessBatch",
+        "TestCloseMonth/processed_usage_cutoff/all_accepted_usage_is_still_pending",
+        "TestCloseMonth/processed_usage_cutoff/all_usage_was_processed_before_closing",
+        "TestCloseMonth/processed_usage_cutoff",
+        "TestCloseMonth/publication_failure_rolls_back_the_complete_closure",
+        "TestCloseMonth/Acme_October_and_late_November_assignment",
+        "TestCloseMonth"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestProcessBatch/sequence_IDs_and_earlier_groups/split_usage_and_replay_reuse_one_group",
+        "TestProcessBatch/sequence_IDs_and_earlier_groups",
+        "TestProcessBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M104",
+      "layer": "integration",
+      "source": "internal/billing/processor.go",
+      "lineAtBaseline": 219,
+      "description": "Leave spent credit in account",
+      "original": "allocation.Remaining); err != nil",
+      "replacement": "credit); err != nil",
+      "beforeStatus": "timeout",
+      "beforeFailingTests": [
+        "TestBillingSimulatorExecutable/complete_assignment",
+        "TestBillingSimulatorExecutable/exact_sub-cent_credit"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestProcessBatch/sequence_IDs_and_earlier_groups/split_usage_and_replay_reuse_one_group",
+        "TestProcessBatch/sequence_IDs_and_earlier_groups",
+        "TestProcessBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M105",
+      "layer": "integration",
+      "source": "internal/billing/processor.go",
+      "lineAtBaseline": 223,
+      "description": "Commit charge without completion marker",
+      "original": "return completeReceipt(ctx, tx, e)",
+      "replacement": "return nil",
+      "beforeStatus": "timeout",
+      "beforeFailingTests": [
+        "TestBillingSimulatorExecutable/complete_assignment",
+        "TestBillingSimulatorExecutable/exact_sub-cent_credit"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestProcessBatch/sequence_IDs_and_earlier_groups/split_usage_and_replay_reuse_one_group",
+        "TestProcessBatch/sequence_IDs_and_earlier_groups",
+        "TestProcessBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M106",
+      "layer": "integration",
+      "source": "internal/billing/credit.go",
+      "lineAtBaseline": 84,
+      "description": "Overwrite balance on new grant",
+      "original": "credit_balance_ticks=credit_balance_ticks+$2::numeric",
+      "replacement": "credit_balance_ticks=$2::numeric",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestGrantCredit/sequence_IDs_and_replay/earlier_grant_ID_survives_replay",
+        "TestGrantCredit/sequence_IDs_and_replay",
+        "TestGrantCredit/distinct_grants_add",
+        "TestGrantCredit/distinct_identities_with_identical_amounts_and_timestamps_grant_twice",
+        "TestGrantCredit"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestGrantCredit/sequence_IDs_and_replay/earlier_grant_ID_survives_replay",
+        "TestGrantCredit/sequence_IDs_and_replay",
+        "TestGrantCredit"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M107",
+      "layer": "integration",
+      "source": "internal/inbox/postgres.go",
+      "lineAtBaseline": 104,
+      "description": "Acknowledge non-durable commit",
+      "original": "SET LOCAL synchronous_commit = on",
+      "replacement": "SET LOCAL synchronous_commit = off",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestPostgresInsertBatch/inbox_synchronous_commit",
+        "TestPostgresInsertBatch"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestPostgresInsertBatch/inbox_synchronous_commit",
+        "TestPostgresInsertBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M108",
+      "layer": "integration",
+      "source": "internal/inbox/postgres.go",
+      "lineAtBaseline": 203,
+      "description": "Ignore changed schema_version on usage retry",
+      "original": "schema_version = $3",
+      "replacement": "$3::integer = $3::integer",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/schema_version",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/schema_version",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M109",
+      "layer": "integration",
+      "source": "internal/inbox/postgres.go",
+      "lineAtBaseline": 203,
+      "description": "Ignore changed customer_id on usage retry",
+      "original": "customer_id = $4",
+      "replacement": "$4 = $4",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/customer",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/customer",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M110",
+      "layer": "integration",
+      "source": "internal/inbox/postgres.go",
+      "lineAtBaseline": 203,
+      "description": "Ignore changed sandbox_id on usage retry",
+      "original": "sandbox_id = $5",
+      "replacement": "$5 = $5",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/sandbox",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/sandbox",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M111",
+      "layer": "integration",
+      "source": "internal/inbox/postgres.go",
+      "lineAtBaseline": 204,
+      "description": "Ignore changed metric on usage retry",
+      "original": "metric = $6",
+      "replacement": "$6 = $6",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/metric",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/metric",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M112",
+      "layer": "integration",
+      "source": "internal/inbox/postgres.go",
+      "lineAtBaseline": 204,
+      "description": "Ignore changed period_start on usage retry",
+      "original": "period_start = $7",
+      "replacement": "$7::timestamptz = $7::timestamptz",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/period_start",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/period_start",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M113",
+      "layer": "integration",
+      "source": "internal/inbox/postgres.go",
+      "lineAtBaseline": 204,
+      "description": "Ignore changed period_end on usage retry",
+      "original": "period_end = $8",
+      "replacement": "$8::timestamptz = $8::timestamptz",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/period_end",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestPostgresInsertBatch/inbox_changed_content/period_end",
+        "TestPostgresInsertBatch/inbox_changed_content",
+        "TestPostgresInsertBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "M114",
+      "layer": "integration",
+      "source": "internal/inbox/postgres.go",
+      "lineAtBaseline": 204,
+      "description": "Ignore changed units on usage retry",
+      "original": "units = $9",
+      "replacement": "$9::bigint = $9::bigint",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "TestPostgresInsertBatch/inbox_conflict_rollback",
+        "TestPostgresInsertBatch"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "TestPostgresInsertBatch/inbox_conflict_rollback",
+        "TestPostgresInsertBatch"
+      ],
+      "equivalenceReason": null
+    },
+    {
+      "id": "S001",
+      "layer": "sql",
+      "mutation": "ALTER TABLE usage_inbox DROP CONSTRAINT usage_inbox_schema_version_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "survived",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/usage_inbox.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  zero schema version is rejected: write succeeded, want SQLSTATE 23514; input SQL: UPDATE usage_inbox SET schema_version = 0 WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'\nCONTEXT:  PL/pgSQL function pg_temp_22.assert_rejection(text,text,text) line 11 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "survived",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/usage_inbox.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  zero schema version is rejected: write succeeded, want SQLSTATE 23514; input SQL: UPDATE usage_inbox SET schema_version = 0 WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'\nCONTEXT:  PL/pgSQL function pg_temp_2.assert_rejection(text,text,text) line 11 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "S002",
+      "layer": "sql",
+      "mutation": "ALTER TABLE usage_inbox DROP CONSTRAINT usage_inbox_units_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/usage_inbox.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  usage units cannot be negative: write succeeded, want SQLSTATE 23514; input SQL: \n        UPDATE usage_inbox SET units = -1 WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'\n    \nCONTEXT:  PL/pgSQL function pg_temp_43.assert_rejection(text,text,text) line 11 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/usage_inbox.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  usage units cannot be negative: write succeeded, want SQLSTATE 23514; input SQL: \n        UPDATE usage_inbox SET units = -1 WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'\n    \nCONTEXT:  PL/pgSQL function pg_temp_35.assert_rejection(text,text,text) line 11 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "S003",
+      "layer": "sql",
+      "mutation": "ALTER TABLE usage_inbox DROP CONSTRAINT usage_inbox_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/usage_inbox.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  usage period must have positive duration: write succeeded, want SQLSTATE 23514; input SQL: \n        UPDATE usage_inbox SET period_end = period_start WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'\n    \nCONTEXT:  PL/pgSQL function pg_temp_27.assert_rejection(text,text,text) line 11 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/usage_inbox.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  usage period must have positive duration: write succeeded, want SQLSTATE 23514; input SQL: \n        UPDATE usage_inbox SET period_end = period_start WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'\n    \nCONTEXT:  PL/pgSQL function pg_temp_33.assert_rejection(text,text,text) line 11 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "S004",
+      "layer": "sql",
+      "mutation": "ALTER TABLE usage_inbox DROP CONSTRAINT usage_inbox_processed_without_error;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/usage_inbox.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  processed_at cannot coexist with an unresolved processing error: write succeeded, want SQLSTATE 23514; input SQL: \n        UPDATE usage_inbox SET processed_at = '2026-10-31T23:30:10Z' WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'\n    \nCONTEXT:  PL/pgSQL function pg_temp_47.assert_rejection(text,text,text) line 11 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/usage_inbox.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  processed_at cannot coexist with an unresolved processing error: write succeeded, want SQLSTATE 23514; input SQL: \n        UPDATE usage_inbox SET processed_at = '2026-10-31T23:30:10Z' WHERE source = 'usage-inbox-schema-test' AND event_id = 'acme-cpu-001'\n    \nCONTEXT:  PL/pgSQL function pg_temp_23.assert_rejection(text,text,text) line 11 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "S005",
+      "layer": "sql",
+      "mutation": "ALTER TABLE customer_billing_state DROP CONSTRAINT customer_billing_state_spend_limit_cents_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Negative spend limit: write succeeded, want SQLSTATE 23514; input SQL: UPDATE customer_billing_state SET spend_limit_cents = -1 WHERE customer_id = 'billing-model-acme'\nCONTEXT:  PL/pgSQL function pg_temp_16.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Negative spend limit',\n            input_sql => $$UPDATE customer_billing_state SET spend_limit_cents = -1 WHERE customer_id = 'billing-model-acme'$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 9 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Negative spend limit: write succeeded, want SQLSTATE 23514; input SQL: UPDATE customer_billing_state SET spend_limit_cents = -1 WHERE customer_id = 'billing-model-acme'\nCONTEXT:  PL/pgSQL function pg_temp_59.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Negative spend limit',\n            input_sql => $$UPDATE customer_billing_state SET spend_limit_cents = -1 WHERE customer_id = 'billing-model-acme'$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 9 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S006",
+      "layer": "sql",
+      "mutation": "ALTER TABLE customer_billing_state DROP CONSTRAINT customer_billing_state_next_invoice_number_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "survived",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Billing model integrity tests passed (TimeZone: UTC)\nERROR:  zero invoice sequence is rejected: write succeeded, want SQLSTATE 23514; input SQL: UPDATE customer_billing_state SET next_invoice_number = 0 WHERE customer_id = 'billing-model-acme'\nCONTEXT:  PL/pgSQL function pg_temp_18.assert_rejection(text,text,text) line 11 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "survived",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Billing model integrity tests passed (TimeZone: Asia/Shanghai)\nERROR:  zero invoice sequence is rejected: write succeeded, want SQLSTATE 23514; input SQL: UPDATE customer_billing_state SET next_invoice_number = 0 WHERE customer_id = 'billing-model-acme'\nCONTEXT:  PL/pgSQL function pg_temp_45.assert_rejection(text,text,text) line 11 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "S007",
+      "layer": "sql",
+      "mutation": "ALTER TABLE customer_billing_state DROP CONSTRAINT customer_billing_state_state_version_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Negative state version: write succeeded, want SQLSTATE 23514; input SQL: UPDATE customer_billing_state SET state_version = -1 WHERE customer_id = 'billing-model-acme'\nCONTEXT:  PL/pgSQL function pg_temp_49.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Negative state version',\n            input_sql => $$UPDATE customer_billing_state SET state_version = -1 WHERE customer_id = 'billing-model-acme'$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 13 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Negative state version: write succeeded, want SQLSTATE 23514; input SQL: UPDATE customer_billing_state SET state_version = -1 WHERE customer_id = 'billing-model-acme'\nCONTEXT:  PL/pgSQL function pg_temp_56.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Negative state version',\n            input_sql => $$UPDATE customer_billing_state SET state_version = -1 WHERE customer_id = 'billing-model-acme'$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 13 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S008",
+      "layer": "sql",
+      "mutation": "ALTER TABLE price_versions DROP CONSTRAINT price_versions_price_per_million_cents_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Negative price: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO price_versions VALUES ('billing-model-negative-price', NULL, 'billing-model-cpu', -1, '2026-11-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function pg_temp_44.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Negative price',\n            input_sql => $$INSERT INTO price_versions VALUES ('billing-model-negative-price', NULL, 'billing-model-cpu', -1, '2026-11-01T00:00:00Z')$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 34 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Negative price: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO price_versions VALUES ('billing-model-negative-price', NULL, 'billing-model-cpu', -1, '2026-11-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function pg_temp_37.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Negative price',\n            input_sql => $$INSERT INTO price_versions VALUES ('billing-model-negative-price', NULL, 'billing-model-cpu', -1, '2026-11-01T00:00:00Z')$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 34 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S009",
+      "layer": "sql",
+      "mutation": "ALTER TABLE price_versions DROP CONSTRAINT price_versions_effective_from_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Non-finite price time: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO price_versions VALUES ('billing-model-infinite-price', NULL, 'billing-model-cpu', 5, 'infinity')\nCONTEXT:  PL/pgSQL function pg_temp_31.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Non-finite price time',\n            input_sql => $$INSERT INTO price_versions VALUES ('billing-model-infinite-price', NULL, 'billing-model-cpu', 5, 'infinity')$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 38 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Non-finite price time: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO price_versions VALUES ('billing-model-infinite-price', NULL, 'billing-model-cpu', 5, 'infinity')\nCONTEXT:  PL/pgSQL function pg_temp_57.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Non-finite price time',\n            input_sql => $$INSERT INTO price_versions VALUES ('billing-model-infinite-price', NULL, 'billing-model-cpu', 5, 'infinity')$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 38 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S010",
+      "layer": "sql",
+      "mutation": "ALTER TABLE price_versions DROP CONSTRAINT price_versions_customer_id_metric_effective_from_key;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Duplicate default effective time: write succeeded, want SQLSTATE 23505; input SQL: INSERT INTO price_versions VALUES ('billing-model-duplicate-default', NULL, 'billing-model-cpu', 7, '2026-10-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function pg_temp_30.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Duplicate default effective time',\n            input_sql => $$INSERT INTO price_versions VALUES ('billing-model-duplicate-default', NULL, 'billing-model-cpu', 7, '2026-10-01T00:00:00Z')$$,\n            want_sqlstate => '23505')\"\nPL/pgSQL function inline_code_block line 26 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Duplicate default effective time: write succeeded, want SQLSTATE 23505; input SQL: INSERT INTO price_versions VALUES ('billing-model-duplicate-default', NULL, 'billing-model-cpu', 7, '2026-10-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function pg_temp_54.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Duplicate default effective time',\n            input_sql => $$INSERT INTO price_versions VALUES ('billing-model-duplicate-default', NULL, 'billing-model-cpu', 7, '2026-10-01T00:00:00Z')$$,\n            want_sqlstate => '23505')\"\nPL/pgSQL function inline_code_block line 26 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S011",
+      "layer": "sql",
+      "mutation": "ALTER TABLE rated_usage_groups DROP CONSTRAINT rated_usage_groups_credit_within_gross;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Credit exceeding exact gross usage: write succeeded, want SQLSTATE 23514; input SQL: UPDATE rated_usage_groups SET allocated_credit_ticks = 1200000001 WHERE group_id = 'billing-model-acme-oct'\nCONTEXT:  PL/pgSQL function pg_temp_42.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Credit exceeding exact gross usage',\n            input_sql => $$UPDATE rated_usage_groups SET allocated_credit_ticks = 1200000001 WHERE group_id = 'billing-model-acme-oct'$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 79 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Credit exceeding exact gross usage: write succeeded, want SQLSTATE 23514; input SQL: UPDATE rated_usage_groups SET allocated_credit_ticks = 1200000001 WHERE group_id = 'billing-model-acme-oct'\nCONTEXT:  PL/pgSQL function pg_temp_40.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Credit exceeding exact gross usage',\n            input_sql => $$UPDATE rated_usage_groups SET allocated_credit_ticks = 1200000001 WHERE group_id = 'billing-model-acme-oct'$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 79 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S012",
+      "layer": "sql",
+      "mutation": "ALTER TABLE rated_usage_groups DROP CONSTRAINT rated_usage_groups_total_units_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Invalid aggregate units: -1: write succeeded, want SQLSTATE 23514; input SQL: UPDATE rated_usage_groups SET total_units = '-1'::numeric WHERE group_id = 'billing-model-acme-oct'\nCONTEXT:  PL/pgSQL function pg_temp_39.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Invalid aggregate units: ' || invalid_number,\n            input_sql => format('UPDATE rated_usage_groups SET total_units = %L::numeric WHERE group_id = %L', invalid_number, 'billing-model-acme-oct'),\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 101 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Invalid aggregate units: -1: write succeeded, want SQLSTATE 23514; input SQL: UPDATE rated_usage_groups SET total_units = '-1'::numeric WHERE group_id = 'billing-model-acme-oct'\nCONTEXT:  PL/pgSQL function pg_temp_48.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Invalid aggregate units: ' || invalid_number,\n            input_sql => format('UPDATE rated_usage_groups SET total_units = %L::numeric WHERE group_id = %L', invalid_number, 'billing-model-acme-oct'),\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 101 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S013",
+      "layer": "sql",
+      "mutation": "ALTER TABLE rated_usage_groups DROP CONSTRAINT rated_usage_groups_check1;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Billing before original usage month: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO rated_usage_groups VALUES ('billing-model-earlier-month', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu', '2026-11-01', '2026-10-01', 1, 4, 0, 0)\nCONTEXT:  PL/pgSQL function pg_temp_71.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Billing before original usage month',\n            input_sql => $$INSERT INTO rated_usage_groups VALUES ('billing-model-earlier-month', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu', '2026-11-01', '2026-10-01', 1, 4, 0, 0)$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 87 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Billing before original usage month: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO rated_usage_groups VALUES ('billing-model-earlier-month', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu', '2026-11-01', '2026-10-01', 1, 4, 0, 0)\nCONTEXT:  PL/pgSQL function pg_temp_61.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Billing before original usage month',\n            input_sql => $$INSERT INTO rated_usage_groups VALUES ('billing-model-earlier-month', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu', '2026-11-01', '2026-10-01', 1, 4, 0, 0)$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 87 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S014",
+      "layer": "sql",
+      "mutation": "ALTER TABLE credit_entries DROP CONSTRAINT credit_entries_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Negative grant without usage: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO credit_entries VALUES ('billing-model-negative-grant', 'billing-model-acme', 'grant-2', NULL, -1, '2026-10-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function pg_temp_65.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Negative grant without usage',\n            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-negative-grant', 'billing-model-acme', 'grant-2', NULL, -1, '2026-10-01T00:00:00Z')$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 128 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Negative grant without usage: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO credit_entries VALUES ('billing-model-negative-grant', 'billing-model-acme', 'grant-2', NULL, -1, '2026-10-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function pg_temp_53.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Negative grant without usage',\n            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-negative-grant', 'billing-model-acme', 'grant-2', NULL, -1, '2026-10-01T00:00:00Z')$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 128 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S015",
+      "layer": "sql",
+      "mutation": "ALTER TABLE credit_entries DROP CONSTRAINT credit_entries_customer_id_operation_id_key;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Duplicate credit operation: write succeeded, want SQLSTATE 23505; input SQL: INSERT INTO credit_entries VALUES ('billing-model-grant-retry', 'billing-model-acme', 'grant-1', NULL, 2500, '2026-10-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function pg_temp_58.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Duplicate credit operation',\n            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-grant-retry', 'billing-model-acme', 'grant-1', NULL, 2500, '2026-10-01T00:00:00Z')$$,\n            want_sqlstate => '23505')\"\nPL/pgSQL function inline_code_block line 120 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Duplicate credit operation: write succeeded, want SQLSTATE 23505; input SQL: INSERT INTO credit_entries VALUES ('billing-model-grant-retry', 'billing-model-acme', 'grant-1', NULL, 2500, '2026-10-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function pg_temp_69.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Duplicate credit operation',\n            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-grant-retry', 'billing-model-acme', 'grant-1', NULL, 2500, '2026-10-01T00:00:00Z')$$,\n            want_sqlstate => '23505')\"\nPL/pgSQL function inline_code_block line 120 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S016",
+      "layer": "sql",
+      "mutation": "ALTER TABLE addon_subscriptions DROP CONSTRAINT addon_subscriptions_monthly_price_cents_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Negative subscription price: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO addon_subscriptions VALUES ('billing-model-negative-subscription', 'billing-model-cyberdyne', 'billing-model-addon', -1, '2026-10-05T00:00:00Z', '2026-10-01')\nCONTEXT:  PL/pgSQL function pg_temp_38.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Negative subscription price',\n            input_sql => $$INSERT INTO addon_subscriptions VALUES ('billing-model-negative-subscription', 'billing-model-cyberdyne', 'billing-model-addon', -1, '2026-10-05T00:00:00Z', '2026-10-01')$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 153 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Negative subscription price: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO addon_subscriptions VALUES ('billing-model-negative-subscription', 'billing-model-cyberdyne', 'billing-model-addon', -1, '2026-10-05T00:00:00Z', '2026-10-01')\nCONTEXT:  PL/pgSQL function pg_temp_68.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Negative subscription price',\n            input_sql => $$INSERT INTO addon_subscriptions VALUES ('billing-model-negative-subscription', 'billing-model-cyberdyne', 'billing-model-addon', -1, '2026-10-05T00:00:00Z', '2026-10-01')$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 153 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S017",
+      "layer": "sql",
+      "mutation": "ALTER TABLE addon_subscriptions DROP CONSTRAINT addon_subscriptions_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Add-on purchase month must use UTC: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO addon_subscriptions VALUES ('billing-model-wrong-start', 'billing-model-cyberdyne', 'billing-model-addon', 2000, '2026-10-31T23:59:59Z', '2026-11-01')\nCONTEXT:  PL/pgSQL function pg_temp_46.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Add-on purchase month must use UTC',\n            input_sql => $$INSERT INTO addon_subscriptions VALUES ('billing-model-wrong-start', 'billing-model-cyberdyne', 'billing-model-addon', 2000, '2026-10-31T23:59:59Z', '2026-11-01')$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 149 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Add-on purchase month must use UTC: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO addon_subscriptions VALUES ('billing-model-wrong-start', 'billing-model-cyberdyne', 'billing-model-addon', 2000, '2026-10-31T23:59:59Z', '2026-11-01')\nCONTEXT:  PL/pgSQL function pg_temp_62.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Add-on purchase month must use UTC',\n            input_sql => $$INSERT INTO addon_subscriptions VALUES ('billing-model-wrong-start', 'billing-model-cyberdyne', 'billing-model-addon', 2000, '2026-10-31T23:59:59Z', '2026-11-01')$$,\n            want_sqlstate => '23514')\"\nPL/pgSQL function inline_code_block line 149 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S018",
+      "layer": "sql",
+      "mutation": "ALTER TABLE addon_subscriptions DROP CONSTRAINT addon_subscriptions_customer_id_addon_name_key;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Duplicate customer add-on: write succeeded, want SQLSTATE 23505; input SQL: INSERT INTO addon_subscriptions VALUES ('billing-model-duplicate-subscription', 'billing-model-acme', 'billing-model-addon', 2000, '2026-11-01T00:00:00Z', '2026-11-01')\nCONTEXT:  PL/pgSQL function pg_temp_51.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Duplicate customer add-on',\n            input_sql => $$INSERT INTO addon_subscriptions VALUES ('billing-model-duplicate-subscription', 'billing-model-acme', 'billing-model-addon', 2000, '2026-11-01T00:00:00Z', '2026-11-01')$$,\n            want_sqlstate => '23505')\"\nPL/pgSQL function inline_code_block line 145 at PERFORM"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nERROR:  Duplicate customer add-on: write succeeded, want SQLSTATE 23505; input SQL: INSERT INTO addon_subscriptions VALUES ('billing-model-duplicate-subscription', 'billing-model-acme', 'billing-model-addon', 2000, '2026-11-01T00:00:00Z', '2026-11-01')\nCONTEXT:  PL/pgSQL function pg_temp_60.assert_rejection(text,text,text) line 11 at RAISE\nSQL statement \"SELECT pg_temp.assert_rejection(\n            scenario => 'Duplicate customer add-on',\n            input_sql => $$INSERT INTO addon_subscriptions VALUES ('billing-model-duplicate-subscription', 'billing-model-acme', 'billing-model-addon', 2000, '2026-11-01T00:00:00Z', '2026-11-01')$$,\n            want_sqlstate => '23505')\"\nPL/pgSQL function inline_code_block line 145 at PERFORM"
+        }
+      ]
+    },
+    {
+      "id": "S019",
+      "layer": "sql",
+      "mutation": "ALTER TABLE invoices DROP CONSTRAINT invoices_total_cents_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "survived",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Billing model integrity tests passed (TimeZone: UTC)\nERROR:  negative invoice total is rejected: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO invoices VALUES ('billing-model-acme','2026-10-01','AUDIT-0001',-1,'{}')\nCONTEXT:  PL/pgSQL function pg_temp_66.assert_rejection(text,text,text) line 11 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "survived",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Billing model integrity tests passed (TimeZone: Asia/Shanghai)\nERROR:  negative invoice total is rejected: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO invoices VALUES ('billing-model-acme','2026-10-01','AUDIT-0001',-1,'{}')\nCONTEXT:  PL/pgSQL function pg_temp_52.assert_rejection(text,text,text) line 11 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "S020",
+      "layer": "sql",
+      "mutation": "ALTER TABLE invoices DROP CONSTRAINT invoices_snapshot_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "survived",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Billing model integrity tests passed (TimeZone: UTC)\nERROR:  invoice snapshot cannot be an array: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO invoices VALUES ('billing-model-acme','2026-10-01','AUDIT-0001',0,'[]')\nCONTEXT:  PL/pgSQL function pg_temp_67.assert_rejection(text,text,text) line 11 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "survived",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/billing_model.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Billing model integrity tests passed (TimeZone: Asia/Shanghai)\nERROR:  invoice snapshot cannot be an array: write succeeded, want SQLSTATE 23514; input SQL: INSERT INTO invoices VALUES ('billing-model-acme','2026-10-01','AUDIT-0001',0,'[]')\nCONTEXT:  PL/pgSQL function pg_temp_70.assert_rejection(text,text,text) line 11 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "S021",
+      "layer": "sql",
+      "mutation": "ALTER TABLE api_idempotency_operations DROP CONSTRAINT api_idempotency_operations_idempotency_key_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/api_idempotency.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Passed: same scoped key is unique (SQLSTATE 23505)\nNOTICE:  Passed: another scope may reuse the key (SQLSTATE 00000)\nNOTICE:  Passed: case-sensitive keys are distinct (SQLSTATE 00000)\nERROR:  empty key is rejected: SQLSTATE 00000, expected 23514, input INSERT INTO api_idempotency_operations VALUES ('sql-idempotency','','{}','{}','2026-11-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function inline_code_block line 96 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/api_idempotency.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Passed: same scoped key is unique (SQLSTATE 23505)\nNOTICE:  Passed: another scope may reuse the key (SQLSTATE 00000)\nNOTICE:  Passed: case-sensitive keys are distinct (SQLSTATE 00000)\nERROR:  empty key is rejected: SQLSTATE 00000, expected 23514, input INSERT INTO api_idempotency_operations VALUES ('sql-idempotency','','{}','{}','2026-11-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function inline_code_block line 96 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "S022",
+      "layer": "sql",
+      "mutation": "ALTER TABLE api_idempotency_operations DROP CONSTRAINT api_idempotency_operations_operation_scope_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/api_idempotency.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Passed: same scoped key is unique (SQLSTATE 23505)\nNOTICE:  Passed: another scope may reuse the key (SQLSTATE 00000)\nNOTICE:  Passed: case-sensitive keys are distinct (SQLSTATE 00000)\nNOTICE:  Passed: empty key is rejected (SQLSTATE 23514)\nNOTICE:  Passed: space is rejected (SQLSTATE 23514)\nNOTICE:  Passed: tab is rejected (SQLSTATE 23514)\nNOTICE:  Passed: Unicode is rejected (SQLSTATE 23514)\nNOTICE:  Passed: exact key maximum is accepted (SQLSTATE 00000)\nNOTICE:  Passed: above key maximum is rejected (SQLSTATE 23514)\nERROR:  empty scope is rejected: SQLSTATE 00000, expected 23514, input INSERT INTO api_idempotency_operations VALUES ('','scope-test','{}','{}','2026-11-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function inline_code_block line 96 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/api_idempotency.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Passed: same scoped key is unique (SQLSTATE 23505)\nNOTICE:  Passed: another scope may reuse the key (SQLSTATE 00000)\nNOTICE:  Passed: case-sensitive keys are distinct (SQLSTATE 00000)\nNOTICE:  Passed: empty key is rejected (SQLSTATE 23514)\nNOTICE:  Passed: space is rejected (SQLSTATE 23514)\nNOTICE:  Passed: tab is rejected (SQLSTATE 23514)\nNOTICE:  Passed: Unicode is rejected (SQLSTATE 23514)\nNOTICE:  Passed: exact key maximum is accepted (SQLSTATE 00000)\nNOTICE:  Passed: above key maximum is rejected (SQLSTATE 23514)\nERROR:  empty scope is rejected: SQLSTATE 00000, expected 23514, input INSERT INTO api_idempotency_operations VALUES ('','scope-test','{}','{}','2026-11-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function inline_code_block line 96 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "S023",
+      "layer": "sql",
+      "mutation": "ALTER TABLE api_idempotency_operations DROP CONSTRAINT api_idempotency_operations_request_payload_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/api_idempotency.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Passed: same scoped key is unique (SQLSTATE 23505)\nNOTICE:  Passed: another scope may reuse the key (SQLSTATE 00000)\nNOTICE:  Passed: case-sensitive keys are distinct (SQLSTATE 00000)\nNOTICE:  Passed: empty key is rejected (SQLSTATE 23514)\nNOTICE:  Passed: space is rejected (SQLSTATE 23514)\nNOTICE:  Passed: tab is rejected (SQLSTATE 23514)\nNOTICE:  Passed: Unicode is rejected (SQLSTATE 23514)\nNOTICE:  Passed: exact key maximum is accepted (SQLSTATE 00000)\nNOTICE:  Passed: above key maximum is rejected (SQLSTATE 23514)\nNOTICE:  Passed: empty scope is rejected (SQLSTATE 23514)\nERROR:  request must be an object: SQLSTATE 00000, expected 23514, input INSERT INTO api_idempotency_operations VALUES ('sql-idempotency','array-input','[]','{}','2026-11-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function inline_code_block line 96 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/api_idempotency.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Passed: same scoped key is unique (SQLSTATE 23505)\nNOTICE:  Passed: another scope may reuse the key (SQLSTATE 00000)\nNOTICE:  Passed: case-sensitive keys are distinct (SQLSTATE 00000)\nNOTICE:  Passed: empty key is rejected (SQLSTATE 23514)\nNOTICE:  Passed: space is rejected (SQLSTATE 23514)\nNOTICE:  Passed: tab is rejected (SQLSTATE 23514)\nNOTICE:  Passed: Unicode is rejected (SQLSTATE 23514)\nNOTICE:  Passed: exact key maximum is accepted (SQLSTATE 00000)\nNOTICE:  Passed: above key maximum is rejected (SQLSTATE 23514)\nNOTICE:  Passed: empty scope is rejected (SQLSTATE 23514)\nERROR:  request must be an object: SQLSTATE 00000, expected 23514, input INSERT INTO api_idempotency_operations VALUES ('sql-idempotency','array-input','[]','{}','2026-11-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function inline_code_block line 96 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "S024",
+      "layer": "sql",
+      "mutation": "ALTER TABLE api_idempotency_operations DROP CONSTRAINT api_idempotency_operations_response_payload_check;",
+      "results": [
+        {
+          "timeZone": "UTC",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/api_idempotency.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Passed: same scoped key is unique (SQLSTATE 23505)\nNOTICE:  Passed: another scope may reuse the key (SQLSTATE 00000)\nNOTICE:  Passed: case-sensitive keys are distinct (SQLSTATE 00000)\nNOTICE:  Passed: empty key is rejected (SQLSTATE 23514)\nNOTICE:  Passed: space is rejected (SQLSTATE 23514)\nNOTICE:  Passed: tab is rejected (SQLSTATE 23514)\nNOTICE:  Passed: Unicode is rejected (SQLSTATE 23514)\nNOTICE:  Passed: exact key maximum is accepted (SQLSTATE 00000)\nNOTICE:  Passed: above key maximum is rejected (SQLSTATE 23514)\nNOTICE:  Passed: empty scope is rejected (SQLSTATE 23514)\nNOTICE:  Passed: request must be an object (SQLSTATE 23514)\nERROR:  response must be an object: SQLSTATE 00000, expected 23514, input INSERT INTO api_idempotency_operations VALUES ('sql-idempotency','array-output','{}','[]','2026-11-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function inline_code_block line 96 at RAISE"
+        },
+        {
+          "timeZone": "Asia/Shanghai",
+          "beforeStatus": "killed",
+          "afterStatus": "killed",
+          "testFile": "tests/sql/api_idempotency.sql",
+          "failure": "WARNING:  there is already a transaction in progress\nNOTICE:  Passed: same scoped key is unique (SQLSTATE 23505)\nNOTICE:  Passed: another scope may reuse the key (SQLSTATE 00000)\nNOTICE:  Passed: case-sensitive keys are distinct (SQLSTATE 00000)\nNOTICE:  Passed: empty key is rejected (SQLSTATE 23514)\nNOTICE:  Passed: space is rejected (SQLSTATE 23514)\nNOTICE:  Passed: tab is rejected (SQLSTATE 23514)\nNOTICE:  Passed: Unicode is rejected (SQLSTATE 23514)\nNOTICE:  Passed: exact key maximum is accepted (SQLSTATE 00000)\nNOTICE:  Passed: above key maximum is rejected (SQLSTATE 23514)\nNOTICE:  Passed: empty scope is rejected (SQLSTATE 23514)\nNOTICE:  Passed: request must be an object (SQLSTATE 23514)\nERROR:  response must be an object: SQLSTATE 00000, expected 23514, input INSERT INTO api_idempotency_operations VALUES ('sql-idempotency','array-output','{}','[]','2026-11-01T00:00:00Z')\nCONTEXT:  PL/pgSQL function inline_code_block line 96 at RAISE"
+        }
+      ]
+    },
+    {
+      "id": "G001",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 12,
+      "description": "Reject valid maximum cents",
+      "original": "number > INT64_MAX",
+      "replacement": "number >= INT64_MAX",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 3 - exact int64 maximum",
+        "not ok 1 - usdToCents",
+        "not ok 9 - maximum units remain a numeric JSON token",
+        "not ok 5 - buildCommand"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 3 - exact int64 maximum",
+        "not ok 1 - usdToCents",
+        "not ok 10 - maximum units remain a numeric JSON token",
+        "not ok 5 - buildCommand"
+      ]
+    },
+    {
+      "id": "G002",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 12,
+      "description": "Reject valid zero limit",
+      "original": "number < minimum",
+      "replacement": "number <= minimum",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 5 - zero limit is not unlimited",
+        "not ok 5 - buildCommand"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 6 - zero limit is not unlimited",
+        "not ok 5 - buildCommand"
+      ]
+    },
+    {
+      "id": "G003",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 43,
+      "description": "Round exact half-cent downward",
+      "original": "TICKS_PER_CENT / 2n",
+      "replacement": "TICKS_PER_CENT / 2n - 1n",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 2 - exactly half cent",
+        "not ok 2 - formatTicks"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 2 - exactly half cent",
+        "not ok 2 - formatTicks"
+      ]
+    },
+    {
+      "id": "G004",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 61,
+      "description": "Quote the last safe integer",
+      "original": "value > MAX_SAFE_INTEGER",
+      "replacement": "value >= MAX_SAFE_INTEGER",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 1 - last safe positive integer",
+        "not ok 1 - boundary regressions",
+        "not ok 4 - parseExactJSON"
+      ]
+    },
+    {
+      "id": "G005",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 66,
+      "description": "Lose large JSON integer precision",
+      "original": "return JSON.parse(protectedText)",
+      "replacement": "return JSON.parse(text)",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 1 - large financial field",
+        "not ok 2 - negative large invoice field",
+        "not ok 4 - parseExactJSON"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 2 - first unsafe positive integer",
+        "not ok 1 - boundary regressions",
+        "not ok 2 - large financial field",
+        "not ok 3 - negative large invoice field",
+        "not ok 4 - parseExactJSON"
+      ]
+    },
+    {
+      "id": "G006",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 155,
+      "description": "Allow zero credit grant",
+      "original": "usdToCents(fields.amount, 1n)",
+      "replacement": "usdToCents(fields.amount, 0n)",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 1 - zero grant",
+        "not ok 1 - boundary regressions",
+        "not ok 5 - buildCommand"
+      ]
+    },
+    {
+      "id": "G007",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 140,
+      "description": "Reverse default/customer price ownership",
+      "original": "fields.scope === \"default\" ? null : customer",
+      "replacement": "fields.scope === \"default\" ? customer : null",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 1 - default current-time price",
+        "not ok 2 - future customer override",
+        "not ok 5 - buildCommand"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 2 - default current-time price",
+        "not ok 3 - future customer override",
+        "not ok 5 - buildCommand"
+      ]
+    },
+    {
+      "id": "G008",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 176,
+      "description": "Convert unlimited limit into zero",
+      "original": "fields.unlimited === \"on\" ? null : usdToCents(fields.limit)",
+      "replacement": "fields.unlimited === \"on\" ? 0n : usdToCents(fields.limit)",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 6 - explicit unlimited limit",
+        "not ok 5 - buildCommand"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 7 - explicit unlimited limit",
+        "not ok 5 - buildCommand"
+      ]
+    },
+    {
+      "id": "G009",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 196,
+      "description": "Emit unsupported schema version",
+      "original": "schema_version: 1,",
+      "replacement": "schema_version: 2,",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 3 - adjacent valid microseconds",
+        "not ok 1 - boundary regressions",
+        "not ok 5 - buildCommand"
+      ]
+    },
+    {
+      "id": "G010",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 188,
+      "description": "Accept zero-duration usage",
+      "original": "timestampMicroseconds(end) <= timestampMicroseconds(start)",
+      "replacement": "timestampMicroseconds(end) < timestampMicroseconds(start)",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 2 - equal interval endpoints",
+        "not ok 1 - boundary regressions",
+        "not ok 5 - buildCommand"
+      ]
+    },
+    {
+      "id": "G011",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 239,
+      "description": "Enable current-month invoice",
+      "original": "return month < now.toISOString()",
+      "replacement": "return month <= now.toISOString()",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 1 - last millisecond before boundary",
+        "not ok 3 - future month",
+        "not ok 7 - invoiceEligible"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 1 - last millisecond before boundary",
+        "not ok 3 - future month",
+        "not ok 7 - invoiceEligible"
+      ]
+    },
+    {
+      "id": "G012",
+      "layer": "gui",
+      "source": "demo/core.mjs",
+      "lineAtBaseline": 226,
+      "description": "Ignore extra invoice lines",
+      "original": "actual.length !== expected.length",
+      "replacement": "false",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 1 - extra financial line",
+        "not ok 8 - expectationDifferences"
+      ]
+    },
+    {
+      "id": "G013",
+      "layer": "gui",
+      "source": "demo/transport.mjs",
+      "lineAtBaseline": 94,
+      "description": "Change stored bytes on retry",
+      "original": "body: record.body }",
+      "replacement": "body: \"{}\" }",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 1 - retry retains int64 and original timestamp",
+        "not ok 13 - APIClient.retry"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 1 - retry retains int64 and original timestamp",
+        "not ok 14 - APIClient.retry"
+      ]
+    },
+    {
+      "id": "G014",
+      "layer": "gui",
+      "source": "demo/transport.mjs",
+      "lineAtBaseline": 43,
+      "description": "Lose journal on failed pre-send storage",
+      "original": "this.history = previous;",
+      "replacement": "this.history = [];",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 1 - failed checkpoint retains prior journal",
+        "not ok 1 - boundary regressions",
+        "not ok 13 - APIClient.send"
+      ]
+    },
+    {
+      "id": "G015",
+      "layer": "gui",
+      "source": "demo/transport.mjs",
+      "lineAtBaseline": 24,
+      "description": "Allow protocol-relative API path",
+      "original": "request.path.startsWith(\"//\")",
+      "replacement": "false",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 2 - protocol relative path",
+        "not ok 1 - boundary regressions",
+        "not ok 13 - APIClient.send"
+      ]
+    },
+    {
+      "id": "G016",
+      "layer": "gui",
+      "source": "demo/transport.mjs",
+      "lineAtBaseline": 65,
+      "description": "Hide Retry-After response",
+      "original": "record.retryAfter = response.headers.get(\"Retry-After\");",
+      "replacement": "record.retryAfter = null;",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 3 - 503 response retains retry pacing",
+        "not ok 1 - boundary regressions",
+        "not ok 13 - APIClient.send"
+      ]
+    },
+    {
+      "id": "G017",
+      "layer": "gui",
+      "source": "demo/workflow.mjs",
+      "lineAtBaseline": 113,
+      "description": "Lose completed step cursor",
+      "original": "this.state.index++;",
+      "replacement": "this.state.index += 0;",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 1 - lost reply retries exact credit command",
+        "not ok 2 - pending accounting is polled before advancing",
+        "not ok 15 - AssignmentRunner.step"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 1 - lost reply retries exact credit command",
+        "not ok 2 - pending accounting is polled before advancing",
+        "not ok 16 - AssignmentRunner.step"
+      ]
+    },
+    {
+      "id": "G018",
+      "layer": "gui",
+      "source": "demo/workflow.mjs",
+      "lineAtBaseline": 76,
+      "description": "Change operation after lost reply",
+      "original": "response = await this.client.retry(response.record);",
+      "replacement": "response = await this.client.send({...request, body:\"{}\"});",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 1 - lost reply retries exact credit command",
+        "not ok 15 - AssignmentRunner.step"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 1 - lost reply retries exact credit command",
+        "not ok 16 - AssignmentRunner.step"
+      ]
+    },
+    {
+      "id": "G019",
+      "layer": "gui",
+      "source": "demo/workflow.mjs",
+      "lineAtBaseline": 93,
+      "description": "Poll quarantined accounting",
+      "original": "Number(response.data?.processing_errors) > 0",
+      "replacement": "false",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 4 - quarantine stops accounting polling",
+        "not ok 15 - AssignmentRunner.step"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 4 - quarantine stops accounting polling",
+        "not ok 16 - AssignmentRunner.step"
+      ]
+    },
+    {
+      "id": "G020",
+      "layer": "gui",
+      "source": "demo/workflow.mjs",
+      "lineAtBaseline": 39,
+      "description": "Ignore removed captured snapshot fields",
+      "original": "differences.push(...expectationDifferences(response.data, snapshot));",
+      "replacement": "",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 1 - removed captured field",
+        "not ok 17 - workflowDifferences"
+      ]
+    },
+    {
+      "id": "G021",
+      "layer": "gui",
+      "source": "demo/workflow.mjs",
+      "lineAtBaseline": 40,
+      "description": "Ignore new captured snapshot fields",
+      "original": "differences.push(...expectationDifferences(snapshot, response.data));",
+      "replacement": "",
+      "beforeStatus": "survived",
+      "beforeFailingTests": [],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 2 - added captured field",
+        "not ok 17 - workflowDifferences"
+      ]
+    },
+    {
+      "id": "G022",
+      "layer": "gui",
+      "source": "demo/sql.mjs",
+      "lineAtBaseline": 7,
+      "description": "Fail to escape SQL quotes",
+      "original": ".replaceAll(\"'\", \"''\")",
+      "replacement": ".replaceAll(\"'\", \"'\")",
+      "beforeStatus": "killed",
+      "beforeFailingTests": [
+        "not ok 1 - quoted injection attempt remains a literal",
+        "not ok 8 - sqlLiteral"
+      ],
+      "afterStatus": "killed",
+      "afterFailingTests": [
+        "not ok 1 - quoted injection attempt remains a literal",
+        "not ok 9 - sqlLiteral"
+      ]
+    }
+  ],
+  "guiUnauditedChangesSinceSnapshot": [
+    "demo/app.mjs"
+  ],
+  "validation": {
+    "makeFmt": "passed",
+    "makeCheck": "passed",
+    "makeTest": "passed in isolated e2b-mutation-verification Compose project",
+    "makeDocsCheck": "passed",
+    "raceUnit": "passed for six audited internal packages",
+    "raceIntegration": "passed for TestProcessBatch, TestPostgresInsertBatch, TestGrantCredit",
+    "guiTests": {
+      "passed": 86,
+      "failed": 0,
+      "skipped": 0
+    }
+  }
+}

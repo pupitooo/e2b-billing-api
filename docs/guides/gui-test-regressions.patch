@@ -1,0 +1,308 @@
+--- a/tests/demo/core.test.mjs
++++ b/tests/demo/core.test.mjs
+@@ -4,0 +5 @@
++  expectationDifferences,
+@@ -135,0 +137,25 @@
++  // Mutation regressions verify inputs that previously survived deliberate defects.
++  await t.test("boundary regressions", async (t) => {
++    const cases = [
++      {
++        "scenario": "last safe positive integer",
++        "input": "{\"units\":9007199254740991}",
++        "want": {
++          "units": 9_007_199_254_740_991
++        }
++      },
++      {
++        "scenario": "first unsafe positive integer",
++        "input": "{\"units\":9007199254740992}",
++        "want": {
++          "units": "9007199254740992"
++        }
++      }
++    ];
++    for (const c of cases) {
++      await t.test(c.scenario, () => {
++        assert.deepEqual(parseExactJSON(c.input), c.want, `parseExactJSON input=${c.input}; want=${JSON.stringify(c.want)}`);
++      });
++    }
++  });
++
+@@ -184,0 +211,79 @@
++  // Mutation regressions verify inputs that previously survived deliberate defects.
++  await t.test("boundary regressions", async (t) => {
++    const cases = [
++      {
++        "scenario": "zero grant",
++        "operation": "credits",
++        "input": {
++          "idempotency_key": "zero",
++          "amount": "0.00",
++          "recorded_at": "2026-10-01T00:00:00Z"
++        },
++        "wantError": true,
++        "wantMessage": "outside the supported int64 range"
++      },
++      {
++        "scenario": "equal interval endpoints",
++        "operation": "usage",
++        "input": {
++          "source": "demo-ui/test",
++          "event_id": "one",
++          "sandbox_id": "sandbox",
++          "metric": "cpu_seconds",
++          "period_start": "2026-10-10T12:00:00.000001Z",
++          "period_end": "2026-10-10T12:00:00.000001Z",
++          "units": "1"
++        },
++        "wantError": true,
++        "wantMessage": "end must be after its start"
++      },
++      {
++        "scenario": "adjacent valid microseconds",
++        "operation": "usage",
++        "input": {
++          "source": "demo-ui/test",
++          "event_id": "one",
++          "sandbox_id": "sandbox",
++          "metric": "cpu_seconds",
++          "period_start": "2026-10-10T12:00:00.000001Z",
++          "period_end": "2026-10-10T12:00:00.000002Z",
++          "units": "1"
++        },
++        "wantError": false,
++        "wantBody": {
++          "events": [
++            {
++              "schema_version": 1,
++              "source": "demo-ui/test",
++              "event_id": "one",
++              "customer_id": "acme",
++              "sandbox_id": "sandbox",
++              "metric": "cpu_seconds",
++              "period_start": "2026-10-10T12:00:00.000001Z",
++              "period_end": "2026-10-10T12:00:00.000002Z",
++              "units": 1
++            }
++          ]
++        }
++      }
++    ];
++    for (const c of cases) {
++      await t.test(c.scenario, () => {
++        let actual, error;
++        try {
++          actual = buildCommand(c.operation, c.input, "acme");
++        } catch (caught) {
++          error = caught;
++        }
++
++        assert.equal(Boolean(error), c.wantError, `buildCommand input=${JSON.stringify(c.input)}; error=${error}; wantError=${c.wantError}`);
++        if (c.wantError) {
++          assert.ok(error.message.includes(c.wantMessage), `error=${error.message}; want containing ${c.wantMessage}`);
++          return;
++        }
++
++        assert.deepEqual(JSON.parse(actual.body), c.wantBody, `buildCommand input=${JSON.stringify(c.input)}; wantBody=${JSON.stringify(c.wantBody)}`);
++      });
++    }
++  });
++
+@@ -388,0 +494,52 @@
++
++// expectationDifferences requires the complete invoice line count even when the expected row subset matches.
++test("expectationDifferences", async (t) => {
++  const cases = [
++    {
++      "scenario": "extra financial line",
++      "actual": {
++        "lines": [
++          {
++            "amount_cents": 2000
++          },
++          {
++            "amount_cents": 1
++          }
++        ]
++      },
++      "expected": {
++        "lines": [
++          {
++            "amount_cents": 2000
++          }
++        ]
++      },
++      "want": [
++        "response.lines: expected 1 rows"
++      ]
++    },
++    {
++      "scenario": "matching financial lines",
++      "actual": {
++        "lines": [
++          {
++            "amount_cents": 2000
++          }
++        ]
++      },
++      "expected": {
++        "lines": [
++          {
++            "amount_cents": 2000
++          }
++        ]
++      },
++      "want": []
++    }
++  ];
++  for (const c of cases) {
++    await t.test(c.scenario, () => {
++      assert.deepEqual(expectationDifferences(c.actual, c.expected), c.want, `actual=${JSON.stringify(c.actual)}; expected=${JSON.stringify(c.expected)}; want differences=${JSON.stringify(c.want)}`);
++    });
++  }
++});
+--- a/tests/demo/workflow.test.mjs
++++ b/tests/demo/workflow.test.mjs
+@@ -3 +3 @@
+-import { AssignmentRunner, workflowRequest } from "../../demo/workflow.mjs";
++import { AssignmentRunner, workflowRequest, workflowDifferences } from "../../demo/workflow.mjs";
+@@ -178,0 +179,51 @@
++
++// workflowDifferences treats captured snapshots as complete immutable objects, detecting both removed and added fields.
++test("workflowDifferences", async (t) => {
++  const cases = [
++    {
++      "scenario": "removed captured field",
++      "actual": {
++        "total_cents": 2000
++      },
++      "captured": {
++        "total_cents": 2000,
++        "number": "ACME-0001"
++      },
++      "want": [
++        "response.number: got undefined, expected \"ACME-0001\""
++      ]
++    },
++    {
++      "scenario": "added captured field",
++      "actual": {
++        "total_cents": 2000,
++        "number": "ACME-0001"
++      },
++      "captured": {
++        "total_cents": 2000
++      },
++      "want": [
++        "response.number: got undefined, expected \"ACME-0001\""
++      ]
++    },
++    {
++      "scenario": "same snapshot",
++      "actual": {
++        "total_cents": 2000
++      },
++      "captured": {
++        "total_cents": 2000
++      },
++      "want": []
++    }
++  ];
++  for (const c of cases) {
++    await t.test(c.scenario, () => {
++      const step = { want: { status: 200, same_as: "invoice" } };
++      const response = { status: 200, data: c.actual };
++      const captures = { invoice: c.captured };
++
++      assert.deepEqual(workflowDifferences(step, response, captures), c.want, `actual=${JSON.stringify(c.actual)}; captured=${JSON.stringify(c.captured)}; want differences=${JSON.stringify(c.want)}`);
++    });
++  }
++});
+--- a/tests/demo/transport.test.mjs
++++ b/tests/demo/transport.test.mjs
+@@ -6,0 +7,85 @@
++  // Mutation regressions verify inputs that previously survived deliberate defects.
++  await t.test("boundary regressions", async (t) => {
++    const cases = [
++      {
++        "scenario": "failed checkpoint retains prior journal",
++        "request": {
++          "method": "POST",
++          "path": "/customers/acme/credits",
++          "body": "{}"
++        },
++        "storageFailure": true,
++        "prior": [
++          {
++            "id": "prior",
++            "body": "original"
++          }
++        ],
++        "wantError": true,
++        "wantCalls": 0,
++        "wantHistory": [
++          {
++            "id": "prior",
++            "body": "original"
++          }
++        ]
++      },
++      {
++        "scenario": "protocol relative path",
++        "request": {
++          "method": "GET",
++          "path": "//external.example/path"
++        },
++        "storageFailure": false,
++        "prior": [],
++        "wantError": true,
++        "wantCalls": 0,
++        "wantHistory": []
++      },
++      {
++        "scenario": "503 response retains retry pacing",
++        "request": {
++          "method": "GET",
++          "path": "/healthz"
++        },
++        "storageFailure": false,
++        "prior": [],
++        "wantError": false,
++        "wantCalls": 1,
++        "wantStatus": 503,
++        "wantRetryAfter": "7"
++      }
++    ];
++    for (const c of cases) {
++      await t.test(c.scenario, async () => {
++        let calls = 0, actual, error;
++        const client = new APIClient({
++          history: structuredClone(c.prior),
++          save: () => {
++            if (c.storageFailure) throw new Error("storage full");
++          },
++          fetcher: async () => {
++            calls++;
++            return new Response("{}", { status: 503, headers: { "Retry-After": "7" } });
++          },
++        });
++
++        try {
++          actual = await client.send(c.request);
++        } catch (caught) {
++          error = caught;
++        }
++
++        assert.equal(Boolean(error), c.wantError, `send request=${JSON.stringify(c.request)}; error=${error}; wantError=${c.wantError}`);
++        assert.equal(calls, c.wantCalls, `send request=${JSON.stringify(c.request)}; calls=${calls}; want calls=${c.wantCalls}`);
++        if (c.wantError) {
++          assert.deepEqual(client.history, c.wantHistory, `send request=${JSON.stringify(c.request)}; want journal=${JSON.stringify(c.wantHistory)}`);
++          return;
++        }
++
++        assert.equal(actual.status, c.wantStatus);
++        assert.equal(actual.record.retryAfter, c.wantRetryAfter);
++      });
++    }
++  });
++

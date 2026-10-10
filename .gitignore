@@ -113,3 +113,8 @@ node_modules/
 !/docs/simulator/transport-scenarios.md
 !/docs/diagrams/index.md
 !/docs/site/test_publication.py
+
+# Reviewed test-quality evidence; local audit tooling stays ignored.
+!/docs/guides/test-mutation-audit.md
+!/docs/guides/test-mutation-audit.json
+!/docs/guides/gui-test-regressions.patch

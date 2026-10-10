@@ -59,3 +59,5 @@ go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
 ```
 
 [CI](../../.github/workflows/ci.yml) runs `make check` before `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check includes Go formatting and static analysis, SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
+
+Read the [test-quality and mutation audit](test-mutation-audit.md) for the 10 October 2026 findings, regression scenarios, exact mutation evidence and a practical workflow for reviewing AI-generated tests.

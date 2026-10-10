@@ -14,7 +14,7 @@ The source Markdown also remains readable directly in the repository.
 | Start and operate | [Local development](guides/local-development.md), [runtime configuration](guides/runtime-configuration.md), [database operations](guides/database-operations.md) |
 | Explore HTTP interfaces | [API endpoints and callers](guides/api-reference.md#api-endpoints-and-callers), [API reference guide](guides/api-reference.md), [OpenAPI specification](api/openapi.yaml) |
 | Reproduce usage and billing | [Transport simulator](simulator/transport-scenarios.md), [public billing scenarios](simulator/billing-scenarios.md), [scenario style](simulator/scenario-style.md) |
-| Verify and contribute | [Tests and filters](guides/testing.md), [acceptance procedure](guides/final-acceptance-testing.md), [development conventions](guides/development.md) |
+| Verify and contribute | [Tests and filters](guides/testing.md), [test quality and mutation audit](guides/test-mutation-audit.md), [acceptance procedure](guides/final-acceptance-testing.md), [development conventions](guides/development.md) |
 | Understand accounting | [Financial rules](architecture/accounting-rules.md), [billing model and schema](architecture/billing-model.md), [usage to invoice](architecture/usage-to-invoice.md) |
 | Compare and measure | [Architecture options](brainstorming/architecture-options.md), [capacity and local measurements](architecture/capacity-and-measurements.md), [published diagrams](diagrams/index.md) |
 | Investigate failures | [Accounting quarantine and historical-price recovery](guides/accounting-recovery.md) |

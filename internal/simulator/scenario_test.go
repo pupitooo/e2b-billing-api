@@ -26,6 +26,11 @@ func TestAssignment(t *testing.T) {
 			wantBarrier       bool
 		}{
 			{
+				name:   "maximum sandbox count remains valid with hourly intervals",
+				source: "test-source", sandboxes: 1_000, interval: time.Hour,
+				wantEventCount: 6_000, wantDeterministic: true, wantBarrier: true,
+			},
+			{
 				name:              "hourly splits across three sandboxes",
 				source:            "test-source",
 				sandboxes:         3,

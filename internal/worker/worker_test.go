@@ -452,7 +452,10 @@ func TestWorkerRun(t *testing.T) {
 				w.ProcessBatch = func(context.Context) (bool, error) { calls++; return false, nil }
 				tt.change(&w)
 
-				err := w.Run(context.Background())
+				ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+				defer cancel()
+
+				err := w.Run(ctx)
 				if (err != nil) != tt.wantError {
 					t.Errorf("Run error = %v; want error=%t", err, tt.wantError)
 				}
@@ -681,7 +684,10 @@ func TestRunUntilStopped(t *testing.T) {
 					t.Error("Invalid shutdown timeout must not invoke the processor")
 					return false, nil
 				}
-				if err := RunUntilStopped(context.Background(), w, tt.shutdownTimeout); (err != nil) != tt.wantError {
+				ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+				defer cancel()
+
+				if err := RunUntilStopped(ctx, w, tt.shutdownTimeout); (err != nil) != tt.wantError {
 					t.Fatal("RunUntilStopped should reject a nonpositive timeout")
 				}
 
