@@ -52,7 +52,7 @@ paths:
         Provision each metric's dated price before generating its first usage.
         A missing valid price sets P0 missing_valid_price in processing_error;
         after commit, accounting logs priority=P0 with the receipt identity,
-        customer, metric, and original consumption time. Append the correct price
+        customer, metric, and original consumption time. Repair the historical price through controlled SQL
         and explicitly release the investigated receipt to resume accounting.
         Adding a price or retrying this endpoint does not clear that error.
 
@@ -223,13 +223,16 @@ paths:
       description: Append a default (null customer_id) or customer override. Consumption time selects the
         latest eligible override before falling back to default. Reuse price_version_id with identical content
         after a lost response. Changed identity content, a duplicate effective instant, or a change invalidating
-        any already rated receipt returns 409. Retroactive changes affecting only unrated input are permitted.
+        any already rated receipt returns 409. A new effective_from before the server insertion instant
+        returns 422 with invalid_command and field effective_from, even without rated history.
+        The server samples this instant after acquiring the catalog lock. Equality is accepted;
+        scheduling in the future is supported. Identical retries bypass this time check after activation.
         Commands are serialized against rating under a catalog advisory lock. The reference implementation
         scans affected rated history; this is not a demonstrated large-volume administrative path. Every
         field is explicit; timestamps normalize to UTC. effective_from is required and non-null;
         there is no undated baseline. Provision an applicable price before the metric's first usage.
-        To repair a P0 missing_valid_price incident, append a version effective on or before the
-        original consumption time, then explicitly release the investigated receipt. This command
+        Historical seed data and investigated missing-price repairs use controlled operator SQL,
+        preserving rated history; they do not bypass this restriction through the HTTP API. This command
         does not automatically clear usage processing errors.
       x-implementation-status: implemented
       requestBody:
@@ -305,7 +308,7 @@ paths:
                   code: unsupported_media_type
                   message: Use uncompressed application/json with optional UTF-8 charset.
         '422':
-          description: Explicit required field or value is invalid.
+          description: Explicit required field or value is invalid, including backdated effective_from.
           content:
             application/json:
               schema:
@@ -313,7 +316,8 @@ paths:
               example:
                 error:
                   code: invalid_command
-                  message: Explicit required field or value is invalid.
+                  message: A new price must not start before its insertion time.
+                  field: effective_from
         '503':
           description: Database deadline or storage failure. Retry unchanged operation identity and content;
             outcome may be unknown.
@@ -930,9 +934,11 @@ paths:
         exactly at 00:00:00Z on 1 February. Customer schedules and document delivery are not implemented.
         The customer/month is the stable operation identity. First capture a durable cohort of
         committed pending receipts through the target month under the account lock. Drain without holding
-        that lock across transactions. Cohort processing errors, including P0 missing_valid_price,
-        block issuance with 409. Repair the dated catalog and explicitly release the affected receipt;
-        storage deadlines
+        that lock across transactions. Receipts with any non-null processing_error, including P0 missing_valid_price,
+        are durably excluded without financial effects and never block invoice issuance.
+        Exclusions remain permanent after operator release. Repair missing historical prices through
+        controlled SQL and release the investigated receipt; subsequent accounting uses an open
+        billing month and cannot change the issued invoice. Storage deadlines
         return 503 and retain resumable closing state. Later accepted receipts route to another open month
         even with an older receipt timestamp. Finalize closure, freeze rated groups, snapshot buyer details
         and exact audit ticks, and allocate the next customer-specific invoice number in one transaction.
@@ -1356,8 +1362,10 @@ components:
           maximum: 9223372036854775807
         effective_from:
           $ref: '#/components/schemas/ConsumptionTime'
-          description: Required finite effective instant. No null or undated baseline is supported;
-            provision the price on or before the first consumption time it must cover.
+          description: Required finite effective instant. New HTTP versions must start at or after the server
+            insertion instant sampled under the catalog lock. Equality is valid. Identical retries
+            remain valid after activation. No null or undated baseline is supported; provision
+            the price before the first consumption time it must cover.
 
     CreditGrant:
       type: object

@@ -13,7 +13,7 @@ Go is fixed for every option. Storage, transport, and processing arrangements va
 | C — selected | Go API, PostgreSQL inbox, asynchronous Go worker | After the inbox transaction commits | Recoverable pending work; accounting and spend status can lag. |
 | D | Go ingress, Kafka, aggregation, PostgreSQL accounting | After the configured durable broker acknowledgement | Separate ingestion and processing; more services and recovery boundaries. |
 
-Every option requires stable `(source, event_id)` identities, durable sender storage outside the sandbox lifecycle, and retries until the matching acknowledgement. The [platform and billing contract](../../README.md#platform-and-billing-contract) records the proposed responsibilities and open interface agreements. Storage must preserve each measurement's original consumption time.
+Every option requires stable `(source, event_id)` identities, durable sender storage outside the sandbox lifecycle, and retries until the matching acknowledgement. The [system contracts](../../README.md#system-contracts) record the required identities, delivery guarantees, and processing boundaries. Storage must preserve each measurement's original consumption time.
 
 ## Option A: synchronous Go service with SQLite
 
@@ -59,7 +59,7 @@ A Go ingress publishes stable raw measurements to Kafka. An archive consumer pre
 
 ## Why option C was selected
 
-The user selected C for the starting implementation on 8 October 2026 and requested the database and inbox as the first content commit. It gives incoming measurements durable storage before the accounting worker exists. The next steps can add receipt validation and then accounting while preserving that boundary. It also makes pending work explicit without introducing a broker in the first iteration.
+The starting architecture uses option C and establishes the database and inbox before receipt validation and accounting. Incoming measurements must have durable storage independent of the accounting worker. Later processing preserves that boundary. Pending work remains explicit without introducing a broker in the first iteration.
 
 C adds a second transaction and a gap between receipt and accounting. An inbox primary key prevents duplicate rows; financial correctness still requires the worker's accounting writes and completion marker to commit together. The source buffer must retain unacknowledged measurements. Choosing C does not establish a throughput limit or select D as the eventual production architecture.
 

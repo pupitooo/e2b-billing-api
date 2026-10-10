@@ -65,7 +65,7 @@
       "await": true
     },
     {
-      "name": "visible processing error blocks invoice issuance",
+      "name": "quarantined usage does not block invoice issuance",
       "request": {
         "method": "POST",
         "path": "/customers/acme/invoices",
@@ -74,26 +74,32 @@
         }
       },
       "want": {
-        "status": 409,
+        "status": 200,
         "body": {
-          "error": {
-            "code": "billing_conflict"
-          }
+          "number": "ACME-0001",
+          "total_cents": 0,
+          "gross_usage_ticks": "0",
+          "credit_used_ticks": "0",
+          "lines": [
+            {
+              "kind": "credit",
+              "amount_cents": 0
+            }
+          ]
         }
       }
     },
     {
-      "name": "no invoice was issued",
+      "name": "issued invoice remains readable despite quarantined usage",
       "request": {
         "method": "GET",
         "path": "/customers/acme/invoices/2026-10"
       },
       "want": {
-        "status": 404,
+        "status": 200,
         "body": {
-          "error": {
-            "code": "not_found"
-          }
+          "number": "ACME-0001",
+          "total_cents": 0
         }
       }
     }

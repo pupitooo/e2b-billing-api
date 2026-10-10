@@ -35,12 +35,12 @@ type Store struct {
 	now  func() time.Time
 }
 
-// NewStore uses the real server clock for closing and invoice timestamps.
+// NewStore uses the real server clock for price activation and invoice timestamps.
 func NewStore(pool *pgxpool.Pool) *Store {
 	return NewStoreWithClock(pool, time.Now)
 }
 
-// NewStoreWithClock makes invoice time explicit for deterministic simulations.
+// NewStoreWithClock makes price insertion and invoice time explicit in tests.
 // Production callers use NewStore; HTTP requests never supply the clock.
 func NewStoreWithClock(pool *pgxpool.Pool, now func() time.Time) *Store {
 	return &Store{pool: pool, now: now}

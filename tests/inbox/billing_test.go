@@ -23,6 +23,7 @@ import (
 // Receipts delivered within their usage month stay there while it is open and
 // move to the next calendar month after its closure, including mid-month usage.
 func TestProcessBatch(t *testing.T) {
+	t.Run("price insertion and delayed delivery", testDelayedPriceProcessing)
 	cases := []struct {
 		name             string
 		customer         string

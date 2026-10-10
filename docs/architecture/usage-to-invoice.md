@@ -185,6 +185,8 @@ The tick column uses the `billing_ticks` domain over exact PostgreSQL `numeric`.
 
 Both default and customer-specific rates support only whole cents **per million units** in this model. This still allows individual measurements to cost far less than a cent. [Issue #29](https://github.com/pupitooo/e2b-billing-api/issues/29) proposes a per-version `price_unit_count` with 1_000_000 for all existing prices. A variable denominator would still require exact whole-tick charges: merely requiring a multiple of a million is insufficient, since 5 cents per 2_000_000 units gives 2.5 ticks for one unit. The proposal preserves the current money resolution; prices requiring fractional ticks would need a separate precision change.
 
+New ordinary prices cannot have backdated validity. See the [price insertion contract](accounting-rules.md#price-insertion-contract) and its [activation and delayed-delivery diagram](../diagrams/price-version-activation/price-version-activation.png).
+
 ### Example: why summing all units and using the current price fails
 
 Use the assignment's actual price changes: 5 and 6 cents per million. The earlier discussion also used an illustrative price of 8 cents, which is outside the seed catalog.
@@ -200,7 +202,7 @@ Pricing both million units at the later 6-cent rate would produce 12 cents. Usin
 Acme has its own 4-cent price throughout the example period. The default change to 6 cents does not replace that eligible customer price. A late October event also uses its historical consumption price, even if it is received in November.
 
 All versions require a finite, non-null `effective_from`. The seed supplies the
-assignment's dated prices; an additional metric must have its applicable price
+assignment's dated prices; ordinary new versions cannot start before insertion; an additional metric must have its applicable price
 configured before its first measurement. There is no undated baseline. If no
 price covers the original consumption time, the receipt retains
 `P0 missing_valid_price: ...` and has no financial effect. Accounting reports the
@@ -440,8 +442,15 @@ Recommended design: store `provider` and `external_invoice_id` in separate integ
 Closing has three phases: capture or resume a fixed cohort of accepted receipts, process those receipts in their individual accounting transactions, then publish the invoice atomically under the customer account lock. A new closure requires the whole UTC month to have ended. Earlier committed accounting survives an interrupted close; retrying the same customer/month resumes work or returns the original invoice. Issuance uses the credit already allocated during accounting.
 
 1. **Capture:** commit the customer/month closing record and the identities of its pending receipts. Receipts outside this fixed cohort route to another open month, even if their receipt timestamp is earlier.
-2. **Process:** account for each captured receipt in a separate transaction. A processing error blocks issuance; a timeout or storage failure leaves committed progress available for retry.
+2. **Process:** account for each captured receipt in a separate transaction. A processing error durably excludes the receipt; a timeout or storage failure leaves committed progress available for retry.
 3. **Publish:** under the customer account lock, snapshot buyer details and signed invoice lines, freeze the rated groups, close the month, and advance numbering in one transaction.
+
+![Monthly invoice generation](../diagrams/closing-workflow/closing-workflow.png)
+
+The [editable workflow](../diagrams/closing-workflow/closing-workflow.mmd),
+[detailed issuance view](../diagrams/invoice-issuance/invoice-issuance.png), and
+[receipt accounting view](../diagrams/usage-worker-accounting/usage-worker-accounting.png)
+show the same transaction and error-handling contracts.
 
 ### Example: complete assignment invoices
 
@@ -490,7 +499,7 @@ November's invoice includes USD 2 for October and USD 4 for November, while the 
 
 A single "month" column would lose this distinction. A rated group describes the origin and cost of usage; an invoice line describes the particular issued document that bills it.
 
-The implemented `CloseMonth` captures a stable cohort of accepted customer events. It drains their processing without holding the customer lock across those transactions, then atomically freezes groups and creates the invoice snapshot under that lock. An unresolved error in the cohort blocks closing. `routingMonths` treats a closing month as unavailable to receipts outside that cohort, so later input reaches an appropriate open period. Closing and routing are implemented in `internal/billing`.
+The implemented `CloseMonth` captures a stable cohort of accepted customer events. It drains their processing without holding the customer lock across those transactions, then atomically freezes groups and creates the invoice snapshot under that lock. Every quarantined receipt is permanently excluded without blocking closing. `routingMonths` treats a closing month as unavailable to receipts outside its eligible cohort, including permanent quarantine exclusions, so later input reaches an appropriate open period. Closing and routing are implemented in `internal/billing`.
 
 ## 11. What must stay atomic during processing
 

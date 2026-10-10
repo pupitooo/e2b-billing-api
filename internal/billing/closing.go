@@ -37,8 +37,12 @@ func (s *Store) beginClosing(ctx context.Context, customer string, month time.Ti
 		}
 
 		tag, err := tx.Exec(ctx, "INSERT INTO invoice_closings VALUES ($1,$2,$3) ON CONFLICT DO NOTHING", customer, month, startedAt)
-		if err != nil || tag.RowsAffected() == 0 {
+		if err != nil {
 			return err
+		}
+
+		if tag.RowsAffected() == 0 {
+			return excludeClosingErrors(ctx, tx, customer, month)
 		}
 
 		// This statement's snapshot is the cohort boundary. An earlier receipt
@@ -46,8 +50,11 @@ func (s *Store) beginClosing(ctx context.Context, customer string, month time.Ti
 		_, err = tx.Exec(ctx, `INSERT INTO invoice_closing_receipts
             SELECT $1,$2,source,event_id FROM usage_inbox
             WHERE customer_id=$1 AND period_start<$3 AND processed_at IS NULL`, customer, month, month.AddDate(0, 1, 0))
+		if err != nil {
+			return err
+		}
 
-		return err
+		return excludeClosingErrors(ctx, tx, customer, month)
 	})
 }
 
@@ -58,22 +65,21 @@ func (s *Store) drainClosing(ctx context.Context, customer string, month time.Ti
 		}
 
 		var candidate receipt
-		var processingError *string
-		err := s.pool.QueryRow(ctx, `SELECT i.source,i.event_id,i.customer_id,i.processing_error
+		err := s.pool.QueryRow(ctx, `SELECT i.source,i.event_id,i.customer_id
             FROM invoice_closing_receipts c JOIN usage_inbox i USING(source,event_id)
             WHERE c.customer_id=$1 AND c.billing_month=$2 AND i.processed_at IS NULL
+            AND i.processing_error IS NULL AND NOT EXISTS (
+                SELECT 1 FROM invoice_closing_exclusions e
+                WHERE (e.customer_id,e.billing_month,e.source,e.event_id) =
+                    (c.customer_id,c.billing_month,c.source,c.event_id))
             ORDER BY i.received_at,i.source,i.event_id LIMIT 1`, customer, month).
-			Scan(&candidate.event.Source, &candidate.event.EventID, &candidate.event.CustomerID, &processingError)
+			Scan(&candidate.event.Source, &candidate.event.EventID, &candidate.event.CustomerID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
 
 		if err != nil {
 			return err
-		}
-
-		if processingError != nil {
-			return ErrConflict
 		}
 
 		if err := s.accountReceipt(ctx, candidate); err != nil {
@@ -83,10 +89,17 @@ func (s *Store) drainClosing(ctx context.Context, customer string, month time.Ti
 }
 
 func closingReady(ctx context.Context, tx pgx.Tx, customer string, month time.Time) error {
+	if err := excludeClosingErrors(ctx, tx, customer, month); err != nil {
+		return err
+	}
+
 	var blocked bool
 	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM invoice_closing_receipts c
         JOIN usage_inbox i USING(source,event_id)
-        WHERE c.customer_id=$1 AND c.billing_month=$2 AND i.processed_at IS NULL)
+        WHERE c.customer_id=$1 AND c.billing_month=$2 AND i.processed_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM invoice_closing_exclusions e
+            WHERE (e.customer_id,e.billing_month,e.source,e.event_id) =
+                (c.customer_id,c.billing_month,c.source,c.event_id)))
         OR EXISTS (SELECT 1 FROM rated_usage_groups g WHERE g.customer_id=$1
         AND g.billing_month<$2 AND NOT EXISTS (SELECT 1 FROM closed_billing_months m
         WHERE m.customer_id=$1 AND m.billing_month=g.billing_month))`, customer, month).Scan(&blocked)
@@ -102,7 +115,8 @@ func closingReady(ctx context.Context, tx pgx.Tx, customer string, month time.Ti
 }
 
 // routingMonths treats a closing month as closed for receipts outside its fixed
-// cohort. Cohort members can still be rated into that month before freezing.
+// cohort or explicitly excluded after quarantine. Exclusion survives release of
+// processing_error, so repaired receipts cannot re-enter an ongoing closing.
 func routingMonths(ctx context.Context, tx pgx.Tx, event usage.Event) ([]time.Time, error) {
 	months, err := loadClosedMonths(ctx, tx, event.CustomerID)
 	if err != nil {
@@ -111,7 +125,10 @@ func routingMonths(ctx context.Context, tx pgx.Tx, event usage.Event) ([]time.Ti
 
 	rows, err := tx.Query(ctx, `SELECT c.billing_month FROM invoice_closings c
         WHERE c.customer_id=$1 AND NOT EXISTS (SELECT 1 FROM invoice_closing_receipts r
-        WHERE r.customer_id=c.customer_id AND r.billing_month=c.billing_month AND r.source=$2 AND r.event_id=$3)`, event.CustomerID, event.Source, event.EventID)
+        WHERE r.customer_id=c.customer_id AND r.billing_month=c.billing_month AND r.source=$2 AND r.event_id=$3
+        AND NOT EXISTS (SELECT 1 FROM invoice_closing_exclusions e
+            WHERE (e.customer_id,e.billing_month,e.source,e.event_id) =
+                (r.customer_id,r.billing_month,r.source,r.event_id)))`, event.CustomerID, event.Source, event.EventID)
 	if err != nil {
 		return nil, err
 	}
@@ -126,4 +143,16 @@ func routingMonths(ctx context.Context, tx pgx.Tx, event usage.Event) ([]time.Ti
 	}
 
 	return months, rows.Err()
+}
+
+// excludeClosingErrors records permanent cohort exclusions under the account
+// lock. The original error stays auditable after operator release and recovery.
+func excludeClosingErrors(ctx context.Context, tx pgx.Tx, customer string, month time.Time) error {
+	_, err := tx.Exec(ctx, `INSERT INTO invoice_closing_exclusions
+        SELECT c.customer_id,c.billing_month,c.source,c.event_id,i.processing_error
+        FROM invoice_closing_receipts c JOIN usage_inbox i USING(source,event_id)
+        WHERE c.customer_id=$1 AND c.billing_month=$2 AND i.processing_error IS NOT NULL
+        ON CONFLICT DO NOTHING`, customer, month)
+
+	return err
 }

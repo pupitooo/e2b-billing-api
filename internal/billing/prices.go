@@ -10,7 +10,8 @@ import (
 )
 
 // CreatePrice appends a version under the catalog lock. Identical identities
-// replay successfully; a new version cannot invalidate any persisted rating.
+// replay successfully even after activation. New ordinary versions cannot start
+// before the server clock sampled under the lock or invalidate a persisted rating.
 func (s *Store) CreatePrice(ctx context.Context, price accounting.PriceVersion) error {
 	if err := validatePrice(price); err != nil {
 		return err
@@ -32,6 +33,10 @@ func (s *Store) CreatePrice(ctx context.Context, price accounting.PriceVersion) 
 
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
+		}
+
+		if price.EffectiveFrom.Before(s.now().UTC()) {
+			return &ValidationError{Field: "effective_from", Message: "A new price must not start before its insertion time."}
 		}
 
 		if err := preserveRatedHistory(ctx, tx, price); err != nil {

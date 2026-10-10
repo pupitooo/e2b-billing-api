@@ -183,7 +183,7 @@ func testMissingPriceProcessing(t *testing.T) {
 				t.Errorf("ProcessBatch with quarantined receipt worked=%t; want %t", worked, tc.wantIdleWork)
 			}
 			price := accounting.PriceVersion{ID: "catalog-recovery", Metric: tc.metric, EffectiveFrom: parseBillingTime(t, tc.recoveryEffective), PricePerMillionCents: tc.recoveryPriceCents}
-			if err := store.CreatePrice(ctx, price); err != nil {
+			if _, err := pool.Exec(ctx, "INSERT INTO price_versions VALUES ($1,NULL,$2,$3,$4)", price.ID, price.Metric, price.PricePerMillionCents, price.EffectiveFrom); err != nil {
 				t.Fatalf("Create recovery price %+v: %v", price, err)
 			}
 			worked, err = store.ProcessBatch(ctx)
