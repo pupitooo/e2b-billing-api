@@ -32,6 +32,8 @@ func TestPriceAPI(t *testing.T) {
 		{name: "null customer differs from empty", body: `{"price_version_id":"future","customer_id":"","metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "customer_id"},
 		{name: "duplicate field", body: `{"price_version_id":"one","price_version_id":"two","customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 400, wantCode: "invalid_json"},
 		{name: "invalid timestamp", body: `{"price_version_id":"future","customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from"},
+		{name: "undated baseline is rejected", body: `{"price_version_id":"baseline","customer_id":null,"metric":"cpu_seconds","price_per_million_cents":5,"effective_from":null}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from"},
+		{name: "effective start must be supplied", body: `{"price_version_id":"baseline","customer_id":null,"metric":"cpu_seconds","price_per_million_cents":5}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

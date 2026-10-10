@@ -200,6 +200,11 @@ acceptance_next() {
 and `completed=N steps=24`, with `N` matching the row below. GET steps marked
 `await` poll until their expected state is observed. A nonzero `processing_errors`
 is a failure for this valid scenario. Do not replace polling with a fixed sleep.
+An ERROR worker log with `priority=P0` and `error_code=missing_valid_price` identifies
+a missing eligible catalog version. Correct its dated price immediately and
+explicitly release the investigated receipt using the [recovery procedure](../../README.md#transactional-usage-accounting).
+The assignment seed's effective starts remain unchanged; additional metrics must
+be priced before their first measurement, and `effective_from` cannot be null.
 Use explicit month paths for October/November; `/limit-status` uses the real
 current UTC month. Future fixture timestamps do not advance the server clock.
 
@@ -431,7 +436,7 @@ combined check must be recorded separately from the automated suite.
 | [Price boundary](../simulator/billing-price-boundary.json), 5 steps | Cyberdyne interval `2026-10-14T23:30Z`–`2026-10-15T00:30Z`, 100 units: receipt `202`, then one processing error, no charge, invoice POST `409`, invoice GET `404`. |
 | [Month boundary](../simulator/billing-month-boundary.json), 5 steps | Acme interval `2026-10-31T23:30Z`–`2026-11-01T00:30Z`, 100 units: the same visible error/no-charge/blocked-invoice outcome. |
 | [Usage HTTP tests](../../tests/api/usage_batches_test.go) and [repository tests](../../tests/inbox/usage_inbox_test.go) | Identical concurrent batches insert once; changed content conflicts and rolls back the entire batch, including a fresh preceding event. Preserve original receipt and processing metadata. Invalid later input causes no partial acceptance. Test transaction cancellation, lock waits, opposite ordering, and commit/rollback races. |
-| [Accounting processing](../../tests/inbox/billing_test.go) | Two 60_000-unit default-price increments form 600_000 ticks and one rounded cent, rather than rounding each receipt. Concurrent workers/replay charge once. A late database failure rolls back all financial effects. Unsupported schema 2 produces no rating or debit and remains a visible error. |
+| [Accounting processing](../../tests/inbox/billing_test.go), [missing-price recovery](../../tests/inbox/missing_price_test.go) | Two 60_000-unit default-price increments form 600_000 ticks and one rounded cent, rather than rounding each receipt. Concurrent workers/replay charge once. A late database failure rolls back all financial effects. Missing valid prices commit a P0 error without charges, log once, and recover only after a dated price and explicit release; a failed quarantine commit retains pending input without a committed-incident report. Unsupported schema 2 produces no rating or debit and remains a visible error. |
 | [Money and calendar primitives](../../internal/accounting/money_test.go), [UTC calendar tests](../../internal/accounting/calendar_test.go) | A limit is reached at equality using exact gross ticks, including credit-covered usage. Credit stays nonnegative; half-cent ties use half-up presentation. Month calculations normalize offsets to UTC, and add-ons cost zero before their purchase month. |
 | [Invoice closing](../../tests/inbox/invoices_test.go) | Eight concurrent close requests produce one `ACME-0001`. An unpriced fixed cohort blocks closing; adding its supported historical price and explicitly releasing its owned error resumes October to 400 cents. A later accepted receipt is excluded from that cohort and bills 400 cents in November, even with an older receipt timestamp. Empty months are valid; invalid months return `422`, missing invoices/customers `404`. |
 | [Grant](../../tests/inbox/credit_test.go), [purchase](../../tests/inbox/addons_test.go), and [price](../../tests/inbox/prices_test.go) | Changed operation content, missing catalog/customers, and retroactive changes produce their declared errors with no extra grant, subscription, or price. A new purchase cannot alter a closed month. |

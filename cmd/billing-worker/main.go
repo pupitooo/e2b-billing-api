@@ -31,6 +31,7 @@ func main() {
 
 func run(args []string, getenv func(string) string) int {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 	cfg, err := loadConfig(getenv)
 	if err != nil {
 		logger.Error("Invalid worker configuration", "error", err)

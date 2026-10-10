@@ -256,6 +256,14 @@ BEGIN
             input_sql => $$INSERT INTO price_versions VALUES ('billing-model-infinite-price', NULL, 'billing-model-cpu', 5, 'infinity')$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
+            scenario => 'Undated baseline price is forbidden',
+            input_sql => $$INSERT INTO price_versions VALUES ('billing-model-undated-price', NULL, 'billing-model-cpu', 5, NULL)$$,
+            want_sqlstate => '23502');
+    PERFORM pg_temp.assert_rejection(
+            scenario => 'Price effective start must be supplied explicitly',
+            input_sql => $$INSERT INTO price_versions (price_version_id, customer_id, metric, price_per_million_cents) VALUES ('billing-model-no-start', NULL, 'billing-model-cpu', 5)$$,
+            want_sqlstate => '23502');
+    PERFORM pg_temp.assert_rejection(
             scenario => 'Unknown price customer',
             input_sql => $$INSERT INTO price_versions VALUES ('billing-model-unknown-owner', 'billing-model-missing', 'billing-model-cpu', 5, '2026-11-01T00:00:00Z')$$,
             want_sqlstate => '23503');

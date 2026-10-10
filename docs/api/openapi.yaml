@@ -9,6 +9,8 @@ info:
     conflicts. Acceptance confirms durable receipt, while accounting remains
     asynchronous in the standalone worker. Unsupported customers, schemas,
     metrics, or crossing intervals are retained with a processing error.
+    A missing valid price at consumption time is a P0 catalog incident:
+    the receipt retains P0 missing_valid_price and produces no financial effect.
 servers:
   - url: /api
     description: Same-origin API proxy provided by the local Scalar service
@@ -47,6 +49,12 @@ paths:
         asynchronously by the accounting worker. A receipt must fit one UTC
         month and one applicable price version; unsupported input is retained
         with processing_error and contributes no financial effect.
+        Provision each metric's dated price before generating its first usage.
+        A missing valid price sets P0 missing_valid_price in processing_error;
+        after commit, accounting logs priority=P0 with the receipt identity,
+        customer, metric, and original consumption time. Append the correct price
+        and explicitly release the investigated receipt to resume accounting.
+        Adding a price or retrying this endpoint does not clear that error.
 
         Identify measurements by (source, event_id) and accept a whole batch
         atomically, including repeated identities within the incoming batch.
@@ -218,7 +226,11 @@ paths:
         any already rated receipt returns 409. Retroactive changes affecting only unrated input are permitted.
         Commands are serialized against rating under a catalog advisory lock. The reference implementation
         scans affected rated history; this is not a demonstrated large-volume administrative path. Every
-        field is explicit; timestamps normalize to UTC.
+        field is explicit; timestamps normalize to UTC. effective_from is required and non-null;
+        there is no undated baseline. Provision an applicable price before the metric's first usage.
+        To repair a P0 missing_valid_price incident, append a version effective on or before the
+        original consumption time, then explicitly release the investigated receipt. This command
+        does not automatically clear usage processing errors.
       x-implementation-status: implemented
       requestBody:
         required: true
@@ -918,7 +930,9 @@ paths:
         exactly at 00:00:00Z on 1 February. Customer schedules and document delivery are not implemented.
         The customer/month is the stable operation identity. First capture a durable cohort of
         committed pending receipts through the target month under the account lock. Drain without holding
-        that lock across transactions. Cohort processing errors block issuance with 409; storage deadlines
+        that lock across transactions. Cohort processing errors, including P0 missing_valid_price,
+        block issuance with 409. Repair the dated catalog and explicitly release the affected receipt;
+        storage deadlines
         return 503 and retain resumable closing state. Later accepted receipts route to another open month
         even with an older receipt timestamp. Finalize closure, freeze rated groups, snapshot buyer details
         and exact audit ticks, and allocate the next customer-specific invoice number in one transaction.
@@ -1342,6 +1356,8 @@ components:
           maximum: 9223372036854775807
         effective_from:
           $ref: '#/components/schemas/ConsumptionTime'
+          description: Required finite effective instant. No null or undated baseline is supported;
+            provision the price on or before the first consumption time it must cover.
 
     CreditGrant:
       type: object
@@ -1389,6 +1405,7 @@ components:
           type: integer
           format: int64
           minimum: 0
+          description: Quarantined receipt count, including P0 missing_valid_price catalog incidents.
 
     AddonPurchase:
       type: object
@@ -1496,6 +1513,7 @@ components:
           type: integer
           format: int64
           minimum: 0
+          description: Quarantined receipt count, including P0 missing_valid_price catalog incidents.
 
     InvoiceLine:
       type: object

@@ -76,7 +76,7 @@ func (s *Store) drainClosing(ctx context.Context, customer string, month time.Ti
 			return ErrConflict
 		}
 
-		if err := s.transact(ctx, func(tx pgx.Tx) error { return processReceipt(ctx, tx, candidate) }); err != nil {
+		if err := s.accountReceipt(ctx, candidate); err != nil {
 			return err
 		}
 	}

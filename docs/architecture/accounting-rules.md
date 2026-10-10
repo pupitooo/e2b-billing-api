@@ -8,6 +8,7 @@ and the migration and verification requirements:
 - [Fixed calendar-month contract](#fixed-calendar-month-contract): whole UTC calendar periods and one immutable invoice per customer/month.
 - [Exact money and credit](#exact-money-and-credit): tick precision, exact charge calculations, signed credit entries, and allocation order.
 - [Historical prices and groups](#historical-prices-and-groups): customer overrides, consumption-time pricing, supported intervals, and stable grouping keys.
+- [Catalog provisioning and P0 recovery](#catalog-provisioning-and-p0-recovery): required dated prices before metering and explicit recovery from a missing valid catalog.
 - [Rounding and invoice presentation](#rounding-and-invoice-presentation): cumulative half-up rounding, balancing credit lines, immutable snapshots, and invoice totals.
 - [UTC months, limits, add-ons, and late usage](#utc-months-limits-add-ons-and-late-usage): supported years, gross spend limits, full monthly add-on charges, and routing after closure.
 - [Transaction and closing contract](#transaction-and-closing-contract): customer locks, atomic financial effects, retries, fixed receipt cohorts, and invoice issuance.
@@ -89,8 +90,8 @@ across different groups or new grants.
 
 `Rate` supports schema version 1. Choose the latest eligible customer override,
 otherwise the latest eligible default. Use consumption time, never receipt time.
-Later default changes do not mask an eligible override. Missing or ambiguous
-relevant prices fail visibly.
+Later default changes do not mask an eligible override. A missing valid price is
+a P0 catalog incident; ambiguous relevant prices also fail visibly.
 
 One receipt is a half-open interval `[period_start, period_end)` wholly within
 one UTC month and one applicable price version. Ending exactly at a boundary is
@@ -102,6 +103,41 @@ The stable group key is `(customer_id, price_version_id, usage_month, billing_mo
 Sandbox and batch IDs do not create rounding boundaries. Preserve gross ticks
 separately from credit. `booked_charge_cents` remains a rounded gross projection,
 not a credit debit or a net invoice amount.
+
+## Catalog provisioning and P0 recovery
+
+On 10 October 2026 the user confirmed that every price retains an explicit finite,
+non-null `effective_from`. There is no undated baseline and no implied price before
+the first eligible version. The assignment seed supplies its exact dated default
+prices and Acme override. Preserve those amounts and start times.
+
+Provision each additional metric and its applicable price before the platform
+generates the first measurement. The price's `effective_from` must be on or before
+that measurement's `period_start`. A default price covers customers without an
+eligible override; a price owned by another customer cannot substitute for it.
+This is a provisioning contract, not a database guarantee that every metric has
+a price for every historical instant. An explicitly configured zero price is valid.
+
+If rating cannot find an eligible price, `accounting.MissingPriceError` identifies
+the customer, metric, and original consumption time. Accounting stores
+`P0 missing_valid_price: ...` in `usage_inbox.processing_error`, leaves
+`processed_at` NULL, and creates no group, rating link, credit debit, gross-spend
+projection, or account-state change for that receipt. After the quarantine commits,
+the shared receipt orchestration emits an ERROR report with `priority=P0`,
+`error_code=missing_valid_price`, source/event identity, customer, metric, and
+`period_start`. The standalone worker uses its JSON logger for this report.
+Polling and invoice closing share this behavior. Automatic polling excludes the
+quarantined receipt and continues with other pending input.
+
+Treat the missing catalog as an immediate P0 repair: append the correct price
+through `POST /prices`, with an explicit start covering the original measurement.
+The historical protection still rejects a version that invalidates already rated
+usage. After the repair, an operator explicitly clears the investigated receipt's
+error using the [recovery procedure](../../README.md#transactional-usage-accounting).
+Adding a price or repeating the usage request does not automatically release it.
+The next attempt accounts for the original receipt exactly once and follows the
+existing open-month routing. An unresolved error in a closing cohort blocks that
+invoice until recovery; it cannot change an already issued invoice.
 
 ## Rounding and invoice presentation
 

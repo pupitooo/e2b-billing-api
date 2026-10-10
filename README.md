@@ -843,8 +843,18 @@ and inbox completion commit together. Concurrent workers and identical replay ca
 Migration `005_accounting_processing.sql` adds immutable closed-month records for late-usage routing.
 
 Unsupported customers, schemas, prices, and intervals are retained with `processing_error`.
-Database failures roll back for retry. After diagnosing and correcting an unsupported input's
-catalog or configuration, an operator may explicitly release that owned receipt:
+Missing a valid price at consumption time is a **P0 catalog incident**. The receipt stores
+`P0 missing_valid_price: ...`, keeps `processed_at` NULL, and has no financial effect.
+After this error commits, the worker emits an ERROR JSON log with `priority=P0`,
+`error_code=missing_valid_price`, source/event identity, customer, metric, and original
+`period_start`. Invoice closing uses the same reporting path. Other pending receipts
+continue processing; an unresolved error in a closing cohort still blocks that invoice.
+
+Database failures roll back for retry. To recover a missing-price incident, immediately
+provision the correct catalog version through `POST /prices`, with `effective_from` on or
+before the affected consumption time. Then explicitly release the investigated receipt.
+Appending a price or replaying the usage request does not clear an existing error.
+Other unsupported input follows the same explicit release procedure after its cause is fixed:
 
 ```sql
 UPDATE usage_inbox SET processing_error = NULL
@@ -863,6 +873,14 @@ Supply `customer_id: null` for the default, or a customer ID for an override. An
 retry succeeds; changed content, duplicate effective instants, and retroactive changes
 that invalidate already rated usage return `409`. Pending usage can use newly added historical
 prices. See the [OpenAPI reference](docs/api/openapi.yaml) for explicit fields and examples.
+
+Every price requires an explicit finite `effective_from`; an undated baseline is not supported.
+Migration `003_assignment_seed.sql` supplies the assignment's original prices beginning on
+1 October 2026, including the default change on 15 October. Register and price each additional
+metric before the platform generates its first usage, with an effective start covering that usage.
+This provisioning contract is an operational responsibility; the inbox durably accepts input
+before asynchronous catalog validation. A configured zero price is valid and differs from a
+missing valid price. See the [catalog provisioning and P0 recovery contract](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery).
 
 ### Credit
 
