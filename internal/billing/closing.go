@@ -21,6 +21,12 @@ func (s *Store) beginClosing(ctx context.Context, customer string, month time.Ti
 			return err
 		}
 
+		// Reject unfinished periods before capturing or processing their receipts.
+		startedAt := s.now().UTC().Truncate(time.Microsecond)
+		if startedAt.Before(month.AddDate(0, 1, 0)) {
+			return &ValidationError{Field: "month", Message: "Only completed UTC calendar months can be closed."}
+		}
+
 		var later bool
 		if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM closed_billing_months WHERE customer_id=$1 AND billing_month>=$2)", customer, month).Scan(&later); err != nil {
 			return err
@@ -30,7 +36,7 @@ func (s *Store) beginClosing(ctx context.Context, customer string, month time.Ti
 			return ErrConflict
 		}
 
-		tag, err := tx.Exec(ctx, "INSERT INTO invoice_closings VALUES ($1,$2,$3) ON CONFLICT DO NOTHING", customer, month, time.Now().UTC().Truncate(time.Microsecond))
+		tag, err := tx.Exec(ctx, "INSERT INTO invoice_closings VALUES ($1,$2,$3) ON CONFLICT DO NOTHING", customer, month, startedAt)
 		if err != nil || tag.RowsAffected() == 0 {
 			return err
 		}

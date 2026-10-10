@@ -5,11 +5,13 @@
 This document defines the shared financial rules, their transaction boundaries,
 and the migration and verification requirements:
 
+- [Fixed calendar-month contract](#fixed-calendar-month-contract): whole UTC calendar periods and one immutable invoice per customer/month.
 - [Exact money and credit](#exact-money-and-credit): tick precision, exact charge calculations, signed credit entries, and allocation order.
 - [Historical prices and groups](#historical-prices-and-groups): customer overrides, consumption-time pricing, supported intervals, and stable grouping keys.
 - [Rounding and invoice presentation](#rounding-and-invoice-presentation): cumulative half-up rounding, balancing credit lines, immutable snapshots, and invoice totals.
 - [UTC months, limits, add-ons, and late usage](#utc-months-limits-add-ons-and-late-usage): supported years, gross spend limits, full monthly add-on charges, and routing after closure.
 - [Transaction and closing contract](#transaction-and-closing-contract): customer locks, atomic financial effects, retries, fixed receipt cohorts, and invoice issuance.
+- [Invoice generation and delivery (proposal)](#invoice-generation-and-delivery-proposal): first-day generation, customer-selected days, late input, and scheduling safeguards.
 - [Migration and verification](#migration-and-verification): converting cent credit to ticks, incompatible legacy allocations, and Go and SQL coverage.
 
 `internal/accounting` implements pure Go calculations for historical rating,
@@ -17,11 +19,36 @@ exact credit, UTC months, limits, add-ons, and invoice presentation. The usage A
 these rules transactionally. Financial commands and immutable invoice issuance
 are implemented in `internal/billing` and documented in OpenAPI.
 
-The assignment requires historical prices, customer overrides, usage-only credit,
-gross monthly limits, full monthly add-on charges, immutable invoices, and the
-example's numerical results. On 9 October 2026 the user selected **credit in ticks
-before rounding**. Half-up rounding, allocation order, and the closing contract
-below are implementation assumptions for this reference implementation.
+The assignment requires monthly invoices over UTC calendar months, historical
+prices, customer overrides, usage-only credit, gross monthly limits, full monthly
+add-on charges, immutable invoices, and the example's numerical results. On
+9 October 2026 the user selected **credit in ticks before rounding**. On
+10 October 2026 the user confirmed the whole-calendar-month rule below as a fixed
+contract. Half-up rounding, allocation order, and the receipt-cohort mechanism are
+implementation assumptions for this reference implementation.
+
+## Fixed calendar-month contract
+
+**Billing periods are whole UTC calendar months. This is a fixed domain contract,
+not a customer preference or a scheduling option.** January 2027 means the
+half-open interval `[2027-01-01T00:00:00Z, 2027-02-01T00:00:00Z)`.
+
+- `billing_month` identifies the first UTC date of that calendar month. It is not
+  a chosen closing day or the date on which the customer receives a document.
+- There is one final invoice per customer/billing month. Final closure and invoice
+  publication share that identity; retries return the original snapshot and number.
+- A preferred generation or delivery day never changes the period's boundaries.
+  Generating January's invoice on 20 February still bills the January calendar
+  period. It does not create a cycle from 20 January to 20 February.
+- Spend limits and monthly add-ons keep their UTC calendar-month rules regardless
+  of when the invoice is generated or delivered.
+- Issued invoices and closed months remain immutable. Input accepted after the
+  closing cohort follows the existing late-usage policy instead of reopening them.
+
+Whole months define accounting periods; they do not guarantee that all delayed
+measurements have arrived by issuance. A later invoice can therefore contain
+usage from an earlier month. Preserve its original `usage_month` for historical
+prices, gross spend limits, and audit while recording the later `billing_month`.
 
 ## Exact money and credit
 
@@ -146,6 +173,59 @@ The invoice implementation persists cohort membership and closing state; a retry
 resumes after fixing the supported catalog and explicitly releasing processing errors. A receipt timestamp alone is not a closing
 watermark. Used historical prices and issued invoices cannot be silently rewritten
 by a later command; retroactive corrections require a separate policy.
+
+## Invoice generation and delivery (proposal)
+
+The following scheduling choices are proposals, not implemented customer settings
+or a selected product policy. Both preserve the fixed calendar-month contract.
+Final closure and invoice publication happen in the same transaction; delivering
+the resulting document is a separate operation. An unfinished preview, if added
+later, must remain distinguishable from an issued immutable invoice.
+
+Assume earlier customer months are closed, February is open, and accepted input
+can be processed successfully. For the January 2027 invoice:
+
+| Policy | Final closure and invoice generation | Delivery | January usage received on 5 February |
+| --- | --- | --- | --- |
+| Generate on the first day; deliver on the selected day | 1 February | 20 February | Appears on a later invoice because January is already closed. |
+| Generate and deliver on the selected day | 20 February | 20 February | Remains eligible for January if committed before its closing cohort is captured. |
+
+The selected generation day provides a longer window for late input, at the cost
+of keeping the preceding month open and its final amount unavailable for longer.
+A selected delivery day changes notification timing; it never recalculates an
+already issued invoice. Neither choice guarantees that no input arrives later.
+Usage accounting and credit allocation continue independently of this schedule.
+
+**Recommended first extension:** run a monthly job on the first UTC day and call
+the existing invoice API for the preceding month of each customer. Keep generation
+and delivery separate, and add customer-specific generation days only if waiting
+for late input or a preferred issue date is a product requirement. For a customer
+with generation day 20, run January's close on 20 February and February's close
+on 20 March. A missed run must recover earlier missing months in increasing order.
+One customer's failed close must not prevent other customers from progressing;
+retry the same customer/month without reserving another invoice number.
+
+Before implementing customer schedules, choose the execution time in UTC, the
+rule for days 29–31 in shorter months, the effective date of preference changes,
+and recovery after outages. Generation and delivery need separate durable work
+tracking and retry identities. Delivery retries must not generate another invoice;
+provider idempotence, when available, is separate from database invoice uniqueness.
+
+**Completed-month requirement:** the API accepts only `month` as `YYYY-MM`.
+It has no closing-day or cutoff parameter; `closed_at` and `issued_at` come from
+the server clock. Before starting a new closure, `CloseMonth` requires the server's
+UTC time to be at or after the first instant of the following month. January is
+eligible from 1 February at `00:00:00Z`; closing it on 20 January returns HTTP `422`
+with `invalid_command` and field `month`. Ongoing and future months fail before
+cohort capture or processing, without changing credit, usage ratings, invoices,
+or numbering. A retry of an already issued invoice returns its original snapshot.
+Schedulers must also select completed months. Integration tests supply an explicit
+server clock to check the exact UTC boundary and run fixed assignment fixtures;
+HTTP callers cannot override that clock.
+
+The scheduler, customer day settings, document delivery, and an optional preview
+are not implemented. The user confirmed the fixed period contract and requested
+discussion of these alternatives; no scheduling alternative has been approved.
 
 ## Migration and verification
 

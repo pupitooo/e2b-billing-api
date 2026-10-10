@@ -26,26 +26,28 @@ import (
 // TestBillingSimulatorExecutable runs each readable JSON workflow through a
 // separate CLI, real HTTP router, worker, and private seeded PostgreSQL schema.
 // The files keep every public input beside its literal invoice/credit expectation.
+// Each scenario supplies a server clock after its fixed billing periods end.
 func TestBillingSimulatorExecutable(t *testing.T) {
 	cases := []struct {
 		name                string
 		file                string
+		invoiceTime         string
 		unavailableRequests int32
 		wantCompleted       int
 	}{
-		{name: "complete assignment", file: "billing-assignment", wantCompleted: 24},
-		{name: "command identities and changed-content conflicts", file: "billing-command-retries", wantCompleted: 16},
-		{name: "exact sub-cent credit", file: "billing-exact-credit", wantCompleted: 6},
-		{name: "credit exhaustion and a full recurring add-on", file: "billing-credit-exhaustion", wantCompleted: 9},
-		{name: "platform reads and resets monthly limit status", file: "billing-limit-status", wantCompleted: 15},
-		{name: "default versions and customer override", file: "billing-price-versions", wantCompleted: 8},
-		{name: "ambiguous price interval blocks closing", file: "billing-price-boundary", wantCompleted: 5},
-		{name: "ambiguous month interval blocks closing", file: "billing-month-boundary", wantCompleted: 5},
-		{name: "HTTP outage recovers without financial drift", file: "billing-assignment", unavailableRequests: 2, wantCompleted: 24},
+		{name: "complete assignment", file: "billing-assignment", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 24},
+		{name: "command identities and changed-content conflicts", file: "billing-command-retries", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 16},
+		{name: "exact sub-cent credit", file: "billing-exact-credit", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 6},
+		{name: "credit exhaustion and a full recurring add-on", file: "billing-credit-exhaustion", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 9},
+		{name: "platform reads and resets monthly limit status", file: "billing-limit-status", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 15},
+		{name: "default versions and customer override", file: "billing-price-versions", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 8},
+		{name: "ambiguous price interval blocks closing", file: "billing-price-boundary", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 5},
+		{name: "ambiguous month interval blocks closing", file: "billing-month-boundary", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 5},
+		{name: "HTTP outage recovers without financial drift", file: "billing-assignment", invoiceTime: "2026-12-01T00:00:00Z", unavailableRequests: 2, wantCompleted: 24},
 	}
 	for _, scenario := range cases {
 		t.Run(scenario.name, func(t *testing.T) {
-			address := billingSimulatorAPI(t, scenario.unavailableRequests)
+			address := billingSimulatorAPI(t, scenario.unavailableRequests, parseBillingTime(t, scenario.invoiceTime))
 			binary := billingSimulatorBinary(t)
 			state := filepath.Join(t.TempDir(), "workflow.json")
 			arguments := billingSimulatorArguments(scenario.file, state, address)
@@ -59,13 +61,14 @@ func TestBillingSimulatorExecutable(t *testing.T) {
 	t.Run("new producer process confirms a lost committed grant", func(t *testing.T) {
 		scenario := struct {
 			file               string
+			invoiceTime        string
 			firstArguments     []string
 			wantFirstError     bool
 			wantFirstCompleted int
 			wantFinalCompleted int
 			wantFirstOutput    string
-		}{file: "billing-assignment", firstArguments: []string{"--max-attempts=1"}, wantFirstError: true, wantFirstCompleted: 2, wantFinalCompleted: 24, wantFirstOutput: "injected lost committed response"}
-		address := billingSimulatorAPI(t, 0)
+		}{file: "billing-assignment", invoiceTime: "2026-12-01T00:00:00Z", firstArguments: []string{"--max-attempts=1"}, wantFirstError: true, wantFirstCompleted: 2, wantFinalCompleted: 24, wantFirstOutput: "injected lost committed response"}
+		address := billingSimulatorAPI(t, 0, parseBillingTime(t, scenario.invoiceTime))
 		binary := billingSimulatorBinary(t)
 		state := filepath.Join(t.TempDir(), "workflow.json")
 		base := billingSimulatorArguments(scenario.file, state, address)
@@ -93,12 +96,13 @@ func TestBillingSimulatorExecutable(t *testing.T) {
 	t.Run("unavailable API retains the plan for a new process", func(t *testing.T) {
 		scenario := struct {
 			file               string
+			invoiceTime        string
 			unavailableURL     string
 			wantFirstError     bool
 			wantFirstCompleted int
 			wantFinalCompleted int
-		}{file: "billing-exact-credit", unavailableURL: "http://127.0.0.1:1", wantFirstError: true, wantFirstCompleted: 0, wantFinalCompleted: 6}
-		address := billingSimulatorAPI(t, 0)
+		}{file: "billing-exact-credit", invoiceTime: "2026-12-01T00:00:00Z", unavailableURL: "http://127.0.0.1:1", wantFirstError: true, wantFirstCompleted: 0, wantFinalCompleted: 6}
+		address := billingSimulatorAPI(t, 0, parseBillingTime(t, scenario.invoiceTime))
 		binary := billingSimulatorBinary(t)
 		state := filepath.Join(t.TempDir(), "workflow.json")
 		failed := append(billingSimulatorArguments(scenario.file, state, scenario.unavailableURL), "--max-attempts=1")
@@ -111,10 +115,11 @@ func TestBillingSimulatorExecutable(t *testing.T) {
 
 // billingSimulatorAPI provides a real seeded account and worker isolated from
 // application data. Optional gateway failures happen before any command executes.
-func billingSimulatorAPI(t *testing.T, unavailableRequests int32) string {
+// The declared server clock keeps fixed invoice fixtures independent of today's date.
+func billingSimulatorAPI(t *testing.T, unavailableRequests int32, invoiceTime time.Time) string {
 	t.Helper()
 	pool := billingDatabase(t)
-	store := billing.NewStore(pool)
+	store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
 	handler := httpapi.NewHandler(inbox.NewPostgres(pool, time.Second), 5*time.Second, 8, store)
 	var remaining atomic.Int32
 	remaining.Store(unavailableRequests)

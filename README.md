@@ -277,6 +277,7 @@ the two October 20 measurements. Each `MODE=step` invocation releases at most
 one step. `MODE=fast` (the default) releases the current phase at once, stopping
 at the same barrier before late October. No command waits for the real calendar
 to reach the fixture dates, and faster delivery never changes consumption times.
+Invoice closure separately requires the complete UTC month to have ended.
 
 After October accounting and invoice issuance, explicitly release late usage:
 
@@ -295,7 +296,9 @@ the documented financial APIs. HTTP `202`
 confirms the whole batch's durable inbox receipt, not financial processing.
 
 Run the complete billing assignment against fresh seeded accounts with the API and
-worker running:
+worker running. Its fixed October/November 2026 invoices require the server clock
+to have reached `2026-12-01T00:00:00Z`; private-schema integration tests use an
+explicit clock and can verify the full workflow earlier:
 
 ```sh
 make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json
@@ -878,6 +881,12 @@ Reaching a limit does not discard or stop accounting for measured usage.
 
 ### Monthly invoices
 
+The [fixed billing contract](docs/architecture/accounting-rules.md#fixed-calendar-month-contract)
+is one immutable invoice per customer for a whole UTC calendar month. A chosen
+generation or delivery day cannot shift the period's boundaries. January's invoice
+generated on 20 February still covers January. The [scheduling proposals](docs/architecture/accounting-rules.md#invoice-generation-and-delivery-proposal)
+compare generation on the first day with generation on a selected customer day.
+
 Apply migration 007, then call `POST /customers/{customer_id}/invoices` with an explicit
 `month` such as `2026-10`. Issue months in increasing order. An empty month is valid.
 The customer/month identifies this operation; retry returns the same invoice and number.
@@ -891,6 +900,13 @@ audit ticks, group freezes, closure, and the customer's next number commit toget
 Issuance never consumes credit again. Later grants and consumption cannot change an issued
 invoice. A new purchase cannot affect a closing or closed month. Operators trigger invoices
 explicitly through the API; an automatic calendar scheduler remains an extension.
+
+The API accepts only a `YYYY-MM` month. A new closure requires the whole month to
+have ended according to the server's UTC clock: January becomes eligible exactly
+at `00:00:00Z` on 1 February. An ongoing or future month returns `422` with
+`invalid_command` and field `month`, before processing receipts or changing
+financial state. Customer day settings, document delivery, and a scheduling service
+are not implemented.
 
 The [scenario style guide](docs/simulator/scenario-style.md) describes the named-step format
 used for durable platform workflows and literal expected results. Simulator transport tests

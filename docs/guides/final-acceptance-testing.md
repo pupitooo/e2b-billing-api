@@ -10,6 +10,14 @@ months are UTC. One cent is 1_000_000 ticks; invoice amounts are integer cents a
 exact API amounts are decimal strings. Underscores in prose and tables group
 digits; copyable JSON and SQL retain their valid numeric syntax.
 
+New invoices can close only completed UTC calendar months. The manual walkthrough
+and live simulator use fixed October/November 2026 inputs and therefore require
+the server clock to have reached `2026-12-01T00:00:00Z`. Before that date, review
+their complete results through the private-schema automated tests, whose explicit
+server clocks are independent of the current date. A premature manual invoice
+request returns `422` without financial changes; earlier workflow commands may
+already have committed. HTTP requests cannot override the server clock.
+
 ## 1. Scope and acceptance decisions
 
 The binding example has two customers, `cpu_seconds`, default prices of USD 0.05
