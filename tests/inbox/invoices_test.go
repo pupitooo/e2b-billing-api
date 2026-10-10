@@ -38,6 +38,8 @@ type invoiceExpectation struct {
 // Crossing-month receipts block publication and numbering; an interval ending
 // exactly at the UTC month boundary closes October once, including on retry.
 // Server-clock boundaries reject unfinished months before any financial effect.
+// A receipt inserted before capture but committed afterward stays outside the
+// fixed cohort, even with an earlier receipt timestamp and worker processing.
 func TestCloseMonth(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -447,67 +449,118 @@ func TestCloseMonth(t *testing.T) {
 			wantProcessingError: "P0 missing_valid_price: no valid price for customer acme and metric unpriced at 2026-10-10T12:00:00Z",
 			wantLog:             missingPriceLog{Level: "ERROR", Priority: "P0", ErrorCode: "missing_valid_price", Source: "cohort", EventID: "original", CustomerID: "acme", Metric: "unpriced", PeriodStart: "2026-10-10T12:00:00Z"},
 		}
-		pool := billingDatabase(t)
-		ctx := context.Background()
-		logs := captureBillingLogs(t)
-		invoiceTime := parseBillingTime(t, scenario.invoiceTime)
-		store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
-		transport := inbox.NewPostgres(pool, time.Second)
-		if _, err := pool.Exec(ctx, "INSERT INTO metrics VALUES ('unpriced')"); err != nil {
-			t.Fatal(err)
+		cases := []struct {
+			name                string
+			insertBeforeCapture bool
+			wantWorkerProcessed bool
+			wantLaterMonth      string
+		}{
+			{name: "receipt inserted after capture", insertBeforeCapture: false, wantWorkerProcessed: true, wantLaterMonth: "2026-11"},
+			{name: "receipt inserted before capture and committed afterward", insertBeforeCapture: true, wantWorkerProcessed: true, wantLaterMonth: "2026-11"},
 		}
-		event := usage.Event{Source: "cohort", EventID: "original", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox", Metric: "unpriced", PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, "2026-10-10T13:00:00Z"), Units: scenario.originalUnits}
-		if err := transport.InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
-			t.Fatal(err)
-		}
-		_, err := store.CloseMonth(ctx, "acme", "2026-10")
-		if !errors.Is(err, scenario.wantFirstError) {
-			t.Fatalf("unpriced cohort error=%v want %v", err, scenario.wantFirstError)
-		}
-		var processingError string
-		if err := pool.QueryRow(ctx, "SELECT COALESCE(processing_error,'') FROM usage_inbox WHERE source=$1 AND event_id=$2", event.Source, event.EventID).Scan(&processingError); err != nil {
-			t.Fatalf("Read P0 cohort processing error: %v", err)
-		}
-		if processingError != scenario.wantProcessingError {
-			t.Errorf("Unpriced cohort processing_error=%q; want %q", processingError, scenario.wantProcessingError)
-		}
-		if got := readMissingPriceLogs(t, logs); !reflect.DeepEqual(got, []missingPriceLog{scenario.wantLog}) {
-			t.Errorf("Closing catalog incident log=%+v; want %+v", got, scenario.wantLog)
-		}
-		later := event
-		later.EventID = "later"
-		later.Metric = "cpu_seconds"
-		later.Units = scenario.laterUnits
-		// The earlier receipt timestamp cannot bypass the committed cohort cut.
-		if err := transport.InsertBatch(ctx, []usage.Event{later}, event.PeriodStart); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := store.ProcessBatch(ctx); err != nil {
-			t.Fatal(err)
-		}
-		if err := store.CreatePrice(ctx, accounting.PriceVersion{ID: "recovered-price", Metric: "unpriced", PricePerMillionCents: 4, EffectiveFrom: parseBillingTime(t, "2026-10-01T00:00:00Z")}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := pool.Exec(ctx, "UPDATE usage_inbox SET processing_error=NULL WHERE source='cohort' AND event_id='original'"); err != nil {
-			t.Fatal(err)
-		}
-		october, err := store.CloseMonth(ctx, "acme", "2026-10")
-		if err != nil {
-			t.Fatal(err)
-		}
-		november, err := store.CloseMonth(ctx, "acme", "2026-11")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var cohort int
-		if err := pool.QueryRow(ctx, "SELECT count(*) FROM invoice_closing_receipts WHERE billing_month='2026-10-01'").Scan(&cohort); err != nil {
-			t.Fatal(err)
-		}
-		if october.TotalCents != scenario.wantOctoberTotal || november.TotalCents != scenario.wantNovemberTotal || cohort != scenario.wantCohort {
-			t.Fatalf("recovered cohort: October=%d November=%d members=%d; want %d %d %d", october.TotalCents, november.TotalCents, cohort, scenario.wantOctoberTotal, scenario.wantNovemberTotal, scenario.wantCohort)
-		}
-		if got := readMissingPriceLogs(t, logs); !reflect.DeepEqual(got, []missingPriceLog{scenario.wantLog}) {
-			t.Errorf("Closing recovery reports=%+v; want only original %+v", got, scenario.wantLog)
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				pool := billingDatabase(t)
+				ctx := context.Background()
+				logs := captureBillingLogs(t)
+				invoiceTime := parseBillingTime(t, scenario.invoiceTime)
+				store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
+				transport := inbox.NewPostgres(pool, time.Second)
+				if _, err := pool.Exec(ctx, "INSERT INTO metrics VALUES ('unpriced')"); err != nil {
+					t.Fatal(err)
+				}
+				event := usage.Event{Source: "cohort", EventID: "original", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox", Metric: "unpriced", PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, "2026-10-10T13:00:00Z"), Units: scenario.originalUnits}
+				if err := transport.InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
+					t.Fatal(err)
+				}
+
+				later := usage.Event{Source: "cohort", EventID: "later", SchemaVersion: 1,
+					CustomerID: "acme", SandboxID: "sandbox", Metric: "cpu_seconds",
+					PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, "2026-10-10T13:00:00Z"), Units: scenario.laterUnits}
+				pendingReceipt, err := pool.Begin(ctx)
+				if err != nil {
+					t.Fatalf("Begin receipt insertion before cohort capture: %v", err)
+				}
+				defer func() { _ = pendingReceipt.Rollback(ctx) }()
+
+				// Keep the receipt invisible to capture until its transaction commits.
+				if tc.insertBeforeCapture {
+					if _, err := pendingReceipt.Exec(ctx, `INSERT INTO usage_inbox
+            (source,event_id,schema_version,customer_id,sandbox_id,metric,period_start,period_end,units,received_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+						later.Source, later.EventID, later.SchemaVersion, later.CustomerID, later.SandboxID,
+						later.Metric, later.PeriodStart, later.PeriodEnd, later.Units, event.PeriodStart); err != nil {
+						t.Fatalf("Insert uncommitted receipt %+v before cohort capture: %v", later, err)
+					}
+				}
+
+				_, err = store.CloseMonth(ctx, "acme", "2026-10")
+				if !errors.Is(err, scenario.wantFirstError) {
+					t.Fatalf("unpriced cohort error=%v want %v", err, scenario.wantFirstError)
+				}
+				var processingError string
+				if err := pool.QueryRow(ctx, "SELECT COALESCE(processing_error,'') FROM usage_inbox WHERE source=$1 AND event_id=$2", event.Source, event.EventID).Scan(&processingError); err != nil {
+					t.Fatalf("Read P0 cohort processing error: %v", err)
+				}
+				if processingError != scenario.wantProcessingError {
+					t.Errorf("Unpriced cohort processing_error=%q; want %q", processingError, scenario.wantProcessingError)
+				}
+				if got := readMissingPriceLogs(t, logs); !reflect.DeepEqual(got, []missingPriceLog{scenario.wantLog}) {
+					t.Errorf("Closing catalog incident log=%+v; want %+v", got, scenario.wantLog)
+				}
+				// The earlier receipt timestamp cannot bypass the committed cohort cut.
+				if err := pendingReceipt.Commit(ctx); err != nil {
+					t.Fatalf("Commit receipt %+v after cohort capture: %v", later, err)
+				}
+				if !tc.insertBeforeCapture {
+					if err := transport.InsertBatch(ctx, []usage.Event{later}, event.PeriodStart); err != nil {
+						t.Fatalf("Insert receipt %+v after cohort capture: %v", later, err)
+					}
+				}
+
+				processed, err := store.ProcessBatch(ctx)
+				if err != nil {
+					t.Fatalf("ProcessBatch for receipt %+v outside the closing cohort: %v", later, err)
+				}
+
+				if processed != tc.wantWorkerProcessed {
+					t.Errorf("ProcessBatch for receipt %+v processed=%t; want %t", later, processed, tc.wantWorkerProcessed)
+				}
+				var laterMonth string
+				if err := pool.QueryRow(ctx, `SELECT to_char(g.billing_month,'YYYY-MM')
+			FROM usage_ratings r JOIN rated_usage_groups g USING (group_id)
+			WHERE r.source=$1 AND r.event_id=$2`, later.Source, later.EventID).Scan(&laterMonth); err != nil {
+					t.Fatalf("Read worker routing for receipt %+v: %v", later, err)
+				}
+
+				if laterMonth != tc.wantLaterMonth {
+					t.Errorf("Worker routed receipt %+v to %s; want %s", later, laterMonth, tc.wantLaterMonth)
+				}
+				if err := store.CreatePrice(ctx, accounting.PriceVersion{ID: "recovered-price", Metric: "unpriced", PricePerMillionCents: 4, EffectiveFrom: parseBillingTime(t, "2026-10-01T00:00:00Z")}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := pool.Exec(ctx, "UPDATE usage_inbox SET processing_error=NULL WHERE source='cohort' AND event_id='original'"); err != nil {
+					t.Fatal(err)
+				}
+				october, err := store.CloseMonth(ctx, "acme", "2026-10")
+				if err != nil {
+					t.Fatal(err)
+				}
+				november, err := store.CloseMonth(ctx, "acme", "2026-11")
+				if err != nil {
+					t.Fatal(err)
+				}
+				var cohort int
+				if err := pool.QueryRow(ctx, "SELECT count(*) FROM invoice_closing_receipts WHERE billing_month='2026-10-01'").Scan(&cohort); err != nil {
+					t.Fatal(err)
+				}
+				if october.TotalCents != scenario.wantOctoberTotal || november.TotalCents != scenario.wantNovemberTotal || cohort != scenario.wantCohort {
+					t.Fatalf("recovered cohort: October=%d November=%d members=%d; want %d %d %d", october.TotalCents, november.TotalCents, cohort, scenario.wantOctoberTotal, scenario.wantNovemberTotal, scenario.wantCohort)
+				}
+				if got := readMissingPriceLogs(t, logs); !reflect.DeepEqual(got, []missingPriceLog{scenario.wantLog}) {
+					t.Errorf("Closing recovery reports=%+v; want only original %+v", got, scenario.wantLog)
+				}
+			})
 		}
 	})
 }
