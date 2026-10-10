@@ -111,14 +111,16 @@ The pure Go calculation `accounting.Rate` performs rating; the worker commits it
 For the current price contract:
 
 ```text
-exact_charge_ticks = units × price_per_million_cents
+price_unit_count = 1_000_000
+ticks_per_cent = 1_000_000
+exact_charge_ticks = units × price_per_million_cents × ticks_per_cent / price_unit_count
 ```
 
-There is no division by a million in this multiplication because one cent already represents a million ticks. At 5 cents per million, the result is `1_000 × 5 = 5_000 ticks`.
+The constants `accounting.PriceUnitCount` and `accounting.TicksPerCent` describe resource units per price and ticks per cent, respectively. Their current values cancel. At 5 cents per million, the result is `1_000 × 5 × 1_000_000 / 1_000_000 = 5_000 ticks`. The calculation multiplies before dividing and rejects a fractional-tick result.
 
 The tick column uses the `billing_ticks` domain over exact PostgreSQL `numeric`. It accepts only non-negative finite integers. Aggregated `total_units` also uses integer-valued `numeric`, allowing totals beyond the `bigint` range of one event. Go must use checked integer arithmetic or arbitrary-precision integers. Overflow must fail visibly. These exact financial calculations do not use `float64`.
 
-Both default and customer-specific rates support only whole cents **per million units** in this model. This still allows individual measurements to cost far less than a cent. Finer catalog prices would require a new precision contract; the `bigint` column `price_per_million_cents` cannot store a fractional-cent rate.
+Both default and customer-specific rates support only whole cents **per million units** in this model. This still allows individual measurements to cost far less than a cent. [Issue #29](https://github.com/pupitooo/e2b-billing-api/issues/29) proposes a per-version `price_unit_count` with 1_000_000 for all existing prices. A variable denominator would still require exact whole-tick charges: merely requiring a multiple of a million is insufficient, since 5 cents per 2_000_000 units gives 2.5 ticks for one unit. The proposal preserves the current money resolution; prices requiring fractional ticks would need a separate precision change.
 
 ### Example: why summing all units and using the current price fails
 
