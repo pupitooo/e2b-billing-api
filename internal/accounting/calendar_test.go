@@ -277,6 +277,14 @@ func TestBillingMonth(t *testing.T) {
 			wantError:    true,
 		},
 		{
+			name:         "last supported month remains valid while open",
+			usageMonth:   "9999-12-01T00:00:00Z",
+			receivedAt:   "9999-12-01T00:00:00Z",
+			closedMonths: nil,
+			wantMonth:    "9999-12-01T00:00:00Z",
+			wantError:    false,
+		},
+		{
 			name:         "routing beyond the last supported month is rejected",
 			usageMonth:   "9999-12-01T00:00:00Z",
 			receivedAt:   "9999-12-01T00:00:00Z",
