@@ -165,14 +165,18 @@ func TestLoadConfig(t *testing.T) {
 				if err == nil {
 					t.Fatalf("loadConfig(%v) error = nil; want an error", tt.environment)
 				}
+
 				if !strings.Contains(err.Error(), tt.wantErrorContains) {
 					t.Errorf("loadConfig error = %q; want text %q", err, tt.wantErrorContains)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("loadConfig(%v) error = %v; want nil", tt.environment, err)
 			}
+
 			if got != tt.want {
 				t.Errorf("loadConfig(%v) = %+v; want %+v", tt.environment, got, tt.want)
 			}

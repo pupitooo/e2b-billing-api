@@ -55,16 +55,19 @@ func TestServeUntilStopped(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("Request never entered the handler")
 		}
+
 		cancel()
 		select {
 		case err := <-stopped:
 			t.Fatalf("Server returned with a request still active: %v", err)
 		case <-time.After(30 * time.Millisecond):
 		}
+
 		unblock()
 		if status := <-response; status != tt.wantResponseStatus {
 			t.Errorf("Drained response = %d, want 202", status)
 		}
+
 		if err := <-stopped; !errors.Is(err, tt.wantShutdownError) {
 			t.Errorf("Graceful shutdown: %v", err)
 		}
@@ -95,10 +98,12 @@ func TestServeUntilStopped(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("Request never entered the handler")
 		}
+
 		cancel()
 		if err := <-stopped; !errors.Is(err, tt.wantShutdownError) {
 			t.Errorf("Shutdown error = %v, want deadline exceeded", err)
 		}
+
 		select {
 		case <-canceled:
 		case <-time.After(time.Second):
@@ -118,6 +123,7 @@ func TestServeUntilStopped(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Open test listener: %v", err)
 		}
+
 		listener.Close()
 		if err := serveUntilStopped(context.Background(), &http.Server{}, listener, tt.shutdownTimeout); (err != nil) != tt.wantError {
 			t.Fatal("Closed listener was treated as graceful shutdown")
@@ -133,10 +139,12 @@ func startHTTPServer(t *testing.T, handler http.Handler, timeout time.Duration) 
 	if err != nil {
 		t.Fatalf("Open test listener: %v", err)
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	server := &http.Server{Handler: handler}
 	t.Cleanup(func() { cancel(); server.Close() })
 	stopped := make(chan error, 1)
 	go func() { stopped <- serveUntilStopped(ctx, server, listener, timeout) }()
+
 	return "http://" + listener.Addr().String(), cancel, stopped
 }

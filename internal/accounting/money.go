@@ -25,8 +25,10 @@ func FromTicks(ticks *big.Int) (Amount, error) {
 	if ticks == nil || ticks.Sign() < 0 {
 		return Amount{}, fmt.Errorf("ticks must be a non-negative integer")
 	}
+
 	var amount Amount
 	amount.ticks.Set(ticks)
+
 	return amount, nil
 }
 
@@ -35,8 +37,10 @@ func FromCents(cents int64) (Amount, error) {
 	if cents < 0 {
 		return Amount{}, fmt.Errorf("cents must be non-negative")
 	}
+
 	var amount Amount
 	amount.ticks.Mul(big.NewInt(cents), big.NewInt(TicksPerCent))
+
 	return amount, nil
 }
 
@@ -47,6 +51,7 @@ func UsageCharge(units, pricePerMillionCents int64) (Amount, error) {
 	if units < 0 || pricePerMillionCents < 0 {
 		return Amount{}, fmt.Errorf("units and price must be non-negative")
 	}
+
 	var amount Amount
 	amount.ticks.Mul(big.NewInt(units), big.NewInt(pricePerMillionCents))
 	amount.ticks.Mul(&amount.ticks, big.NewInt(TicksPerCent))
@@ -55,6 +60,7 @@ func UsageCharge(units, pricePerMillionCents int64) (Amount, error) {
 	if remainder.Sign() != 0 {
 		return Amount{}, fmt.Errorf("charge cannot be represented in whole ticks")
 	}
+
 	return amount, nil
 }
 
@@ -64,6 +70,7 @@ func (a Amount) Ticks() *big.Int { return new(big.Int).Set(&a.ticks) }
 func (a Amount) Add(b Amount) Amount {
 	var sum Amount
 	sum.ticks.Add(&a.ticks, &b.ticks)
+
 	return sum
 }
 
@@ -73,8 +80,10 @@ func (a Amount) Subtract(b Amount) (Amount, error) {
 	if a.Compare(b) < 0 {
 		return Amount{}, fmt.Errorf("amount subtraction would be negative")
 	}
+
 	var difference Amount
 	difference.ticks.Sub(&a.ticks, &b.ticks)
+
 	return difference, nil
 }
 
@@ -85,6 +94,7 @@ func (a Amount) RoundCents() (int64, error) {
 	if !rounded.IsInt64() {
 		return 0, fmt.Errorf("rounded cents exceed the signed 64-bit range")
 	}
+
 	return rounded.Int64(), nil
 }
 
@@ -101,9 +111,11 @@ func AllocateCredit(charge, available Amount) CreditAllocation {
 	if available.Compare(charge) < 0 {
 		used = available
 	}
+
 	// Both subtractions are non-negative by construction.
 	remaining, _ := available.Subtract(used)
 	net, _ := charge.Subtract(used)
+
 	return CreditAllocation{Used: used, Remaining: remaining, NetCharge: net}
 }
 
@@ -123,14 +135,17 @@ func InvoiceAmounts(gross, allocatedCredit Amount) (InvoiceCharge, error) {
 	if err != nil {
 		return InvoiceCharge{}, fmt.Errorf("allocated credit exceeds gross charge")
 	}
+
 	grossCents, err := gross.RoundCents()
 	if err != nil {
 		return InvoiceCharge{}, err
 	}
+
 	netCents, err := net.RoundCents()
 	if err != nil {
 		return InvoiceCharge{}, err
 	}
+
 	return InvoiceCharge{GrossCents: grossCents, CreditCents: grossCents - netCents, NetCents: netCents}, nil
 }
 
@@ -140,9 +155,11 @@ func LimitReached(gross Amount, limitCents *int64) (bool, error) {
 	if limitCents == nil {
 		return false, nil
 	}
+
 	limit, err := FromCents(*limitCents)
 	if err != nil {
 		return false, err
 	}
+
 	return gross.Compare(limit) >= 0, nil
 }

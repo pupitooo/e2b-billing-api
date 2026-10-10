@@ -60,24 +60,29 @@ func parseUsageBatch(body []byte) (usageBatch, *requestError) {
 	if !validUnicodeJSON(body) {
 		return usageBatch{}, invalidJSON("The body must contain one valid UTF-8 JSON document.", "")
 	}
+
 	fields, err := decodeObject(body, []string{"batch_id", "events"})
 	if err != nil {
 		return usageBatch{}, invalidJSON(err.Error(), "")
 	}
+
 	var batch usageBatch
 	var validationError *requestError
 	batch.BatchID, validationError = parseBatchID(fields)
 	if validationError != nil {
 		return batch, validationError
 	}
+
 	events, validationError := decodeBatchEvents(fields)
 	if validationError != nil {
 		return batch, validationError
 	}
+
 	batch.Events, validationError = parseBatchEvents(events)
 	if validationError != nil {
 		return usageBatch{}, validationError
 	}
+
 	return batch, nil
 }
 
@@ -90,16 +95,20 @@ func parseBatchID(fields map[string]json.RawMessage) (string, *requestError) {
 	if !present {
 		return "", nil
 	}
+
 	if isNull(raw) {
 		return "", invalidBatch("batch_id must be a nonblank string when supplied.", "batch_id")
 	}
+
 	var id string
 	if err := json.Unmarshal(raw, &id); err != nil {
 		return id, invalidJSON("batch_id must be a JSON string.", "batch_id")
 	}
+
 	if strings.TrimSpace(id) == "" || strings.ContainsRune(id, '\x00') || len(id) > maxIdentifierBytes {
 		return id, invalidBatch("batch_id must contain non-whitespace text, no NUL, and at most 256 UTF-8 bytes.", "batch_id")
 	}
+
 	return id, nil
 }
 
@@ -108,13 +117,16 @@ func decodeBatchEvents(fields map[string]json.RawMessage) ([]json.RawMessage, *r
 	if !present || isNull(rawEvents) {
 		return nil, invalidBatch("events is required and must be a nonempty array.", "events")
 	}
+
 	var events []json.RawMessage
 	if err := json.Unmarshal(rawEvents, &events); err != nil {
 		return nil, invalidJSON("events must be a JSON array.", "events")
 	}
+
 	if len(events) == 0 || len(events) > maxBatchEvents {
 		return nil, invalidBatch("events must contain between 1 and 1000 measurements.", "events")
 	}
+
 	return events, nil
 }
 
@@ -125,8 +137,10 @@ func parseBatchEvents(events []json.RawMessage) ([]usage.Event, *requestError) {
 		if err != nil {
 			return nil, err
 		}
+
 		parsed = append(parsed, event)
 	}
+
 	return parsed, nil
 }
 
@@ -135,16 +149,19 @@ func parseUsageEvent(raw []byte, prefix string) (usage.Event, *requestError) {
 	if err != nil {
 		return usage.Event{}, invalidJSON(err.Error(), prefix)
 	}
+
 	for _, name := range eventFields {
 		value, present := fields[name]
 		if !present || isNull(value) {
 			return usage.Event{}, invalidBatch("The event field is required and must not be null.", prefix+"."+name)
 		}
 	}
+
 	var input eventInput
 	if err := json.Unmarshal(raw, &input); err != nil {
 		return usage.Event{}, invalidJSON("Use JSON strings for identifiers and timestamps, and int32/int64 integer tokens for version and units.", prefix)
 	}
+
 	event := usage.Event{
 		Source: input.Source, EventID: input.EventID, SchemaVersion: input.SchemaVersion,
 		CustomerID: input.CustomerID, SandboxID: input.SandboxID, Metric: input.Metric,
@@ -158,22 +175,27 @@ func parseUsageEvent(raw []byte, prefix string) (usage.Event, *requestError) {
 			return event, invalidBatch("Identifiers must not exceed 256 UTF-8 bytes.", prefix+"."+identifier.name)
 		}
 	}
+
 	start, err := parseTimestamp(input.PeriodStart)
 	if err != nil {
 		return event, invalidBatch(err.Error(), prefix+".period_start")
 	}
+
 	end, err := parseTimestamp(input.PeriodEnd)
 	if err != nil {
 		return event, invalidBatch(err.Error(), prefix+".period_end")
 	}
+
 	event.PeriodStart, event.PeriodEnd = start, end
 	if err := event.Validate(); err != nil {
 		var validationError *usage.ValidationError
 		if errors.As(err, &validationError) {
 			return event, invalidBatch(validationError.Message, prefix+"."+validationError.Field)
 		}
+
 		return event, invalidBatch(err.Error(), prefix)
 	}
+
 	return event, nil
 }
 
@@ -186,28 +208,35 @@ func decodeObject(raw []byte, allowed []string) (map[string]json.RawMessage, err
 	if err != nil || token != json.Delim('{') {
 		return nil, errors.New("Expected a JSON object.")
 	}
+
 	fields := make(map[string]json.RawMessage)
 	for decoder.More() {
 		token, err := decoder.Token()
 		if err != nil {
 			return nil, errors.New("Invalid JSON object.")
 		}
+
 		name, ok := token.(string)
 		if !ok || !slices.Contains(allowed, name) {
 			return nil, errors.New("The object contains an unknown field; names are case-sensitive.")
 		}
+
 		if _, exists := fields[name]; exists {
 			return nil, errors.New("The object contains a duplicate field.")
 		}
+
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
 			return nil, errors.New("Invalid JSON field value.")
 		}
+
 		fields[name] = value
 	}
+
 	if _, err := decoder.Token(); err != nil {
 		return nil, errors.New("Invalid JSON object.")
 	}
+
 	return fields, nil
 }
 
@@ -215,10 +244,12 @@ func parseTimestamp(value string) (time.Time, error) {
 	if !timestampPattern.MatchString(value) {
 		return time.Time{}, errors.New("Use RFC 3339 with an explicit offset and at most six fractional digits.")
 	}
+
 	parsed, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {
 		return time.Time{}, errors.New("The timestamp must be a valid calendar instant.")
 	}
+
 	return parsed.UTC(), nil
 }
 
@@ -230,27 +261,33 @@ func hasUnpairedSurrogate(raw []byte) bool {
 		if raw[index] != '\\' {
 			continue
 		}
+
 		if raw[index+1] != 'u' {
 			index++
 			continue
 		}
+
 		value, _ := strconv.ParseUint(string(raw[index+2:index+6]), 16, 16)
 		if value >= 0xdc00 && value <= 0xdfff {
 			return true
 		}
+
 		if value >= 0xd800 && value <= 0xdbff {
 			if index+12 > len(raw) || raw[index+6] != '\\' || raw[index+7] != 'u' {
 				return true
 			}
+
 			low, err := strconv.ParseUint(string(raw[index+8:index+12]), 16, 16)
 			if err != nil || low < 0xdc00 || low > 0xdfff {
 				return true
 			}
+
 			index += 11
 		} else {
 			index += 5
 		}
 	}
+
 	return false
 }
 

@@ -31,6 +31,7 @@ func (s *Store) transact(ctx context.Context, action func(pgx.Tx) error) error {
 	if err != nil {
 		return err
 	}
+
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -39,9 +40,11 @@ func (s *Store) transact(ctx context.Context, action func(pgx.Tx) error) error {
 	if _, err := tx.Exec(ctx, "SET LOCAL synchronous_commit = on"); err != nil {
 		return err
 	}
+
 	if err := action(tx); err != nil {
 		return err
 	}
+
 	return tx.Commit(ctx)
 }
 
@@ -53,9 +56,11 @@ func lockAccount(ctx context.Context, tx pgx.Tx, customer string) (accounting.Am
 	if errors.Is(err, pgx.ErrNoRows) {
 		return accounting.Amount{}, ErrNotFound
 	}
+
 	if err != nil {
 		return accounting.Amount{}, err
 	}
+
 	return amount(ticks)
 }
 
@@ -65,6 +70,7 @@ func amount(ticks string) (accounting.Amount, error) {
 	if !ok {
 		return accounting.Amount{}, fmt.Errorf("invalid integer ticks: %q", ticks)
 	}
+
 	return accounting.FromTicks(value)
 }
 
@@ -80,6 +86,8 @@ func catalogLock(ctx context.Context, tx pgx.Tx, exclusive bool) error {
 	if exclusive {
 		command = "SELECT pg_advisory_xact_lock(65102, 2)"
 	}
+
 	_, err := tx.Exec(ctx, command)
+
 	return err
 }

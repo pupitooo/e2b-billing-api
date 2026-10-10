@@ -56,16 +56,20 @@ func TestRun(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Error(err)
 				w.WriteHeader(400)
+
 				return
 			}
+
 			mutex.Lock()
 			requests++
 			for _, event := range body.Events {
 				if previous, present := stored[event.EventID]; present && !sameJSON(previous, event) {
 					t.Error("Retry changed measurement content")
 				}
+
 				stored[event.EventID] = event
 			}
+
 			mutex.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(202)
@@ -80,19 +84,23 @@ func TestRun(t *testing.T) {
 		if err := Run(context.Background(), options); err == nil {
 			t.Fatal("Deliberate lost response unexpectedly saved a receipt")
 		}
+
 		state := readSimulatorState(t, path)
 		if state.NextStep != tt.wantStep || len(state.pending(false)) != tt.wantPendingAfterLoss || state.LostResponseInjected != tt.wantLostResponseInjected || state.Attempts != tt.wantAttemptsAfterLoss {
 			t.Fatalf("Lost response checkpoint = %+v", state)
 		}
+
 		sender.BatchSize = tt.resumeBatchSize
 		options.Action, options.Plan = "send", nil
 		if err := Run(context.Background(), options); err != nil {
 			t.Fatal(err)
 		}
+
 		state = readSimulatorState(t, path)
 		if state.NextStep != tt.wantStep || len(state.pending(false)) != tt.wantPendingAfterResume || state.Attempts != tt.wantAttemptsAfterResume {
 			t.Fatalf("Resumed checkpoint = %+v", state)
 		}
+
 		mutex.Lock()
 		defer mutex.Unlock()
 		if len(stored) != tt.wantStored || requests != tt.wantRequests {
@@ -123,10 +131,12 @@ func TestRun(t *testing.T) {
 			if err != nil || json.Unmarshal(data, &checkpoint) != nil || checkpoint.NextStep == 0 {
 				t.Error("Request preceded durable scenario release")
 			}
+
 			var body struct{ Events []Event }
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Error(err)
 			}
+
 			mutex.Lock()
 			received = append(received, body.Events...)
 			mutex.Unlock()
@@ -141,24 +151,29 @@ func TestRun(t *testing.T) {
 			if err := Run(context.Background(), options); err != nil {
 				t.Fatal(err)
 			}
+
 			if got := readSimulatorState(t, path).NextStep; got != wantStep {
 				t.Errorf("Invocation %d: cursor = %d, want %d", invocation, got, wantStep)
 			}
 		}
+
 		options.Advance, options.Mode = true, "fast"
 		if err := Run(context.Background(), options); err != nil {
 			t.Fatal(err)
 		}
+
 		options.Action, options.Plan = "replay", nil
 		options.Sender.Reverse, options.Sender.BatchSize = tt.reverseReplay, tt.replayBatchSize
 		if err := Run(context.Background(), options); err != nil {
 			t.Fatal(err)
 		}
+
 		mutex.Lock()
 		defer mutex.Unlock()
 		if len(received) != tt.wantReceived {
 			t.Fatalf("Received %d measurements, want six originals and six retries", len(received))
 		}
+
 		for index := range tt.wantOriginals {
 			if !sameJSON(received[index], received[tt.wantReceived-1-index]) {
 				t.Errorf("Reversed retry changed event %d", index)
@@ -193,8 +208,10 @@ func TestRun(t *testing.T) {
 			if first {
 				w.Header().Set("Retry-After", tt.retryAfter)
 				w.WriteHeader(tt.firstResponseStatus)
+
 				return
 			}
+
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(202)
 			io.WriteString(w, `{"status":"accepted"}`)
@@ -208,6 +225,7 @@ func TestRun(t *testing.T) {
 		if err := Run(context.Background(), Options{StatePath: path, Action: "run", Mode: "step", Plan: &plan, Sender: sender}); err != nil {
 			t.Fatal(err)
 		}
+
 		mutex.Lock()
 		defer mutex.Unlock()
 		if paused < tt.wantMinimumDelay || len(bodies) != tt.wantRequests || bytes.Equal(bodies[0], bodies[1]) != tt.wantBodyUnchanged || len(readSimulatorState(t, path).pending(false)) != tt.wantPending {
@@ -281,6 +299,7 @@ func TestRun(t *testing.T) {
 				if (err != nil) != response.wantError {
 					t.Fatalf("Run error = %v; want error=%t", err, response.wantError)
 				}
+
 				if requests.Load() != response.wantRequests || len(state.pending(false)) != response.wantPending || (state.LastError != "") != response.wantSavedError {
 					t.Fatalf("Rejected response lost pending evidence: requests=%d, err=%v, state=%+v", requests.Load(), err, state)
 				}
@@ -343,6 +362,7 @@ func TestRun(t *testing.T) {
 					t.Error(err)
 				}
 			}
+
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(202)
 			io.WriteString(w, `{"status":"accepted"}`)
@@ -354,18 +374,23 @@ func TestRun(t *testing.T) {
 		if err := Run(context.Background(), options); err == nil || !strings.Contains(err.Error(), tt.wantErrorContains) {
 			t.Fatalf("Missing receipt write was not reported: %v", err)
 		}
+
 		if !strings.Contains(output.String(), tt.wantFailureOutput) {
 			t.Errorf("Failed receipt was displayed as confirmed: %s", output.String())
 		}
+
 		if err := os.Rename(directory+"-offline", directory); err != nil {
 			t.Fatal(err)
 		}
+
 		if len(readSimulatorState(t, path).pending(false)) != tt.wantPendingAfterFailure {
 			t.Fatal("Failed receipt write advanced the durable checkpoint")
 		}
+
 		if err := Run(context.Background(), options); err != nil {
 			t.Fatal(err)
 		}
+
 		state := readSimulatorState(t, path)
 		if requests.Load() != tt.wantRequestsAfterRecovery || state.NextStep != tt.wantStepAfterRecovery || len(state.pending(false)) != tt.wantPendingAfterRecovery {
 			t.Errorf("Receipt recovery advanced the scenario or lost work: %+v", state)
@@ -403,6 +428,7 @@ func TestRun(t *testing.T) {
 			event.EventID = strings.Repeat("e", tt.eventIDPrefixBytes) + fmt.Sprintf("%016d", index)
 			plan.Steps[0].Events = append(plan.Steps[0].Events, event)
 		}
+
 		var mutex sync.Mutex
 		count, requests := 0, 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -411,6 +437,7 @@ func TestRun(t *testing.T) {
 			if len(data) > tt.wantMaximumBodyBytes || json.Unmarshal(data, &body) != nil || len(body.Events) > tt.wantMaximumEventsPerRequest {
 				t.Error("Request violated an API batch limit")
 			}
+
 			mutex.Lock()
 			count += len(body.Events)
 			requests++
@@ -426,6 +453,7 @@ func TestRun(t *testing.T) {
 		if err := Run(context.Background(), Options{StatePath: path, Action: "run", Mode: "fast", Plan: &plan, Sender: sender}); err != nil {
 			t.Fatal(err)
 		}
+
 		mutex.Lock()
 		defer mutex.Unlock()
 		if count != tt.wantDeliveredCount || requests < tt.wantMinimumRequests || len(readSimulatorState(t, path).pending(false)) != tt.wantPending {
@@ -458,11 +486,13 @@ func TestRun(t *testing.T) {
 				if err := os.WriteFile(path, []byte(tt.savedData), 0600); err != nil {
 					t.Fatal(err)
 				}
+
 				plan := simulatorPlan(t)
 				err := Run(context.Background(), Options{StatePath: path, Action: "generate", Mode: "fast", Plan: &plan})
 				if (err != nil) != tt.wantError {
 					t.Error("Corrupt state was replaced")
 				}
+
 				after, err := os.ReadFile(path)
 				if err != nil || (string(after) == tt.savedData) != tt.wantDataUnchanged {
 					t.Fatalf("Original state was not retained: %s, %v", after, err)
@@ -491,14 +521,17 @@ func TestRun(t *testing.T) {
 		if err := store.Save(state); err != nil {
 			t.Fatal(err)
 		}
+
 		before, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		var output bytes.Buffer
 		if err := Run(context.Background(), Options{StatePath: path, Action: tt.action, Mode: "fast", Output: &output}); err != nil {
 			t.Fatal(err)
 		}
+
 		after, err := os.ReadFile(path)
 		if err != nil || bytes.Equal(before, after) != tt.wantStateUnchanged || !strings.Contains(output.String(), tt.wantOutput) {
 			t.Fatalf("Concurrent status changed or misreported the buffer: %s, %v", output.String(), err)
@@ -521,18 +554,22 @@ func TestRun(t *testing.T) {
 		if err := Run(context.Background(), options); err != nil {
 			t.Fatal(err)
 		}
+
 		before, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		changed, err := Assignment(tt.newSource, 1, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		options.Plan = &changed
 		if err := Run(context.Background(), options); (err != nil) != tt.wantError {
 			t.Error("Changed plan replaced pending work")
 		}
+
 		after, err := os.ReadFile(path)
 		if err != nil || bytes.Equal(before, after) != tt.wantStateUnchanged {
 			t.Error("Changed input mutated the original state")
@@ -558,12 +595,15 @@ func TestRun(t *testing.T) {
 		if err := Run(context.Background(), options); err != nil {
 			t.Fatal(err)
 		}
+
 		if cursor := readSimulatorState(t, path).NextStep; cursor != tt.wantStepAfterFirstCommand {
 			t.Fatalf("One advance passed multiple barriers: cursor=%d", cursor)
 		}
+
 		if err := Run(context.Background(), options); err != nil {
 			t.Fatal(err)
 		}
+
 		if cursor := readSimulatorState(t, path).NextStep; cursor != tt.wantStepAfterSecondCommand {
 			t.Errorf("Separate advance did not release the next phase: cursor=%d", cursor)
 		}
@@ -588,12 +628,15 @@ func readSimulatorState(t *testing.T, path string) *State {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var state State
 	if err := json.Unmarshal(data, &state); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := state.validate(); err != nil {
 		t.Fatal(err)
 	}
+
 	return &state
 }

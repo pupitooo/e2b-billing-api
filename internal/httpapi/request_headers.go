@@ -8,6 +8,7 @@ import (
 
 func usesJSONUTF8(r *http.Request) bool {
 	mediaType, parameters, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+
 	return err == nil && mediaType == "application/json" &&
 		(parameters["charset"] == "" || strings.EqualFold(parameters["charset"], "utf-8"))
 }

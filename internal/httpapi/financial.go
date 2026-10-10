@@ -20,10 +20,12 @@ func commandJSON(w http.ResponseWriter, r *http.Request, target any, fields []st
 		writeRequestError(w, err)
 		return false
 	}
+
 	if err := parseCommandJSON(body, target, fields, nullable); err != nil {
 		writeRequestError(w, err)
 		return false
 	}
+
 	return true
 }
 
@@ -31,6 +33,7 @@ func readCommandBody(w http.ResponseWriter, r *http.Request) ([]byte, *requestEr
 	if !usesJSONUTF8(r) || !usesIdentityEncoding(r) {
 		return nil, &requestError{status: 415, Code: "unsupported_media_type", Message: "Use uncompressed application/json with UTF-8 encoding."}
 	}
+
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 65_536))
 	if err != nil {
 		var size *http.MaxBytesError
@@ -38,8 +41,10 @@ func readCommandBody(w http.ResponseWriter, r *http.Request) ([]byte, *requestEr
 		if errors.As(err, &size) {
 			status = 413
 		}
+
 		return nil, &requestError{status: status, Code: "invalid_json", Message: "Cannot read command body; the maximum is 65536 bytes."}
 	}
+
 	return body, nil
 }
 
@@ -47,19 +52,23 @@ func parseCommandJSON(body []byte, target any, fields, nullable []string) *reque
 	if !validUnicodeJSON(body) {
 		return invalidJSON("Use one valid Unicode JSON document.", "")
 	}
+
 	values, err := decodeObject(body, fields)
 	if err != nil {
 		return invalidJSON(err.Error(), "")
 	}
+
 	for _, field := range fields {
 		raw, present := values[field]
 		if !present || (isNull(raw) && !slices.Contains(nullable, field)) {
 			return &requestError{status: 422, Code: "invalid_command", Message: "The field must be explicitly supplied.", Field: field}
 		}
 	}
+
 	if err := json.Unmarshal(body, target); err != nil {
 		return invalidJSON("Command field types or integer ranges are invalid.", "")
 	}
+
 	return nil
 }
 
@@ -68,6 +77,7 @@ func commandTime(value, field string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, &billing.ValidationError{Field: field, Message: err.Error()}
 	}
+
 	return parsed, nil
 }
 
@@ -76,6 +86,7 @@ func financialResult(w http.ResponseWriter, value any, err error) {
 		writeFinancialError(w, err)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(value)
 }

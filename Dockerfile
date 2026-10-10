@@ -3,6 +3,9 @@ FROM public.ecr.aws/docker/library/golang:1.27.2-alpine AS go-tools
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
+COPY scripts/whitespace/go.mod scripts/whitespace/go.sum ./scripts/whitespace/
+RUN go build -mod=readonly -modfile=./scripts/whitespace/go.mod \
+    -o /usr/local/bin/e2b-wsl github.com/bombsimon/wsl/v5/cmd/wsl
 
 FROM go-tools AS api
 COPY cmd ./cmd

@@ -51,6 +51,7 @@ func TestWorkerRun(t *testing.T) {
 			if active.Add(1) != 1 {
 				overlapped.Store(true)
 			}
+
 			defer active.Add(-1)
 			call := calls.Add(1)
 			select {
@@ -58,10 +59,13 @@ func TestWorkerRun(t *testing.T) {
 			case <-ctx.Done():
 				return false, ctx.Err()
 			}
+
 			if call <= tt.availableBatches {
 				return true, nil
 			}
+
 			<-ctx.Done()
+
 			return false, ctx.Err()
 		}
 		run := startWorkerRun(t, w.Run)
@@ -70,10 +74,12 @@ func TestWorkerRun(t *testing.T) {
 				t.Fatalf("Batch order = %d, want %d", got, want)
 			}
 		}
+
 		run.cancel()
 		if err := waitForWorkerRun(t, run); err != nil {
 			t.Fatalf("Stop worker: %v", err)
 		}
+
 		if calls.Load() != tt.wantCalls || active.Load() != tt.wantActiveAfterShutdown || overlapped.Load() != tt.wantOverlap {
 			t.Fatalf("Callbacks: calls=%d active=%d overlap=%t; want three serial, completed callbacks",
 				calls.Load(), active.Load(), overlapped.Load())
@@ -100,7 +106,9 @@ func TestWorkerRun(t *testing.T) {
 			if err != nil {
 				return false, err
 			}
+
 			initialHeartbeat <- string(data)
+
 			return tt.batchHasMore, nil
 		}
 		run := startWorkerRun(t, w.Run)
@@ -110,6 +118,7 @@ func TestWorkerRun(t *testing.T) {
 		if err := waitForWorkerRun(t, run); err != nil {
 			t.Fatalf("Stop idle worker: %v", err)
 		}
+
 		if calls.Load() != tt.wantCalls {
 			t.Fatalf("Idle callbacks = %d, want 1", calls.Load())
 		}
@@ -134,6 +143,7 @@ func TestWorkerRun(t *testing.T) {
 			started <- struct{}{}
 			<-ctx.Done()
 			batchError <- ctx.Err()
+
 			return tt.batchHasMore, ctx.Err()
 		}
 		run := startWorkerRun(t, w.Run)
@@ -142,9 +152,11 @@ func TestWorkerRun(t *testing.T) {
 		if err := awaitValue(t, batchError, "batch cancellation"); !errors.Is(err, tt.wantBatchError) {
 			t.Fatalf("Batch context error = %v, want context.Canceled", err)
 		}
+
 		if err := waitForWorkerRun(t, run); err != nil {
 			t.Fatalf("Stop worker during a batch: %v", err)
 		}
+
 		if calls.Load() != tt.wantCalls {
 			t.Fatalf("Callbacks after cancellation = %d, want 1", calls.Load())
 		}
@@ -181,15 +193,19 @@ func TestWorkerRun(t *testing.T) {
 				if !ok {
 					return false, errors.New("batch context has no deadline")
 				}
+
 				<-ctx.Done()
 				expired <- expiration{deadline: deadline, finished: time.Now(), err: ctx.Err()}
+
 				return tt.batchHasMore, nil
 			}
+
 			select {
 			case retried <- time.Now():
 			case <-ctx.Done():
 				return false, ctx.Err()
 			}
+
 			return false, nil
 		}
 		run := startWorkerRun(t, w.Run)
@@ -197,12 +213,15 @@ func TestWorkerRun(t *testing.T) {
 		if !errors.Is(got.err, tt.wantBatchError) {
 			t.Fatalf("Batch context error = %v, want context.DeadlineExceeded", got.err)
 		}
+
 		if got.finished.Before(got.deadline) {
 			t.Fatalf("Batch expired at %s before its deadline %s", got.finished, got.deadline)
 		}
+
 		if delay := awaitValue(t, retried, "retry after expired batch").Sub(got.finished); delay < tt.wantMinimumRetryDelay {
 			t.Fatalf("Deadline retry delay = %s, want at least %s", delay, w.PollInterval)
 		}
+
 		run.cancel()
 		if err := waitForWorkerRun(t, run); err != nil {
 			t.Fatalf("Stop worker after deadline retry: %v", err)
@@ -231,11 +250,13 @@ func TestWorkerRun(t *testing.T) {
 				failed <- time.Now()
 				return tt.batchHasMore, tt.batchError
 			}
+
 			select {
 			case retried <- time.Now():
 			case <-ctx.Done():
 				return false, ctx.Err()
 			}
+
 			return false, nil
 		}
 		run := startWorkerRun(t, w.Run)
@@ -243,9 +264,11 @@ func TestWorkerRun(t *testing.T) {
 		if delay := awaitValue(t, retried, "retry after failed batch").Sub(failedAt); delay < tt.wantMinimumRetryDelay {
 			t.Fatalf("Error retry delay = %s, want at least %s", delay, w.PollInterval)
 		}
+
 		if err := CheckHealth(w.HeartbeatFile, time.Second, time.Now); err != nil {
 			t.Fatalf("Retrying worker should still report loop activity: %v", err)
 		}
+
 		run.cancel()
 		if err := waitForWorkerRun(t, run); err != nil {
 			t.Fatalf("Stop worker after error retry: %v", err)
@@ -267,6 +290,7 @@ func TestWorkerRun(t *testing.T) {
 		w.ProcessBatch = func(ctx context.Context) (bool, error) {
 			started <- struct{}{}
 			<-ctx.Done()
+
 			return false, ctx.Err()
 		}
 		run := startWorkerRun(t, w.Run)
@@ -274,21 +298,26 @@ func TestWorkerRun(t *testing.T) {
 		if err := CheckHealth(w.HeartbeatFile, time.Second, time.Now); err != nil {
 			t.Fatalf("Running worker heartbeat: %v", err)
 		}
+
 		data, err := os.ReadFile(w.HeartbeatFile)
 		if err != nil {
 			t.Fatalf("Read active heartbeat: %v", err)
 		}
+
 		if !strings.HasSuffix(string(data), tt.wantTimestampSuffix) {
 			t.Fatalf("Heartbeat = %q, want a UTC timestamp ending with a newline", data)
 		}
+
 		files, err := os.ReadDir(filepath.Dir(w.HeartbeatFile))
 		if err != nil || len(files) != tt.wantActiveFiles || files[0].Name() != filepath.Base(w.HeartbeatFile) {
 			t.Fatalf("Active heartbeat directory has %d entries, want only the heartbeat; error=%v", len(files), err)
 		}
+
 		run.cancel()
 		if err := waitForWorkerRun(t, run); err != nil {
 			t.Fatalf("Stop worker: %v", err)
 		}
+
 		if _, err := os.Stat(w.HeartbeatFile); errors.Is(err, os.ErrNotExist) != tt.wantMissingAfterShutdown {
 			t.Fatalf("Heartbeat after shutdown: error=%v, want a removed file", err)
 		}
@@ -325,6 +354,7 @@ func TestWorkerRun(t *testing.T) {
 				} else if err := os.Mkdir(w.HeartbeatFile, 0700); err != nil {
 					t.Fatalf("Create unusable heartbeat target: %v", err)
 				}
+
 				var calls int
 				w.ProcessBatch = func(context.Context) (bool, error) {
 					calls++
@@ -333,19 +363,23 @@ func TestWorkerRun(t *testing.T) {
 				if err := w.Run(context.Background()); (err != nil) != tt.wantErroror {
 					t.Fatal("Run should fail when its initial heartbeat cannot be written")
 				}
+
 				if calls != tt.wantCalls {
 					t.Fatalf("Callbacks after failed startup = %d, want 0", calls)
 				}
+
 				files, err := os.ReadDir(parent)
 				if err != nil {
 					t.Fatalf("Inspect failed heartbeat directory: %v", err)
 				}
+
 				temporaryFiles := 0
 				for _, file := range files {
 					if strings.HasPrefix(file.Name(), ".billing-worker-heartbeat-") {
 						temporaryFiles++
 					}
 				}
+
 				if temporaryFiles != tt.wantTemporaryFiles {
 					t.Errorf("Temporary heartbeat files = %d; want %d", temporaryFiles, tt.wantTemporaryFiles)
 				}
@@ -422,9 +456,11 @@ func TestWorkerRun(t *testing.T) {
 				if (err != nil) != tt.wantError {
 					t.Errorf("Run error = %v; want error=%t", err, tt.wantError)
 				}
+
 				if calls != tt.wantCalls {
 					t.Errorf("ProcessBatch calls = %d; want %d", calls, tt.wantCalls)
 				}
+
 				_, err = os.Stat(filename)
 				if errors.Is(err, os.ErrNotExist) != tt.wantHeartbeatMissing {
 					t.Errorf("Heartbeat stat error = %v; want missing=%t", err, tt.wantHeartbeatMissing)
@@ -520,6 +556,7 @@ func TestCheckHealth(t *testing.T) {
 						t.Fatalf("Write heartbeat fixture: %v", err)
 					}
 				}
+
 				if err := CheckHealth(filename, tt.maxAge, func() time.Time { return now }); (err != nil) != tt.wantError {
 					t.Fatalf("CheckHealth error = %v, want error=%t", err, tt.wantError)
 				}
@@ -546,10 +583,12 @@ func TestCheckHealth(t *testing.T) {
 		if err := os.WriteFile(filename, []byte(now.Add(-tt.initialAge).Format(time.RFC3339Nano)), 0600); err != nil {
 			t.Fatalf("Write initial heartbeat: %v", err)
 		}
+
 		clock := func() time.Time {
 			if err := os.WriteFile(filename, []byte(now.Add(tt.concurrentFutureOffset).Format(time.RFC3339Nano)), 0600); err != nil {
 				t.Fatalf("Publish concurrent heartbeat: %v", err)
 			}
+
 			return now
 		}
 		if err := CheckHealth(filename, tt.maxAge, clock); (err != nil) != tt.wantError {
@@ -581,6 +620,7 @@ func TestRunUntilStopped(t *testing.T) {
 			started <- struct{}{}
 			<-release
 			close(exited)
+
 			return false, nil
 		}
 		shutdownTimeout := tt.shutdownTimeout
@@ -599,14 +639,17 @@ func TestRunUntilStopped(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tt.wantErrorContains) {
 			t.Fatalf("Uncooperative shutdown error = %v, want a shutdown deadline failure", err)
 		}
+
 		if elapsed := time.Since(canceledAt); elapsed < tt.wantMinimumShutdownWait {
 			t.Fatalf("Shutdown waited %s, want at least %s", elapsed, shutdownTimeout)
 		}
+
 		select {
 		case <-exited:
 			t.Fatal("Uncooperative callback should remain blocked until explicitly released")
 		default:
 		}
+
 		releaseOnce.Do(func() { close(release) })
 		awaitValue(t, exited, "uncooperative callback exit")
 		waitForHeartbeatRemoval(t, w.HeartbeatFile)
@@ -641,6 +684,7 @@ func TestRunUntilStopped(t *testing.T) {
 				if err := RunUntilStopped(context.Background(), w, tt.shutdownTimeout); (err != nil) != tt.wantError {
 					t.Fatal("RunUntilStopped should reject a nonpositive timeout")
 				}
+
 				if _, err := os.Stat(w.HeartbeatFile); errors.Is(err, os.ErrNotExist) != tt.wantHeartbeatMissing {
 					t.Fatalf("Invalid shutdown timeout published a heartbeat: %v", err)
 				}
@@ -653,6 +697,7 @@ func TestRunUntilStopped(t *testing.T) {
 // idle interval, so lifecycle tests can distinguish immediate work from polling.
 func newTestWorker(t *testing.T) Worker {
 	t.Helper()
+
 	return Worker{
 		PollInterval:  time.Hour,
 		BatchTimeout:  10 * time.Second,
@@ -679,6 +724,7 @@ func startWorkerRun(t *testing.T, run func(context.Context) error) *workerRun {
 			t.Error("Worker did not stop during test cleanup")
 		}
 	})
+
 	return result
 }
 
@@ -687,6 +733,7 @@ func startWorkerRun(t *testing.T, run func(context.Context) error) *workerRun {
 func waitForWorkerRun(t *testing.T, run *workerRun) error {
 	t.Helper()
 	awaitValue(t, run.done, "worker completion")
+
 	return run.err
 }
 
@@ -702,6 +749,7 @@ func awaitValue[T any](t *testing.T, values <-chan T, description string) T {
 	case <-timer.C:
 		t.Fatalf("Timed out waiting for %s", description)
 		var zero T
+
 		return zero
 	}
 }
@@ -719,9 +767,11 @@ func waitForHeartbeatChange(t *testing.T, filename, previous string) {
 		if err != nil {
 			t.Fatalf("Read heartbeat while waiting for an idle iteration: %v", err)
 		}
+
 		if string(data) != previous {
 			return
 		}
+
 		select {
 		case <-ticker.C:
 		case <-timer.C:
@@ -743,9 +793,11 @@ func waitForHeartbeatRemoval(t *testing.T, filename string) {
 		if errors.Is(err, os.ErrNotExist) {
 			return
 		}
+
 		if err != nil {
 			t.Fatalf("Inspect heartbeat cleanup: %v", err)
 		}
+
 		select {
 		case <-ticker.C:
 		case <-timer.C:

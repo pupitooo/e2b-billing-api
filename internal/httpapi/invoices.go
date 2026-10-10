@@ -15,6 +15,7 @@ func registerInvoiceRoutes(mux *http.ServeMux, store *billing.Store, timeout tim
 		if !commandJSON(w, r, &input, []string{"month"}) {
 			return
 		}
+
 		ctx, cancel := financialContext(r, timeout)
 		defer cancel()
 		invoice, err := store.CloseMonth(ctx, r.PathValue("customer_id"), input.Month)

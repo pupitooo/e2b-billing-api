@@ -17,11 +17,13 @@ func registerAddonRoutes(mux *http.ServeMux, store *billing.Store, timeout time.
 		if !commandJSON(w, r, &input, []string{"subscription_id", "addon_name", "purchased_at"}) {
 			return
 		}
+
 		purchased, err := commandTime(input.PurchasedAt, "purchased_at")
 		if err != nil {
 			writeFinancialError(w, err)
 			return
 		}
+
 		ctx, cancel := financialContext(r, timeout)
 		defer cancel()
 		subscription, err := store.PurchaseAddon(ctx, r.PathValue("customer_id"), billing.AddonPurchase{SubscriptionID: input.SubscriptionID, AddonName: input.AddonName, PurchasedAt: purchased})

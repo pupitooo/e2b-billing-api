@@ -13,6 +13,7 @@ func UTCMonth(timestamp time.Time) (time.Time, error) {
 	if timestamp.IsZero() || utc.Year() < usage.MinUTCYear || utc.Year() > usage.MaxUTCYear {
 		return time.Time{}, fmt.Errorf("timestamp must have a UTC year between %d and %d", usage.MinUTCYear, usage.MaxUTCYear)
 	}
+
 	return time.Date(utc.Year(), utc.Month(), 1, 0, 0, 0, 0, time.UTC), nil
 }
 
@@ -23,12 +24,15 @@ func UsageMonth(start, end time.Time) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
+
 	if _, err := UTCMonth(end); err != nil {
 		return time.Time{}, err
 	}
+
 	if !end.After(start) || end.After(month.AddDate(0, 1, 0)) {
 		return time.Time{}, fmt.Errorf("usage interval must fit within one UTC month")
 	}
+
 	return month, nil
 }
 
@@ -40,31 +44,38 @@ func BillingMonth(usageMonth, receivedAt time.Time, closedMonths []time.Time) (t
 	if err != nil {
 		return time.Time{}, fmt.Errorf("usage month must be a UTC month boundary")
 	}
+
 	receiptMonth, err := UTCMonth(receivedAt)
 	if err != nil {
 		return time.Time{}, err
 	}
+
 	closed := make(map[time.Time]bool, len(closedMonths))
 	for _, month := range closedMonths {
 		canonical, err := canonicalMonth(month)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("closed months must be UTC month boundaries")
 		}
+
 		closed[canonical] = true
 	}
+
 	if !closed[original] {
 		return original, nil
 	}
+
 	candidate := original
 	if receiptMonth.After(candidate) {
 		candidate = receiptMonth
 	}
+
 	for closed[candidate] {
 		candidate = candidate.AddDate(0, 1, 0)
 		if candidate.Year() > usage.MaxUTCYear {
 			return time.Time{}, fmt.Errorf("no representable open billing month")
 		}
 	}
+
 	return candidate, nil
 }
 
@@ -75,13 +86,16 @@ func AddonCharge(purchasedAt, billingMonth time.Time, priceCents int64) (int64, 
 	if err != nil {
 		return 0, err
 	}
+
 	month, err := canonicalMonth(billingMonth)
 	if err != nil || priceCents < 0 {
 		return 0, fmt.Errorf("add-on billing requires a UTC month boundary and non-negative cents")
 	}
+
 	if month.Before(startMonth) {
 		return 0, nil
 	}
+
 	return priceCents, nil
 }
 
@@ -92,5 +106,6 @@ func canonicalMonth(month time.Time) (time.Time, error) {
 	if utc.Year() < usage.MinUTCYear || utc.Year() > usage.MaxUTCYear || !canonical.Equal(month) {
 		return time.Time{}, fmt.Errorf("month must be a UTC month boundary")
 	}
+
 	return canonical, nil
 }

@@ -28,10 +28,13 @@ func (s *Store) ProcessBatch(ctx context.Context) (bool, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
+
 	if err != nil {
 		return false, err
 	}
+
 	err = s.transact(ctx, func(tx pgx.Tx) error { return processReceipt(ctx, tx, candidate) })
+
 	return err == nil, err
 }
 
@@ -40,35 +43,44 @@ func processReceipt(ctx context.Context, tx pgx.Tx, candidate receipt) error {
 	if errors.Is(err, ErrNotFound) {
 		return quarantine(ctx, tx, candidate.event, "unknown customer")
 	}
+
 	if err != nil {
 		return err
 	}
+
 	if err := catalogLock(ctx, tx, false); err != nil {
 		return err
 	}
+
 	item, err := loadPendingReceipt(ctx, tx, candidate.event)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
+
 	if err != nil {
 		return err
 	}
+
 	prices, err := loadPrices(ctx, tx, item.event.CustomerID, item.event.Metric)
 	if err != nil {
 		return err
 	}
+
 	rating, err := accounting.Rate(item.event, prices)
 	if err != nil {
 		return quarantine(ctx, tx, item.event, err.Error())
 	}
+
 	closed, err := routingMonths(ctx, tx, item.event)
 	if err != nil {
 		return err
 	}
+
 	month, err := accounting.BillingMonth(rating.UsageMonth, item.receivedAt, closed)
 	if err != nil {
 		return quarantine(ctx, tx, item.event, err.Error())
 	}
+
 	return persistRating(ctx, tx, item, rating, month, credit)
 }
 
@@ -80,6 +92,7 @@ func loadPendingReceipt(ctx context.Context, tx pgx.Tx, key usage.Event) (receip
         WHERE source=$1 AND event_id=$2 AND processed_at IS NULL AND processing_error IS NULL
         FOR UPDATE`, key.Source, key.EventID).Scan(&e.Source, &e.EventID, &e.SchemaVersion,
 		&e.CustomerID, &e.SandboxID, &e.Metric, &e.PeriodStart, &e.PeriodEnd, &e.Units, &item.receivedAt)
+
 	return item, err
 }
 
@@ -97,8 +110,10 @@ func loadPrices(ctx context.Context, tx pgx.Tx, customer, metric string) ([]acco
 		if err := rows.Scan(&p.ID, &p.CustomerID, &p.Metric, &p.EffectiveFrom, &p.PricePerMillionCents); err != nil {
 			return nil, err
 		}
+
 		prices = append(prices, p)
 	}
+
 	return prices, rows.Err()
 }
 
@@ -114,8 +129,10 @@ func loadClosedMonths(ctx context.Context, tx pgx.Tx, customer string) ([]time.T
 		if err := rows.Scan(&month); err != nil {
 			return nil, err
 		}
+
 		months = append(months, month)
 	}
+
 	return months, rows.Err()
 }
 
@@ -123,6 +140,7 @@ func quarantine(ctx context.Context, tx pgx.Tx, event usage.Event, message strin
 	_, err := tx.Exec(ctx, `UPDATE usage_inbox SET processing_error=$3
         WHERE source=$1 AND event_id=$2 AND processed_at IS NULL AND processing_error IS NULL`,
 		event.Source, event.EventID, message)
+
 	return err
 }
 
@@ -134,22 +152,28 @@ func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounti
 	if err != nil {
 		return err
 	}
+
 	cents, err := gross.RoundCents()
 	if err != nil {
 		return quarantine(ctx, tx, e, err.Error())
 	}
+
 	if err := updateGroup(ctx, tx, group, item, rating, month, cents, allocation.Used); err != nil {
 		return err
 	}
+
 	if err := recordCreditDebit(ctx, tx, e, group, allocation.Used); err != nil {
 		return err
 	}
+
 	if err := updateMonthlyUsage(ctx, tx, e.CustomerID, rating.UsageMonth, rating.Charge); err != nil {
 		return err
 	}
+
 	if err := updateAccountCredit(ctx, tx, e.CustomerID, allocation.Remaining); err != nil {
 		return err
 	}
+
 	return completeReceipt(ctx, tx, e)
 }
 
@@ -158,18 +182,21 @@ func updateMonthlyUsage(ctx context.Context, tx pgx.Tx, customer string, month t
         ON CONFLICT (customer_id,usage_month) DO UPDATE
         SET gross_charge_ticks=monthly_usage.gross_charge_ticks+EXCLUDED.gross_charge_ticks`,
 		customer, month, charge.Ticks().String())
+
 	return err
 }
 
 func updateAccountCredit(ctx context.Context, tx pgx.Tx, customer string, remaining accounting.Amount) error {
 	_, err := tx.Exec(ctx, `UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric,
 		state_version=state_version+1 WHERE customer_id=$1`, customer, remaining.Ticks().String())
+
 	return err
 }
 
 func completeReceipt(ctx context.Context, tx pgx.Tx, event usage.Event) error {
 	_, err := tx.Exec(ctx, `UPDATE usage_inbox SET processed_at=$3 WHERE source=$1 AND event_id=$2`,
 		event.Source, event.EventID, time.Now().UTC().Truncate(time.Microsecond))
+
 	return err
 }
 
@@ -179,13 +206,16 @@ func cumulativeGross(ctx context.Context, tx pgx.Tx, group string, charge accoun
 	if errors.Is(err, pgx.ErrNoRows) {
 		return charge, nil
 	}
+
 	if err != nil {
 		return accounting.Amount{}, err
 	}
+
 	previous, err := amount(ticks)
 	if err != nil {
 		return accounting.Amount{}, err
 	}
+
 	return previous.Add(charge), nil
 }
 
@@ -205,7 +235,9 @@ func updateGroup(ctx context.Context, tx pgx.Tx, group string, item receipt, rat
 	if err != nil {
 		return err
 	}
+
 	_, err = tx.Exec(ctx, "INSERT INTO usage_ratings VALUES ($1,$2,$3)", e.Source, e.EventID, group)
+
 	return err
 }
 
@@ -213,10 +245,12 @@ func recordCreditDebit(ctx context.Context, tx pgx.Tx, e usage.Event, group stri
 	if used.Ticks().Sign() == 0 {
 		return nil
 	}
+
 	operation := identity("usage/", e.Source, e.EventID)
 	_, err := tx.Exec(ctx, `INSERT INTO credit_entries
         (credit_entry_id,customer_id,operation_id,group_id,amount_ticks,recorded_at)
         VALUES ($1,$2,$1,$3,$4::numeric,$5)`, operation, e.CustomerID, group,
 		"-"+used.Ticks().String(), time.Now().UTC().Truncate(time.Microsecond))
+
 	return err
 }

@@ -31,17 +31,21 @@ func openWorkflowState(store *Store, options WorkflowOptions) (*workflowState, e
 	if os.IsNotExist(err) && options.Action != "status" {
 		return state, store.saveJSON(state)
 	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	loaded := new(workflowState)
 	if err := decodeStrict(bytes.NewReader(data), loaded); err != nil {
 		return nil, fmt.Errorf("invalid workflow state; retain it for investigation: %w", err)
 	}
+
 	state = loaded
 	if !state.matchesPlan(options, fingerprint) || !state.validCheckpoint() {
 		return nil, fmt.Errorf("workflow differs from saved state; retain its original plan, source, and file")
 	}
+
 	return state, nil
 }
 

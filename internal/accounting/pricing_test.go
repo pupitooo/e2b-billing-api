@@ -412,15 +412,19 @@ func TestRate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Rate(%+v, %+v) error = %v; want nil", event, tt.prices, err)
 			}
+
 			if got.Price.ID != tt.wantPriceID {
 				t.Errorf("Rate price ID = %q; want %q", got.Price.ID, tt.wantPriceID)
 			}
+
 			if got.Price.PricePerMillionCents != tt.wantPricePerMillionCents {
 				t.Errorf("Rate price = %d cents per million; want %d", got.Price.PricePerMillionCents, tt.wantPricePerMillionCents)
 			}
+
 			if !got.UsageMonth.Equal(instant(t, tt.wantUsageMonth)) {
 				t.Errorf("Rate usage month = %s; want %s", got.UsageMonth, tt.wantUsageMonth)
 			}
+
 			if got.Charge.Ticks().String() != tt.wantChargeTicks {
 				t.Errorf("Rate charge = %s ticks; want %s ticks", got.Charge.Ticks(), tt.wantChargeTicks)
 			}

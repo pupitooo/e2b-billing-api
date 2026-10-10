@@ -22,19 +22,23 @@ func (s *Sender) deliver(ctx context.Context, store *Store, state *State, body [
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		outcome := s.attemptDelivery(ctx, store, state, body, count, attempt)
 		if outcome.Err == nil {
 			successes++
 			if successes > s.Duplicates {
 				return nil
 			}
+
 			s.log("Replaying an identical batch (%d/%d extra copies)\n", successes, s.Duplicates)
 		} else if !outcome.Retry {
 			return outcome.Err
 		}
+
 		if s.MaxAttempts > 0 && attempt >= s.MaxAttempts {
 			return stopDeliveryAtLimit(store, state, s.MaxAttempts)
 		}
+
 		if outcome.Err != nil {
 			var err error
 			delay, err = s.waitForDeliveryRetry(ctx, delay, outcome.RetryAfter)
@@ -51,6 +55,7 @@ func (s *Sender) attemptDelivery(ctx context.Context, store *Store, state *State
 	if err := store.checkpointSendAttempt(state); err != nil {
 		return deliveryOutcome{Err: err}
 	}
+
 	s.log("Sending %d measurements; attempt=%d total_attempts=%d\n", count, attempt, state.Attempts)
 	outcome := s.request(ctx, body)
 	if outcome.Err == nil && s.LoseResponse && !state.LostResponseInjected {
@@ -58,12 +63,15 @@ func (s *Sender) attemptDelivery(ctx context.Context, store *Store, state *State
 		outcome.Retry = true
 		outcome.Err = fmt.Errorf("simulated lost response after HTTP 202; retaining the same measurements")
 	}
+
 	if outcome.Err != nil {
 		if err := store.checkpointDeliveryFailure(state, outcome.Err, "pending failure"); err != nil {
 			return deliveryOutcome{Err: err}
 		}
+
 		s.log("Delivery failed: %v\n", outcome.Err)
 	}
+
 	return outcome
 }
 
@@ -72,6 +80,7 @@ func stopDeliveryAtLimit(store *Store, state *State, limit int) error {
 	if err := store.checkpointDeliveryFailure(state, failure, "attempt limit"); err != nil {
 		return err
 	}
+
 	return failure
 }
 
@@ -84,5 +93,6 @@ func (s *Sender) waitForDeliveryRetry(ctx context.Context, delay, minimum time.D
 	if err := s.sleep(ctx, pause); err != nil {
 		return delay, err
 	}
+
 	return min(delay*2, s.RetryMax), nil
 }

@@ -35,18 +35,22 @@ func TestStoreLoad(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		plan := simulatorPlan(t)
 		state := &State{Version: 1, Plan: plan, NextStep: tt.nextStep, Delivered: make([]bool, 6), Attempts: tt.attempts}
 		state.Delivered[tt.deliveredIndex] = true
 		if err := store.Save(state); err != nil {
 			t.Fatal(err)
 		}
+
 		if err := store.Close(); err != nil {
 			t.Fatal(err)
 		}
+
 		if err := os.WriteFile(filepath.Join(filepath.Dir(path), ".simulator-interrupted"), []byte(tt.interruptedSnapshot), 0600); err != nil {
 			t.Fatal(err)
 		}
+
 		reopened, err := OpenStore(path)
 		if err != nil {
 			t.Fatal(err)
@@ -56,7 +60,6 @@ func TestStoreLoad(t *testing.T) {
 		if err != nil || sameJSON(state, loaded) != tt.wantLoadedUnchanged || len(loaded.pending(false)) != tt.wantPending {
 			t.Fatalf("Recovery = %+v, %v", loaded, err)
 		}
-
 	})
 }
 
@@ -78,6 +81,7 @@ func TestOpenStore(t *testing.T) {
 		if competing != nil {
 			defer competing.Close()
 		}
+
 		if (err != nil) != tt.wantError {
 			t.Errorf("OpenStore(%q) error = %v; want error=%t", tt.path, err, tt.wantError)
 		}
@@ -103,6 +107,7 @@ func TestOpenStore(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		command := exec.CommandContext(ctx, binary, tt.helperFilter)
@@ -111,21 +116,26 @@ func TestOpenStore(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if err := command.Start(); err != nil {
 			t.Fatal(err)
 		}
+
 		defer command.Process.Kill()
 		line, err := bufio.NewReader(pipe).ReadString('\n')
 		if err != nil || line != tt.wantReadyOutput {
 			t.Fatalf("Lock owner did not become ready: %q, %v", line, err)
 		}
+
 		if competing, err := OpenStore(path); (err != nil) != tt.wantCompetingError {
 			competing.Close()
 			t.Error("Another process's lock was ignored")
 		}
+
 		if err := command.Process.Kill(); err != nil {
 			t.Fatal(err)
 		}
+
 		command.Wait()
 		recovered, err := OpenStore(path)
 		if err != nil {
@@ -146,6 +156,7 @@ func TestSimulatorLockProcess(t *testing.T) {
 	if path == "" {
 		return
 	}
+
 	store, err := OpenStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -156,6 +167,7 @@ func TestSimulatorLockProcess(t *testing.T) {
 	if err := store.Save(state); err != nil {
 		t.Fatal(err)
 	}
+
 	os.Stdout.WriteString("locked\n")
 	<-time.After(time.Hour)
 }
