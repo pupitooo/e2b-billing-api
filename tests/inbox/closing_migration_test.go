@@ -4,15 +4,26 @@ package inbox_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // TestInvoiceClosingExclusionsMigration upgrades an existing closing cohort in
 // an owned schema. Only nonnull errors are backfilled, including an empty error;
 // membership and financial state remain unchanged in both configured time zones.
 func TestInvoiceClosingExclusionsMigration(t *testing.T) {
+	// Retain the retired table's integrity coverage at its historical schema version.
+	constraints := []struct{ name, inputSQL, wantSQLState string }{
+		{name: "exclusion cannot change", inputSQL: "UPDATE invoice_closing_exclusions SET processing_error='changed'", wantSQLState: "23514"},
+		{name: "exclusion cannot be deleted", inputSQL: "DELETE FROM invoice_closing_exclusions", wantSQLState: "23514"},
+		{name: "exclusion identity is unique", inputSQL: "INSERT INTO invoice_closing_exclusions VALUES ('cyberdyne','2026-10-01','migration','existing','duplicate')", wantSQLState: "23505"},
+		{name: "exclusion requires a cohort member", inputSQL: "INSERT INTO invoice_closing_exclusions VALUES ('cyberdyne','2026-10-01','migration','missing','error')", wantSQLState: "23503"},
+		{name: "exclusion requires an error", inputSQL: "INSERT INTO invoice_closing_exclusions VALUES ('cyberdyne','2026-10-01','migration','existing',NULL)", wantSQLState: "23502"},
+	}
 	cases := []struct {
 		name            string
 		timeZone        string
@@ -93,6 +104,21 @@ func TestInvoiceClosingExclusionsMigration(t *testing.T) {
 				}
 				if retainedError != *tc.processingError {
 					t.Errorf("Exclusion after release=%q; want original error=%q", retainedError, *tc.processingError)
+				}
+				for _, constraint := range constraints {
+					t.Run(constraint.name, func(t *testing.T) {
+						savepoint, err := tx.Begin(ctx)
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer savepoint.Rollback(ctx)
+
+						_, err = savepoint.Exec(ctx, constraint.inputSQL)
+						var databaseError *pgconn.PgError
+						if !errors.As(err, &databaseError) || databaseError.Code != constraint.wantSQLState {
+							t.Errorf("Historical constraint SQL=%s: error=%v; want SQLSTATE %s", constraint.inputSQL, err, constraint.wantSQLState)
+						}
+					})
 				}
 			}
 		})

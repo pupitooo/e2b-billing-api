@@ -39,10 +39,12 @@ type Invoice struct {
 	IssuedAt        time.Time     `json:"issued_at"`
 }
 
-// CloseMonth durably captures a cohort, drains it without an account lock held
-// across transactions, then freezes the result and allocates one invoice number.
-// A timeout leaves resumable work; quarantined receipts are durably excluded.
-// A new closure requires the complete UTC calendar month to have ended.
+// CloseMonth invoices only usage already processed when it acquires the account
+// lock. It never processes pending usage or waits for the inbox to drain; the
+// worker bills it in an eligible open month after closure. Publication is one
+// atomic transaction, and a retry reads the original invoice. A new closure
+// requires an ended UTC month, cannot skip earlier existing data on the first
+// invoice, and requires the preceding month closed on subsequent invoices.
 func (s *Store) CloseMonth(ctx context.Context, customer, monthValue string) (Invoice, error) {
 	if err := ValidateIdentifier("customer_id", customer); err != nil {
 		return Invoice{}, err
@@ -50,14 +52,6 @@ func (s *Store) CloseMonth(ctx context.Context, customer, monthValue string) (In
 
 	month, err := ParseMonth(monthValue)
 	if err != nil {
-		return Invoice{}, err
-	}
-
-	if err := s.beginClosing(ctx, customer, month); err != nil {
-		return Invoice{}, err
-	}
-
-	if err := s.drainClosing(ctx, customer, month); err != nil {
 		return Invoice{}, err
 	}
 
@@ -83,11 +77,11 @@ func (s *Store) issueInvoice(ctx context.Context, customer string, month time.Ti
 			return err
 		}
 
-		if err := closingReady(ctx, tx, customer, month); err != nil {
+		issuedAt := s.now().UTC().Truncate(time.Microsecond)
+		if err := validateClosing(ctx, tx, customer, month, issuedAt); err != nil {
 			return err
 		}
 
-		issuedAt := s.now().UTC().Truncate(time.Microsecond)
 		result, err = buildInvoice(ctx, tx, customer, month, issuedAt)
 		if err != nil {
 			return err

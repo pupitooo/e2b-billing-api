@@ -81,7 +81,7 @@ Calculated rate = customers × average active sandboxes × metrics ÷ 60. Monthl
 - [ ] Specify identical retries versus identity conflicts, event immutability, and how deduplication survives inbox cleanup and replay.
 - [ ] Define worker claiming, lock order, concurrent customer writes, crash recovery, quarantine, and operator requeue. Include errors when reporting unfinished work.
 - [ ] Choose exact money representation, overflow checks, rounding groups, time-based pricing, and credit allocation; prove results stay the same when measurements are split or reordered.
-- [ ] Design a closing barrier coordinated with ingestion, including in-flight transactions and failed rows. A timestamp or sequence alone is not proof of commit order. Preserve late-usage handling, immutable invoices, and customer invoice numbering.
+- [ ] Preserve the processed-usage closing cutoff when scaling: lock the customer account, publish only committed groups, and route later accounting into an eligible open month. Do not wait for ingestion or worker backlogs. Verify both worker/closing lock orders, immutable invoices and numbering.
 - [ ] Reproduce the assignment's invoice, credit, add-on, and limit results; test duplicate delivery, lost responses, late usage, and worker crashes at commit boundaries.
 
 ## TODO: freshness, durability, and operations

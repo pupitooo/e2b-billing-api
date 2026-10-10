@@ -12,7 +12,7 @@ and the migration and verification requirements:
 - [Catalog provisioning and P0 recovery](#catalog-provisioning-and-p0-recovery): required dated prices before metering and explicit recovery from a missing valid catalog.
 - [Rounding and invoice presentation](#rounding-and-invoice-presentation): cumulative half-up rounding, balancing credit lines, immutable snapshots, and invoice totals.
 - [UTC months, limits, add-ons, and late usage](#utc-months-limits-add-ons-and-late-usage): supported years, gross spend limits, full monthly add-on charges, and routing after closure.
-- [Transaction and closing contract](#transaction-and-closing-contract): customer locks, atomic financial effects, retries, fixed receipt cohorts, and invoice issuance.
+- [Transaction and closing contract](#transaction-and-closing-contract): customer locks, atomic financial effects, retries, the processed-usage cutoff, and invoice issuance.
 - [Invoice generation and delivery (proposal)](#invoice-generation-and-delivery-proposal): first-day generation, customer-selected days, late input, and scheduling safeguards.
 - [Migration and verification](#migration-and-verification): converting cent credit to ticks, incompatible legacy allocations, and Go and SQL coverage.
 
@@ -26,7 +26,7 @@ prices, customer overrides, usage-only credit, gross monthly limits, full monthl
 add-on charges, immutable invoices, and the example's numerical results. The
 system must allocate **credit in exact ticks before rounding** and preserve whole
 UTC calendar months as fixed billing periods. Half-up rounding, allocation order,
-and the receipt-cohort mechanism are implementation policies for this reference
+and the processed-usage closing cutoff are implementation policies for this reference
 implementation. The [system contract register](../../README.md#system-contracts)
 distinguishes assignment requirements from these additional policies.
 
@@ -45,8 +45,8 @@ half-open interval `[2027-01-01T00:00:00Z, 2027-02-01T00:00:00Z)`.
   period. It does not create a cycle from 20 January to 20 February.
 - Spend limits and monthly add-ons keep their UTC calendar-month rules regardless
   of when the invoice is generated or delivered.
-- Issued invoices and closed months remain immutable. Input accepted after the
-  closing cohort follows the existing late-usage policy instead of reopening them.
+- Issued invoices and closed months remain immutable. Usage not yet processed at the closing cutoff follows the existing late-usage
+  policy, even if it was accepted earlier. No later processing reopens an invoice.
 
 Whole months define accounting periods; they do not guarantee that all delayed
 measurements have arrived by issuance. A later invoice can therefore contain
@@ -148,11 +148,11 @@ the customer, metric, and original consumption time. Accounting stores
 `P0 missing_valid_price: ...` in `usage_inbox.processing_error`, leaves
 `processed_at` NULL, and creates no group, rating link, credit debit, gross-spend
 projection, or account-state change for that receipt. After the quarantine commits,
-the shared receipt orchestration emits an ERROR report with `priority=P0`,
+the worker receipt orchestration emits an ERROR report with `priority=P0`,
 `error_code=missing_valid_price`, source/event identity, customer, metric, and
 `period_start`. The standalone worker uses its JSON logger for this report.
-Polling and invoice closing share this behavior. Automatic polling excludes the
-quarantined receipt and continues with other pending input.
+Closing never invokes receipt processing or discovers new catalog incidents.
+Automatic polling skips quarantined usage and continues with other pending input.
 
 Treat the missing catalog as an immediate P0 repair: append the correct price
 through controlled operator SQL, with an explicit start covering the original measurement.
@@ -186,7 +186,7 @@ Immutable invoice snapshots retain exact gross and credit ticks for
 audit alongside cent presentation. Presentation never overwrites credit records.
 Sum already rounded group lines without another rounding step. Add-ons use their
 purchased whole-cent price. Invoice totals need checked addition within `bigint`.
-Migration 007 adds durable closing cohorts, immutable invoice snapshots, frozen-group links, and per-customer invoice sequences.
+Migration 007 introduced invoice snapshots, group freezes and per-customer numbering alongside the former closing cohorts. Migration 009 retires cohort bookkeeping; invoices are now published directly from processed groups.
 
 ## UTC months, limits, add-ons, and late usage
 
@@ -204,9 +204,11 @@ Raising the limit or selecting the new UTC month's gross total can clear it.
 including purchases at month end. Earlier months cost zero. Cancellation,
 quantities, and proration remain outside the assignment's contract.
 
-`BillingMonth` preserves an open original month. For a closed original month,
-choose the first open month at or after both the original month and first receipt
-month. October usage received in November after October closing bills in November,
+`BillingMonth` preserves the original month only while chronological closing
+allows its invoice: no same or later month has been closed. Otherwise choose a
+month strictly after the latest closed month and at or after the receipt month.
+This also handles a skipped earlier empty month whose pending usage is processed
+later. October usage received in November after October closing bills in November,
 keeps October's historical price, and contributes to October gross spend. If
 November is also closed, move forward again. The helper takes closure state as
 input; it does not create or persist that state.
@@ -223,24 +225,53 @@ receipt and operation identities protect retries. Cancellation or failure rolls
 back the complete financial effect. Transient failures retry; unsupported inputs
 remain available with a visible processing error and explicit recovery path.
 
-Closing establishes a fixed cohort of already committed accepted receipts, then
-drains eligible members without holding the worker's account lock. Any receipt
-with a non-null `processing_error` is excluded, including errors discovered while
-draining. Append its identity and original error to `invoice_closing_exclusions`
-in the same transaction as quarantine; capture and publication also record any
-already stored errors under the account lock. Exclusion is permanent even if an
-operator releases the receipt before publication. The receipt remains unprocessed
-and has no financial effects until a successful recovery accounts for it in an
-eligible open month. Under the account lock, recheck eligible members, freeze groups,
-record the closed month, create immutable invoice snapshots, and allocate the
-customer's next number in one transaction. Do not consume credit again. Later
-accepted input follows the late-usage rule, including a request whose receipt
-timestamp predates its eventual commit.
+**Closing invoices only usage whose accounting transaction committed before the
+customer account lock was acquired.** It reads `rated_usage_groups` for the target
+billing month, never processes pending `usage_inbox`, and does not wait
+for the worker to drain a backlog. Pending and quarantined usage in the target
+month cannot block a valid chronological issuance. This explicitly accepts an incomplete usage invoice in exchange for a
+simpler closing operation independent of the pending usage count.
 
-The invoice implementation persists cohort membership and closing state; a retry
-resumes eligible work; excluded receipts do not delay publication. A receipt timestamp alone is not a closing
-watermark. Used historical prices and issued invoices cannot be silently rewritten
-by a later command; retroactive corrections require a separate policy.
+Closing owns one transaction and holds the same account lock used by the worker
+until commit or rollback. An in-flight worker that already holds the lock must
+finish before closing can acquire it; its committed groups are included. A worker
+that acquires the lock after a successful closing sees the committed closed month.
+It preserves an original month after the latest closure; usage from that closure
+or an earlier month routes strictly after it and at or after the receipt month.
+Skipped earlier empty
+months cannot strand pending usage behind a later closure. Preserve historical consumption-time prices and
+original-month gross spend. Receipt timestamps, delivery order and durable inbox
+acceptance do not promise inclusion in the original month's invoice.
+
+Validate the ended UTC month and chronological history, build lines from processed
+groups and applicable add-ons, freeze groups, record the closed month and immutable
+invoice snapshot, and advance numbering and state version together. Do not debit
+credit again. There is no durable intermediate closing marker or usage list.
+The first closing may select any completed month that does not skip existing
+earlier usage in `usage_inbox` or earlier unclosed rated groups. An indexed
+existence check reads the older-month boundary; it neither selects a processing
+cohort nor rates usage. After any committed closure, each next new invoice requires
+the immediately preceding month closed, including empty months. Missing
+predecessors and skipped older data return HTTP `409` without publication. The
+check uses the UTC original usage month, not `received_at`. Inbox rows committed
+after the check do not change its result; subsequent worker accounting still
+respects the committed closed history. No separate first-month setting is needed.
+
+On pre-commit failure, the complete closing transaction rolls back; a retry can
+include additional groups committed since the failed attempt. After a successful
+commit, every retry returns the original invoice and number. Earlier unclosed
+rated groups still block later closing; an empty month is supported.
+
+Usage processed on opposite sides of this cutoff belongs to different billing
+months and therefore different groups and rounding boundaries. Exact gross ticks
+are preserved, but the sum of cent-valued invoices can differ from rounding all
+usage in one group: two half-cent charges in separate invoices round to one cent
+each, while together they round to one cent. Credit follows worker transaction
+order and the balance available when each usage is processed.
+
+Used prices and issued invoices cannot be silently rewritten. Retiring the old
+cohort and exclusion tables does not change the explicit operator recovery of
+quarantined usage or the worker's atomic financial transaction.
 
 ## Invoice generation and delivery (proposal)
 
@@ -256,7 +287,7 @@ can be processed successfully. For the January 2027 invoice:
 | Policy | Final closure and invoice generation | Delivery | January usage received on 5 February |
 | --- | --- | --- | --- |
 | Generate on the first day; deliver on the selected day | 1 February | 20 February | Appears on a later invoice because January is already closed. |
-| Generate and deliver on the selected day | 20 February | 20 February | Remains eligible for January if committed before its closing cohort is captured. |
+| Generate and deliver on the selected day | 20 February | 20 February | Remains eligible for January if accounting commits before closing acquires the account lock. |
 
 The selected generation day provides a longer window for late input, at the cost
 of keeping the preceding month open and its final amount unavailable for longer.
@@ -285,7 +316,7 @@ the server clock. Before starting a new closure, `CloseMonth` requires the serve
 UTC time to be at or after the first instant of the following month. January is
 eligible from 1 February at `00:00:00Z`; closing it on 20 January returns HTTP `422`
 with `invalid_command` and field `month`. Ongoing and future months fail before
-cohort capture or processing, without changing credit, usage ratings, invoices,
+publication, without changing credit, usage ratings, invoices,
 or numbering. A retry of an already issued invoice returns its original snapshot.
 Schedulers must also select completed months. Integration tests supply an explicit
 server clock to check the exact UTC boundary and run fixed assignment fixtures;
@@ -297,7 +328,14 @@ the scheduling alternatives remain open proposals.
 
 ## Migration and verification
 
-Run the existing `make migrate`. Migration `004_exact_credit.sql` converts:
+For migration `009_processed_usage_closing.sql`, stop the API and worker before
+running `make migrate`, then restart them with the updated code. It removes the
+former closing-attempt, receipt-cohort and exclusion tables, including unfinished
+attempts. Raw usage, financial history, group freezes and issued invoices remain.
+Tests upgrade existing pending and quarantined attempts in UTC and Asia/Shanghai
+and verify retained balances, numbers and invoice immutability.
+
+Earlier migration `004_exact_credit.sql` converts:
 
 | Previous column | Current column | Conversion |
 | --- | --- | --- |

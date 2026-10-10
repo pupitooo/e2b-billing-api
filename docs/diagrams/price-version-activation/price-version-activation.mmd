@@ -40,9 +40,9 @@ flowchart TB
 
     subgraph recovery["C. Missing valid price or any other processing error"]
         quarantine["Keep usage unprocessed with processing_error<br/>No financial effect; retain and report missing price as P0"]
-        exclude["Durably exclude from closing cohort<br/>Issue invoice from successfully rated groups<br/>Any processing error never blocks issuance"]
+        exclude["Close only already processed groups under the account lock<br/>Pending and quarantined usage never block issuance"]
         repair["Operator: controlled SQL repair and explicit release<br/>Preserve rated history and issued invoices"]
-        later["Account exactly once at the historical consumption price<br/>Excluded usage bills in an eligible open month<br/>Keep the original usage month for limits and audit"]
+        later["Account exactly once at the historical consumption price<br/>Usage processed after closure bills in an eligible open month<br/>Keep the original usage month for limits and audit"]
         quarantine --> exclude --> repair --> later
     end
 

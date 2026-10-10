@@ -14,9 +14,9 @@ import (
 	"e2b/billing-api/internal/usage"
 )
 
-// testQuarantinedClosing checks errors known before capture and discovered while
-// draining. Every error stays unprocessed, leaves credit untouched, and is excluded
-// while valid usage is billed. A later release cannot mutate the frozen invoice.
+// testQuarantinedClosing checks errors discovered by the worker before closing.
+// Every error stays unprocessed and leaves credit untouched while processed valid
+// usage is billed. Closing and retries never process a released usage.
 func testQuarantinedClosing(t *testing.T) {
 	cases := []struct {
 		name               string
@@ -25,18 +25,18 @@ func testQuarantinedClosing(t *testing.T) {
 		periodEnd          string
 		initialError       *string
 		wantErrorText      string
-		wantExclusions     int
+		workerSteps        []bool
 		wantTotalCents     int64
 		wantGrossTicks     string
 		wantCreditTicks    string
 		wantRemainingTicks string
 		wantRatings        int
 	}{
-		{name: "missing price discovered during closing", metric: "unpriced", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", wantErrorText: "P0 missing_valid_price:", wantExclusions: 1, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
-		{name: "unsupported schema discovered during closing", metric: "cpu_seconds", schemaVersion: 2, periodEnd: "2026-10-10T13:00:00Z", wantErrorText: "unsupported usage schema version", wantExclusions: 1, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
-		{name: "price crossing discovered during closing", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-16T00:00:00Z", wantErrorText: "usage interval crosses a price version boundary", wantExclusions: 1, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
-		{name: "preexisting arbitrary processing error is excluded", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", initialError: stringPointer("investigated processing failure"), wantErrorText: "investigated processing failure", wantExclusions: 1, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
-		{name: "even an empty nonnull error is excluded", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", initialError: stringPointer(""), wantErrorText: "", wantExclusions: 1, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
+		{name: "missing price discovered by worker", metric: "unpriced", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", wantErrorText: "P0 missing_valid_price:", workerSteps: []bool{true, true}, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
+		{name: "unsupported schema discovered by worker", metric: "cpu_seconds", schemaVersion: 2, periodEnd: "2026-10-10T13:00:00Z", wantErrorText: "unsupported usage schema version", workerSteps: []bool{true, true}, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
+		{name: "price crossing discovered by worker", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-16T00:00:00Z", wantErrorText: "usage interval crosses a price version boundary", workerSteps: []bool{true, true}, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
+		{name: "preexisting arbitrary processing error is excluded", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", initialError: stringPointer("investigated processing failure"), wantErrorText: "investigated processing failure", workerSteps: []bool{true}, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
+		{name: "even an empty nonnull error is excluded", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", initialError: stringPointer(""), wantErrorText: "", workerSteps: []bool{true}, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -58,6 +58,7 @@ func testQuarantinedClosing(t *testing.T) {
 			}
 			serverTime := parseBillingTime(t, "2026-12-01T00:00:00Z")
 			store := billing.NewStoreWithClock(pool, func() time.Time { return serverTime })
+			processUsageSteps(t, store, tc.workerSteps)
 
 			invoice, err := store.CloseMonth(ctx, "cyberdyne", "2026-10")
 			if err != nil {
@@ -67,27 +68,23 @@ func testQuarantinedClosing(t *testing.T) {
 				t.Errorf("CloseMonth with %+v invoice=%+v; want total=%d gross=%s credit=%s", bad, invoice, tc.wantTotalCents, tc.wantGrossTicks, tc.wantCreditTicks)
 			}
 			var processed bool
-			var processingError, exclusionError, remaining string
-			var exclusions, ratings int
+			var processingError, remaining string
+			var ratings int
 			if err := pool.QueryRow(ctx, `SELECT i.processed_at IS NOT NULL,i.processing_error,
-            (SELECT count(*) FROM invoice_closing_exclusions),
-            (SELECT processing_error FROM invoice_closing_exclusions WHERE source=i.source AND event_id=i.event_id),
             (SELECT count(*) FROM usage_ratings),
             (SELECT credit_balance_ticks::text FROM customer_billing_state WHERE customer_id='cyberdyne')
-            FROM usage_inbox i WHERE source=$1 AND event_id=$2`, bad.Source, bad.EventID).Scan(&processed, &processingError, &exclusions, &exclusionError, &ratings, &remaining); err != nil {
+            FROM usage_inbox i WHERE source=$1 AND event_id=$2`, bad.Source, bad.EventID).Scan(&processed, &processingError, &ratings, &remaining); err != nil {
 				t.Fatal(err)
 			}
 			if processed || !strings.HasPrefix(processingError, tc.wantErrorText) {
 				t.Errorf("Bad receipt processed=%t error=%q; want false and prefix=%q", processed, processingError, tc.wantErrorText)
 			}
-			if exclusions != tc.wantExclusions || exclusionError != processingError {
-				t.Errorf("Exclusions=%d error=%q; want %d and %q", exclusions, exclusionError, tc.wantExclusions, processingError)
-			}
+
 			if ratings != tc.wantRatings || remaining != tc.wantRemainingTicks {
 				t.Errorf("Ratings=%d credit=%s; want %d and %s", ratings, remaining, tc.wantRatings, tc.wantRemainingTicks)
 			}
 
-			// Releasing the receipt cannot undo its durable closing exclusion.
+			// Releasing usage does not make closing or its retry process it.
 			if _, err := pool.Exec(ctx, "UPDATE usage_inbox SET processing_error=NULL WHERE source=$1 AND event_id=$2", bad.Source, bad.EventID); err != nil {
 				t.Fatal(err)
 			}
@@ -106,9 +103,9 @@ func testQuarantinedClosing(t *testing.T) {
 // string, without hiding any scenario value or deriving a financial expectation.
 func stringPointer(value string) *string { return &value }
 
-// testClosingExclusionRecovery repairs an unpriced metric through operator SQL.
-// Exclusion is permanent even when recovery runs before publication, and the
-// original month stays unchanged while recovered usage bills in the next month.
+// testClosingExclusionRecovery repairs an unpriced metric after issuance through
+// operator SQL. The original month and invoice stay unchanged while the worker
+// accounts recovered usage into the next eligible open month.
 func testClosingExclusionRecovery(t *testing.T) {
 	scenario := struct {
 		periodStart       string
@@ -120,11 +117,10 @@ func testClosingExclusionRecovery(t *testing.T) {
 		wantBillingMonth  string
 		wantOctoberTotal  int64
 		wantNovemberTotal int64
-		wantExclusions    int
 	}{
 		periodStart: "2026-10-10T12:00:00Z", periodEnd: "2026-10-10T13:00:00Z", receivedAt: "2026-10-11T00:00:00Z",
 		repairSQL: "INSERT INTO price_versions VALUES ('operator-recovery',NULL,'unpriced',7,'2026-10-01T00:00:00Z')",
-		wantWork:  true, wantUsageMonth: "2026-10", wantBillingMonth: "2026-11", wantOctoberTotal: 0, wantNovemberTotal: 7, wantExclusions: 1,
+		wantWork:  true, wantUsageMonth: "2026-10", wantBillingMonth: "2026-11", wantOctoberTotal: 0, wantNovemberTotal: 7,
 	}
 	pool := billingDatabase(t)
 	ctx := context.Background()
@@ -135,11 +131,6 @@ func testClosingExclusionRecovery(t *testing.T) {
 	if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, scenario.receivedAt)); err != nil {
 		t.Fatal(err)
 	}
-	// Capture an unfinished closing explicitly, so recovery precedes publication.
-	if _, err := pool.Exec(ctx, `INSERT INTO invoice_closings VALUES ('cyberdyne','2026-10-01','2026-11-01T00:00:00Z');
-        INSERT INTO invoice_closing_receipts VALUES ('cyberdyne','2026-10-01','closing-recovery','one')`); err != nil {
-		t.Fatal(err)
-	}
 	serverTime := parseBillingTime(t, "2026-12-01T00:00:00Z")
 	store := billing.NewStoreWithClock(pool, func() time.Time { return serverTime })
 	worked, err := store.ProcessBatch(ctx)
@@ -148,6 +139,13 @@ func testClosingExclusionRecovery(t *testing.T) {
 	}
 	if worked != scenario.wantWork {
 		t.Errorf("Quarantine worked=%t; want %t", worked, scenario.wantWork)
+	}
+	october, err := store.CloseMonth(ctx, "cyberdyne", "2026-10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if october.TotalCents != scenario.wantOctoberTotal {
+		t.Errorf("October invoice total=%d; want %d", october.TotalCents, scenario.wantOctoberTotal)
 	}
 
 	if _, err := pool.Exec(ctx, scenario.repairSQL); err != nil {
@@ -164,15 +162,14 @@ func testClosingExclusionRecovery(t *testing.T) {
 		t.Errorf("Recovery worked=%t; want %t", worked, scenario.wantWork)
 	}
 	var usageMonth, billingMonth string
-	var exclusions int
-	if err := pool.QueryRow(ctx, `SELECT to_char(g.usage_month,'YYYY-MM'),to_char(g.billing_month,'YYYY-MM'),(SELECT count(*) FROM invoice_closing_exclusions)
-        FROM usage_ratings r JOIN rated_usage_groups g USING(group_id) WHERE source=$1 AND event_id=$2`, event.Source, event.EventID).Scan(&usageMonth, &billingMonth, &exclusions); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT to_char(g.usage_month,'YYYY-MM'),to_char(g.billing_month,'YYYY-MM')
+        FROM usage_ratings r JOIN rated_usage_groups g USING(group_id) WHERE source=$1 AND event_id=$2`, event.Source, event.EventID).Scan(&usageMonth, &billingMonth); err != nil {
 		t.Fatal(err)
 	}
-	if usageMonth != scenario.wantUsageMonth || billingMonth != scenario.wantBillingMonth || exclusions != scenario.wantExclusions {
-		t.Errorf("Recovery months=%s/%s exclusions=%d; want %s/%s and %d", usageMonth, billingMonth, exclusions, scenario.wantUsageMonth, scenario.wantBillingMonth, scenario.wantExclusions)
+	if usageMonth != scenario.wantUsageMonth || billingMonth != scenario.wantBillingMonth {
+		t.Errorf("Recovery months=%s/%s; want %s/%s", usageMonth, billingMonth, scenario.wantUsageMonth, scenario.wantBillingMonth)
 	}
-	october, err := store.CloseMonth(ctx, "cyberdyne", "2026-10")
+	october, err = store.CloseMonth(ctx, "cyberdyne", "2026-10")
 	if err != nil {
 		t.Fatal(err)
 	}

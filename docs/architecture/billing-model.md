@@ -7,13 +7,13 @@ and how PostgreSQL stores and verifies the assignment's financial state:
 
 - [Logical data model (ERD)](#logical-data-model-erd): billing concepts, their relationships, and an editable diagram.
 - [Architectural decisions and rationale](#architectural-decisions-and-rationale): database choice, customer locks, durable ingestion, retry identities, exact accounting, audit history, immutable invoices, and separation of responsibilities.
-- [Implemented PostgreSQL schema](#implemented-postgresql-schema-erd-migrations-001008): the complete schema through migration 008, SQL columns, keys, and cardinalities.
+- [Implemented PostgreSQL schema](#implemented-postgresql-schema-erd-migrations-001009): the complete schema through migration 009, SQL columns, keys, and cardinalities.
 - [Tables and relationships](#tables-and-relationships): table purposes, foreign keys, ownership checks, mutable projections, and append-only history.
 - [Money and months](#money-and-months): ticks and cents, the charge formula, arbitrary precision, UTC periods, and historical price selection.
 - [Initial data and migrations](#initial-data-and-migrations): startup commands, assignment catalog values, initial account state, exact-credit conversion, and transactional migration behavior.
-- [Transactional processing and verification](#transactional-processing-and-verification): time-zone checks, isolated fixtures, atomic worker updates, closing cohorts, and public API simulator coverage.
+- [Transactional processing and verification](#transactional-processing-and-verification): time-zone checks, isolated fixtures, atomic worker updates, processed-usage closing, and public API simulator coverage.
 
-The schema stores the assignment catalog, transactional accounting, financial command identities, closing cohorts, and immutable monthly invoices. [Shared financial rules and pure Go calculations](accounting-rules.md) define rating, exact credit, rounding, and UTC routing; the worker and public APIs implement those rules in `internal/billing`.
+The schema stores the assignment catalog, transactional accounting, financial command identities, processed-usage closing, and immutable monthly invoices. [Shared financial rules and pure Go calculations](accounting-rules.md) define rating, exact credit, rounding, and UTC routing; the worker and public APIs implement those rules in `internal/billing`.
 
 Read the logical model first, then the architectural decisions and their trade-offs, followed by the PostgreSQL schema, financial representation, migrations, and transaction details. The [usage-to-invoice guide](usage-to-invoice.md) follows the accounting pipeline and explains the fields used at every stage.
 
@@ -49,15 +49,15 @@ These decisions describe the current implementation. Assignment requirements and
 
 - **Separate the UTC usage month from the billing month.** Late consumption keeps its original price and spend-limit month but moves to an open billing month after closure. This preserves issued invoices without losing the consumption's origin. Explicit UTC calculation avoids dependence on session time zones, at the cost of carrying both month identities through groups and invoice lines.
 
-- **Persist closing cohorts and immutable invoice snapshots.** A fixed set of committed receipts (metered sandbox usage events stored in `usage_inbox`, such as CPU seconds reported for a customer's sandbox over a measurement interval) makes closing resumable across short processing transactions; a receipt timestamp alone cannot prove that input committed before closing. Final issuance atomically records closure, frozen groups, the invoice snapshot, and its number. Snapshots preserve buyer details and financial results despite later profile or catalog changes. This requires extra closing records and group-freeze enforcement, and quarantined receipts are durably excluded without blocking issuance.
+- **Publish invoices from processed groups.** One customer-account-locked transaction snapshots groups already accounted by the worker, freezes them, closes the month and advances numbering. Pending and quarantined usage do not delay issuance; later processing routes to an eligible open month. This accepts an incomplete current invoice for simpler closing independent of backlog size. Buyer and financial snapshots remain immutable.
 
 - **Separate pure calculations from persistence and transport.** `internal/accounting` calculates prices, credit, months, and invoice amounts without I/O; `internal/billing` owns locks and financial transactions, while HTTP code owns request and response handling. This makes financial rules directly testable and keeps transaction boundaries visible. Database constraints still protect structural integrity, so changes to a rule must keep calculations, persistence, and validation consistent.
 
-## Implemented PostgreSQL schema (ERD, migrations 001–008)
+## Implemented PostgreSQL schema (ERD, migrations 001–009)
 
 `UsageReceipt` maps to `usage_inbox` plus the separate `usage_ratings` link. Invoices use immutable JSON snapshots and frozen-group links rather than the separate line table proposed in the logical ERD.
 
-This diagram shows all 19 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `008`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
+This diagram shows all 16 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `009`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
 
 ![Implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
 
@@ -67,7 +67,7 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 
 `usage_inbox` has no customer or metric foreign keys. Its optional one-to-one relationship with `usage_ratings` records whether an event has been assigned to a group; each rating references one `rated_usage_groups` row. The diagram shows database cardinalities, so a customer may have zero or one account-state row even though the seed creates one for each initial customer. Receipt matching and price ownership checks are enforced by triggers, as described below.
 
-`invoice_closing_receipts` links a durable closing attempt to its fixed cohort of inbox identities. `invoices` references a closed customer/month; `invoiced_usage_groups` links each group to at most one invoice and activates the group-freeze trigger. Buyer details, issue time, and `InvoiceLine` values are in `invoices.snapshot`; there is no separate `invoice_lines` table. Closing publishes the related records atomically. Its transaction also matches customer/month ownership where the schema has no additional composite foreign key.
+`invoices` references a closed customer/month; `invoiced_usage_groups` links each group to at most one invoice and activates the group-freeze trigger. Buyer details, issue time and lines live in the immutable JSON snapshot. Migration 009 retires the three pending-usage closing tables; the worker and closing coordinate through the existing account lock and committed closed months.
 
 ## Tables and relationships
 
@@ -85,9 +85,6 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 | `addon_subscriptions` | Customer purchases with a monthly price snapshot and the UTC purchase month. One subscription per customer and add-on is supported; cancellation and multiple quantities are future work. |
 | `closed_billing_months` | Immutable customer/month closures used to route late consumption forward. |
 | `spend_limit_operations` | Immutable operation results; replaying an old identity cannot undo a newer limit. |
-| `invoice_closings` | Durable customer/month closing attempts. |
-| `invoice_closing_receipts` | Fixed membership of committed pending metered-usage events from `usage_inbox` at closing, independent of receipt timestamps. |
-| `invoice_closing_exclusions` | Append-only receipt exclusions with the original processing error; clearing the inbox error cannot restore membership in the eligible closing cohort. |
 | `invoices` | One immutable snapshot per customer/month, with unique per-customer number and total cents. Buyer details, ordered lines, exact audit ticks, and issue time are in `snapshot`. |
 | `invoiced_usage_groups` | Links issued invoices to groups; a trigger rejects changes to frozen groups. |
 
@@ -95,7 +92,7 @@ Identifiers, balances, prices, and timestamps are supplied explicitly. `customer
 
 Foreign keys reject missing catalog records, missing receipts, and credit debits for another customer's group. A group's price must belong to its metric and be either a default or an override for that customer. Group identity cannot change after insertion; totals can increase as the worker processes more events. Rating links require the same customer and metric and an interval wholly within the original UTC month, including intervals ending exactly at the next month's boundary.
 
-Prices, credit entries, rating links, and closing exclusions reject row updates and deletes. Price changes append a new version; they do not rewrite past prices. Customer details, account projections, group totals, monthly totals, and the add-on catalog remain mutable. A subscription retains its purchased price when the catalog changes.
+Prices, credit entries and rating links reject row updates and deletes. Price changes append a new version; they do not rewrite past prices. Customer details, account projections, group totals, monthly totals, and the add-on catalog remain mutable. A subscription retains its purchased price when the catalog changes.
 
 ## Money and months
 
@@ -183,6 +180,6 @@ The migration runner applies schema, seed, and version records in one transactio
 
 The worker locks the customer's state row and commits the rating link, group totals, credit debit/balance, original month's gross spend, state version, and inbox `processed_at` together. Constraints represent those records but do not automatically reconcile ledger sums, projection totals, or the calculated price and booked cents. The unique rating link alone does not prove that a complete financial transaction ran exactly once.
 
-Migrations 005–007 persist closure, spend-limit operation results, durable receipt cohorts, invoice snapshots, and group freezes. Closing captures committed pending input, drains it across short transactions, and atomically stores closure, snapshot, freezes, sequence, and state version. Late input outside that cohort routes forward without rewriting issued invoices.
+Migrations 005–007 persist accounting, closed months, spend-limit results, invoices and group freezes. Migration 008 introduced error exclusions for the former pending-usage capture flow; migration 009 retires that flow and all three supporting tables. Closing now publishes only already processed groups in one atomic transaction. Usage processed later routes forward without rewriting issued invoices.
 
 Public command and accounting tests use private schemas. The [billing simulator](../simulator/billing-scenarios.md) verifies the complete assignment through HTTP, including retries, unavailable replies, exact invoices and credit, and monthly-limit reads. Ingestion acknowledges receipt before asynchronous accounting finishes.

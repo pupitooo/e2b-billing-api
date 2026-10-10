@@ -10,28 +10,12 @@ INSERT INTO spend_limit_operations VALUES ('sql-financial-test','original',1500,
 INSERT INTO closed_billing_months VALUES ('sql-financial-test','2026-10-01','2026-11-01T00:00:00Z');
 INSERT INTO invoices VALUES ('sql-financial-test','2026-10-01','SQL-FINANCIAL-0001',0,'{}');
 
--- Owned cohort and exclusion exercise immutable quarantine audit independently
--- of mutable processing_error in the inbox.
-INSERT INTO usage_inbox
-(source,event_id,schema_version,customer_id,sandbox_id,metric,period_start,period_end,units,received_at,processing_error)
-VALUES ('sql-exclusion','one',1,'sql-financial-test','sandbox','cpu_seconds',
-        '2026-10-10T12:00:00Z','2026-10-10T13:00:00Z',0,'2026-10-11T00:00:00Z','investigated error');
-INSERT INTO invoice_closings VALUES ('sql-financial-test','2026-10-01','2026-11-01T00:00:00Z');
-INSERT INTO invoice_closing_receipts VALUES ('sql-financial-test','2026-10-01','sql-exclusion','one');
-INSERT INTO invoice_closing_exclusions VALUES ('sql-financial-test','2026-10-01','sql-exclusion','one','investigated error');
-
 DO $scenarios$
 DECLARE
     scenario jsonb;
     actual_state text;
 BEGIN
     FOR scenario IN SELECT value FROM jsonb_array_elements($inputs$[
-        {"name":"closing exclusion cannot change","input_sql":"UPDATE invoice_closing_exclusions SET processing_error='changed' WHERE source='sql-exclusion'","want_sqlstate":"23514"},
-        {"name":"closing exclusion cannot be deleted","input_sql":"DELETE FROM invoice_closing_exclusions WHERE source='sql-exclusion'","want_sqlstate":"23514"},
-        {"name":"closing exclusion is unique","input_sql":"INSERT INTO invoice_closing_exclusions VALUES ('sql-financial-test','2026-10-01','sql-exclusion','one','duplicate')","want_sqlstate":"23505"},
-        {"name":"closing exclusion requires a cohort member","input_sql":"INSERT INTO invoice_closing_exclusions VALUES ('sql-financial-test','2026-10-01','sql-exclusion','missing','error')","want_sqlstate":"23503"},
-        {"name":"closing exclusion requires an error","input_sql":"INSERT INTO invoice_closing_exclusions VALUES ('sql-financial-test','2026-10-01','sql-exclusion','one',NULL)","want_sqlstate":"23502"},
-        {"name":"operator release preserves closing exclusion","input_sql":"UPDATE usage_inbox SET processing_error=NULL WHERE source='sql-exclusion' AND event_id='one'","want_sqlstate":"00000"},
         {"name":"negative limit is rejected","input_sql":"INSERT INTO spend_limit_operations VALUES ('sql-financial-test','negative',-1,'2026-10-01T00:00:00Z')","want_sqlstate":"23514"},
         {"name":"limit operation identity is unique","input_sql":"INSERT INTO spend_limit_operations VALUES ('sql-financial-test','original',2000,'2026-10-01T00:00:00Z')","want_sqlstate":"23505"},
         {"name":"limit operation history cannot change","input_sql":"UPDATE spend_limit_operations SET limit_cents=2000 WHERE customer_id='sql-financial-test'","want_sqlstate":"23514"},
@@ -59,12 +43,4 @@ BEGIN
     END LOOP;
 END;
 $scenarios$;
-DO $audit$
-BEGIN
-    IF (SELECT processing_error FROM invoice_closing_exclusions WHERE source='sql-exclusion' AND event_id='one') IS DISTINCT FROM 'investigated error' THEN
-        RAISE EXCEPTION 'Operator release changed the original exclusion error';
-    END IF;
-END;
-$audit$;
-
 ROLLBACK;

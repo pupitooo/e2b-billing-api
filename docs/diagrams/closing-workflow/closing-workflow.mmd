@@ -1,5 +1,5 @@
 ---
-title: Monthly invoice generation - simplified workflow
+title: Monthly closing - processed usage only
 config:
   layout: elk
   flowchart:
@@ -8,48 +8,37 @@ config:
     rankSpacing: 24
     useMaxWidth: false
 ---
-%% Simplified current implementation, checked on 10 October 2026.
-%% Capture, each receipt, and publication have separate transaction boundaries.
+%% Current contract: one transaction; no usage processing or inbox draining.
 flowchart TD
     request["Request closing for customer and UTC month"]
-
-    subgraph capture["A. Capture transaction - customer account lock"]
-        cohort["Validate and capture or resume the fixed receipt cohort<br/>New closure: UTC month must have ended; check closed history<br/>Retry: retain the cohort; existing invoice needs no capture writes"]
-        commitA["COMMIT capture and release the account lock"]
+    subgraph transaction["One atomic transaction - customer account lock held until completion"]
+        subgraph cutoff["A. Lock and validate"]
+            lock["BEGIN; lock customer_billing_state<br/>Cutoff: usage processing committed before this lock"]
+            exists{"Invoice already exists?"}
+            stored["Read the original immutable invoice"]
+            validate["Require an ended UTC month<br/>First closing cannot skip existing earlier usage<br/>Later closing requires the previous month closed<br/>Pending usage in the target month does not block issuance"]
+        end
+        subgraph build["B. Build the invoice from processed groups"]
+            groups["Read rated_usage_groups and applicable add-ons<br/>No processing of pending usage_inbox rows"]
+            lines["Round each group's gross and net to half-up cents<br/>Displayed credit = rounded gross minus rounded net<br/>Use credit already allocated by the worker"]
+            snapshot["Build buyer snapshot, next invoice number and total"]
+        end
+        subgraph publication["C. Publish together"]
+            freeze["Store the closed month and immutable invoice<br/>Freeze included groups; advance number and state version"]
+            commit["COMMIT; release the account lock"]
+        end
+        lock --> exists
+        exists -->|"Yes"| stored --> commit
+        exists -->|"No"| validate --> groups --> lines --> snapshot --> freeze --> commit
     end
-
-    subgraph drain["B. Receipt processing - one transaction per receipt"]
-        process["Process all unprocessed cohort receipts<br/>Reuse worker accounting; allocate credit in exact ticks<br/>Any processing error: durable exclusion; continue issuance"]
-    end
-
-    subgraph publication["C. Invoice publication - one atomic transaction"]
-        begin["BEGIN and lock the customer account"]
-        exists{"Does this monthly invoice exist?"}
-        stored["Read the existing immutable snapshot<br/>COMMIT without another invoice or number"]
-        ready{"Eligible cohort processed and no earlier<br/>unclosed rated groups?"}
-        groups["Read rated groups and applicable add-on subscriptions"]
-        lines["Build usage and add-on lines<br/>Round each group's gross and net to half-up cents<br/>Credit deduction = rounded gross minus rounded net"]
-        snapshot["Build buyer snapshot, next invoice number and total<br/>Do not debit credit again"]
-        freeze["Store the closed month and invoice snapshot<br/>Freeze included groups; advance number and state version"]
-        commit["COMMIT all publication writes together"]
-    end
-
-    result["Return the committed immutable invoice"]
-    blocked["Return validation or conflict error<br/>Resolve the blocker before retrying the same customer/month"]
-    retry["On failure: roll back uncommitted work<br/>Retain prior committed capture and receipt processing<br/>Retry the same customer/month to resume or read the invoice"]
-
-    request --> cohort --> commitA --> process --> begin --> exists
-    exists -->|"Yes"| stored --> result
-    exists -->|"No"| ready
-    ready -->|"Yes"| groups --> lines --> snapshot --> freeze --> commit --> result
-    ready -->|"No: roll back"| blocked
-    cohort -.->|"Rejected: roll back capture"| blocked
-    process -.->|"Receipt quarantined"| excluded["Keep usage unprocessed; record immutable cohort exclusion<br/>Repair via controlled SQL; recovered usage bills in an open month"]
-    excluded --> begin
-    commitA -.->|"Capture failure"| retry
-    process -.->|"Storage failure or timeout"| retry
-    commit -.->|"Publication failure"| retry
-
-    style capture fill:#eff6ff,stroke:#2563eb
-    style drain fill:#f0fdfa,stroke:#0d9488
+    result["Return the committed invoice"]
+    pending["Pending usage stays in usage_inbox<br/>Worker processes it later under the same account lock<br/>Closed or skipped original month routes after the latest closure"]
+    failure["On failure: ROLLBACK the complete transaction<br/>No durable closing attempt, invoice or consumed number<br/>Retry the same customer/month; committed retries return the original invoice"]
+    request --> lock
+    commit --> result
+    commit -.->|"Worker resumes after the lock is released"| pending
+    validate -.->|"Validation or history conflict"| failure
+    freeze -.->|"Storage failure or timeout"| failure
+    style cutoff fill:#eff6ff,stroke:#2563eb
+    style build fill:#f0fdfa,stroke:#0d9488
     style publication fill:#fffbeb,stroke:#d97706

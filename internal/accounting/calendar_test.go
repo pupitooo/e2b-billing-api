@@ -177,8 +177,8 @@ func TestUsageMonth(t *testing.T) {
 	}
 }
 
-// BillingMonth preserves an open usage month and routes closed months to the
-// first eligible open month; malformed inputs and exhausted calendar years fail.
+// BillingMonth preserves an eligible usage month and routes closed or skipped
+// months after the latest closure; invalid inputs and exhausted years fail.
 func TestBillingMonth(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -188,6 +188,31 @@ func TestBillingMonth(t *testing.T) {
 		wantMonth    string
 		wantError    bool
 	}{
+		{
+			name:       "skipped October cannot strand usage behind closed November",
+			usageMonth: "2026-10-01T00:00:00Z", receivedAt: "2026-10-11T00:00:00Z",
+			closedMonths: []string{"2026-11-01T00:00:00Z"}, wantMonth: "2026-12-01T00:00:00Z", wantError: false,
+		},
+		{
+			name:       "unsorted closures cannot route into a skipped earlier gap",
+			usageMonth: "2026-10-01T00:00:00Z", receivedAt: "2026-11-01T00:00:00Z",
+			closedMonths: []string{"2026-12-01T00:00:00Z", "2026-10-01T00:00:00Z"}, wantMonth: "2027-01-01T00:00:00Z", wantError: false,
+		},
+		{
+			name:       "original month immediately after latest closure stays eligible",
+			usageMonth: "2026-12-01T00:00:00Z", receivedAt: "2027-01-01T00:00:00Z",
+			closedMonths: []string{"2026-11-01T00:00:00Z"}, wantMonth: "2026-12-01T00:00:00Z", wantError: false,
+		},
+		{
+			name:       "receipt later than latest closure bounds skipped usage",
+			usageMonth: "2026-10-01T00:00:00Z", receivedAt: "2027-02-01T00:00:00Z",
+			closedMonths: []string{"2026-11-01T00:00:00Z"}, wantMonth: "2027-02-01T00:00:00Z", wantError: false,
+		},
+		{
+			name:       "skipped usage cannot route beyond the last supported closure",
+			usageMonth: "9999-11-01T00:00:00Z", receivedAt: "9999-11-02T00:00:00Z",
+			closedMonths: []string{"9999-12-01T00:00:00Z"}, wantError: true,
+		},
 		{
 			name:         "late usage retains its original open month",
 			usageMonth:   "2026-10-01T00:00:00Z",

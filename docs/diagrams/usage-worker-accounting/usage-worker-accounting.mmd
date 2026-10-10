@@ -12,7 +12,7 @@ config:
 %% Selection is outside the financial transaction; concurrent workers may select the same receipt.
 %% The account lock precedes the shared price-catalog lock and the inbox row lock.
 %% Every success-path write below commits together, including processed_at.
-%% Quarantine commits processing_error and any immutable closing exclusions, with no financial writes.
+%% Quarantine commits processing_error, with no financial writes.
 %% Missing valid prices commit a P0 catalog incident before operational reporting.
 %% Bold numbered titles identify activities. Other lines describe rules or results.
 %% The numbers show logical activities, not separate transactions or SQL statements.
@@ -30,8 +30,8 @@ flowchart TB
         usageMonth["<b>7. Determine usage_month</b><br/>Output: original UTC consumption month<br/>Rule: the interval fits within one month"]
         price["<b>8. Select the historical price</b><br/>Time: consumption, not receipt<br/>Priority: eligible customer override, then default<br/>Rule: one applicable price for the whole interval"]
         charge["<b>9. Calculate the exact gross charge</b><br/>Output: money ticks before credit"]
-        closures["<b>10. Read unavailable billing months</b><br/>Input: closed months and closing-cohort membership<br/>Rule: closing excludes outside-cohort and quarantined receipts"]
-        routing["<b>11. Determine billing_month</b><br/>Rule: original month when available; otherwise first eligible open month"]
+        closures["<b>10. Read unavailable billing months</b><br/>Input: committed closed_billing_months under the account lock<br/>Rule: no writes can re-enter a closed billing month"]
+        routing["<b>11. Determine billing_month</b><br/>Keep original month only when no same or later month is closed<br/>Otherwise bill after the latest closure and at or after receipt month"]
         key["<b>12. Build the stable group key</b><br/>Key fields: customer_id, price_version_id,<br/>usage_month, billing_month"]
         credit["<b>13. Allocate available credit</b><br/>Precision: exact ticks for this new charge<br/>Output: used credit and remaining balance"]
         cumulative["<b>14. Calculate cumulative group gross</b><br/>Formula: stored gross ticks + new gross ticks"]
@@ -44,11 +44,11 @@ flowchart TB
         complete["<b>21. Mark the receipt processed</b><br/>Table: usage_inbox<br/>Field: processed_at"]
         commit["<b>22. Commit the transaction</b><br/>Result: all financial writes and receipt completion are durable together"]
         noop["<b>Commit without financial writes</b><br/>Reason: another writer already handled the receipt"]
-        quarantine["<b>Quarantine the receipt</b><br/>Commit: processing_error + immutable closing exclusion<br/>processed_at remains NULL; invoice issuance continues<br/>Financial effect: none"]
-        missingPrice["<b>Quarantine the missing valid price</b><br/>Commit: processing_error = P0 missing_valid_price<br/>processed_at remains NULL; financial effect: none<br/>Durable closing exclusion; invoice issuance continues"]
+        quarantine["<b>Quarantine the receipt</b><br/>Commit: processing_error<br/>processed_at remains NULL; invoice issuance continues<br/>Financial effect: none"]
+        missingPrice["<b>Quarantine the missing valid price</b><br/>Commit: processing_error = P0 missing_valid_price<br/>processed_at remains NULL; financial effect: none<br/>Closing never processes this usage; invoice issuance continues"]
     end
 
-    report["<b>Report the committed catalog incident</b><br/>ERROR log: priority P0; code missing_valid_price<br/>Include receipt identity, customer, metric, consumption time<br/>Operator SQL: repair dated price; explicitly release<br/>Historical rating; eligible open billing month after exclusion"]
+    report["<b>Report the committed catalog incident</b><br/>ERROR log: priority P0; code missing_valid_price<br/>Include receipt identity, customer, metric, consumption time<br/>Operator SQL: repair dated price; explicitly release<br/>Historical rating; eligible open billing month after closure"]
     next["<b>Return success to the polling loop</b><br/>Result: receipt handled"]
     retry["<b>Return failure to the polling loop</b><br/>Transaction result: pre-commit writes rolled back<br/>Loop policy: logged error and delayed retry"]
 
