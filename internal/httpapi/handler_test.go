@@ -163,6 +163,14 @@ func TestHandlerServeHTTP(t *testing.T) {
 				wantStatus: http.StatusAccepted,
 			},
 			{
+				name: "cross-month usage is accepted for asynchronous accounting",
+				body: changeEvent(t, func(e map[string]any) {
+					e["period_start"] = "2026-10-31T23:59:00Z"
+					e["period_end"] = "2026-11-01T00:01:00Z"
+				}),
+				wantStatus: http.StatusAccepted,
+			},
+			{
 				name: "offset wall clock comparison",
 				body: changeEvent(t, func(e map[string]any) {
 					e["period_start"] = "2026-10-10T12:00:00+02:00"

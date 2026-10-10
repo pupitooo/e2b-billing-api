@@ -121,6 +121,19 @@ func TestUsageMonth(t *testing.T) {
 			wantError: true,
 		},
 		{
+			name:      "two-minute interval spanning UTC months is rejected",
+			start:     "2026-10-31T23:59:00Z",
+			end:       "2026-11-01T00:01:00Z",
+			wantError: true,
+		},
+		{
+			name:      "interval starting at the next UTC month belongs to November",
+			start:     "2026-11-01T00:00:00Z",
+			end:       "2026-11-01T00:01:00Z",
+			wantMonth: "2026-11-01T00:00:00Z",
+			wantError: false,
+		},
+		{
 			name:      "missing end is rejected",
 			start:     "2026-11-01T07:00:00+08:00",
 			end:       "",

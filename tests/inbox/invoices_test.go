@@ -34,6 +34,8 @@ type invoiceExpectation struct {
 
 // TestCloseMonth reproduces literal assignment invoice values in private schemas.
 // Each case keeps usage steps, grants, purchases, and expected invoice lines visible.
+// Crossing-month receipts block publication and numbering; an interval ending
+// exactly at the UTC month boundary closes October once, including on retry.
 func TestCloseMonth(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -101,6 +103,152 @@ func TestCloseMonth(t *testing.T) {
 			}
 		})
 	}
+	t.Run("UTC month boundary", func(t *testing.T) {
+		type closingState struct {
+			invoices             int
+			closedMonths         int
+			frozenGroups         int
+			groups               int
+			ratings              int
+			monthlyUsageRows     int
+			creditEntries        int
+			cohortReceipts       int
+			nextInvoiceNumber    int64
+			stateVersion         int64
+			remainingCreditTicks string
+		}
+
+		cases := []struct {
+			name                string
+			customer            string
+			start               string
+			end                 string
+			units               int64
+			receiptTime         string
+			initialCreditTicks  string
+			closingMonths       []string
+			wantError           bool
+			wantCloseError      error
+			wantCompleted       bool
+			wantProcessingError string
+			wantInvoice         invoiceExpectation
+			wantClosingState    closingState
+		}{
+			{
+				name:                "cross-month receipt blocks invoice and retry without financial effects",
+				customer:            "acme",
+				start:               "2026-10-31T23:59:00Z",
+				end:                 "2026-11-01T00:01:00Z",
+				units:               100_000_000,
+				receiptTime:         "2026-11-01T00:02:00Z",
+				initialCreditTicks:  "2500000000",
+				closingMonths:       []string{"2026-10", "2026-10"},
+				wantError:           true,
+				wantCloseError:      billing.ErrConflict,
+				wantCompleted:       false,
+				wantProcessingError: "usage interval must fit within one UTC month",
+				wantClosingState: closingState{
+					invoices: 0, closedMonths: 0, frozenGroups: 0, groups: 0,
+					ratings: 0, monthlyUsageRows: 0, creditEntries: 0, cohortReceipts: 1,
+					nextInvoiceNumber: 1, stateVersion: 0, remainingCreditTicks: "2500000000",
+				},
+			},
+			{
+				name:                "receipt ending at UTC month boundary closes October exactly once",
+				customer:            "acme",
+				start:               "2026-10-31T23:59:00Z",
+				end:                 "2026-11-01T00:00:00Z",
+				units:               100_000_000,
+				receiptTime:         "2026-11-01T00:02:00Z",
+				initialCreditTicks:  "2500000000",
+				closingMonths:       []string{"2026-10", "2026-10"},
+				wantError:           false,
+				wantCloseError:      nil,
+				wantCompleted:       true,
+				wantProcessingError: "",
+				wantInvoice: invoiceExpectation{
+					month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{400, -400},
+					grossTicks: "400000000", creditTicks: "400000000", remainingCredit: "2100000000",
+				},
+				wantClosingState: closingState{
+					invoices: 1, closedMonths: 1, frozenGroups: 1, groups: 1,
+					ratings: 1, monthlyUsageRows: 1, creditEntries: 1, cohortReceipts: 1,
+					nextInvoiceNumber: 2, stateVersion: 2, remainingCreditTicks: "2100000000",
+				},
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				pool := billingDatabase(t)
+				ctx := context.Background()
+				if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric WHERE customer_id=$1", tc.customer, tc.initialCreditTicks); err != nil {
+					t.Fatalf("Set initial credit for customer %q to %s ticks: %v", tc.customer, tc.initialCreditTicks, err)
+				}
+
+				event := usage.Event{
+					Source: "closing-month-boundary", EventID: "one", SchemaVersion: 1,
+					CustomerID: tc.customer, SandboxID: "sandbox", Metric: "cpu_seconds",
+					PeriodStart: parseBillingTime(t, tc.start), PeriodEnd: parseBillingTime(t, tc.end), Units: tc.units,
+				}
+				if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receiptTime)); err != nil {
+					t.Fatalf("Insert closing receipt %+v at %s: %v", event, tc.receiptTime, err)
+				}
+
+				store := billing.NewStore(pool)
+				for step, month := range tc.closingMonths {
+					invoice, err := store.CloseMonth(ctx, tc.customer, month)
+					if (err != nil) != tc.wantError {
+						t.Fatalf("CloseMonth(%q, %q) for receipt %+v step %d error = %v; wantError %t", tc.customer, month, event, step+1, err, tc.wantError)
+					}
+					if !errors.Is(err, tc.wantCloseError) {
+						t.Fatalf("CloseMonth(%q, %q) for receipt %+v step %d error = %v; want %v", tc.customer, month, event, step+1, err, tc.wantCloseError)
+					}
+
+					if tc.wantError {
+						if !reflect.DeepEqual(invoice, billing.Invoice{}) {
+							t.Errorf("Failed CloseMonth(%q, %q) step %d invoice = %+v; want an empty result", tc.customer, month, step+1, invoice)
+						}
+					} else {
+						assertInvoiceExpectation(t, store, invoice, tc.wantInvoice)
+					}
+
+					var completed bool
+					var processingError string
+					if err := pool.QueryRow(ctx, "SELECT processed_at IS NOT NULL,COALESCE(processing_error,'') FROM usage_inbox WHERE source=$1 AND event_id=$2", event.Source, event.EventID).Scan(&completed, &processingError); err != nil {
+						t.Fatalf("Read closing receipt %+v after step %d: %v", event, step+1, err)
+					}
+					if completed != tc.wantCompleted || processingError != tc.wantProcessingError {
+						t.Errorf("CloseMonth(%q, %q) step %d receipt: completed=%t processing_error=%q; want %t %q", tc.customer, month, step+1, completed, processingError, tc.wantCompleted, tc.wantProcessingError)
+					}
+
+					var got closingState
+					err = pool.QueryRow(ctx, `SELECT
+						(SELECT count(*) FROM invoices),
+						(SELECT count(*) FROM closed_billing_months),
+						(SELECT count(*) FROM invoiced_usage_groups),
+						(SELECT count(*) FROM rated_usage_groups),
+						(SELECT count(*) FROM usage_ratings),
+						(SELECT count(*) FROM monthly_usage),
+						(SELECT count(*) FROM credit_entries),
+						(SELECT count(*) FROM invoice_closing_receipts),
+						next_invoice_number,state_version,credit_balance_ticks::text
+						FROM customer_billing_state WHERE customer_id=$1`, tc.customer).Scan(
+						&got.invoices, &got.closedMonths, &got.frozenGroups, &got.groups,
+						&got.ratings, &got.monthlyUsageRows, &got.creditEntries, &got.cohortReceipts,
+						&got.nextInvoiceNumber, &got.stateVersion, &got.remainingCreditTicks,
+					)
+					if err != nil {
+						t.Fatalf("Read closing state after CloseMonth(%q, %q) step %d: %v", tc.customer, month, step+1, err)
+					}
+					if got != tc.wantClosingState {
+						t.Errorf("CloseMonth(%q, %q) for receipt %+v step %d state = %+v; want %+v", tc.customer, month, event, step+1, got, tc.wantClosingState)
+					}
+				}
+			})
+		}
+	})
+
 	t.Run("concurrent closing allocates one number", func(t *testing.T) {
 		scenario := struct {
 			workers    int
