@@ -115,8 +115,9 @@ func TestFromCents(t *testing.T) {
 	}
 }
 
-// UsageCharge multiplies units by the whole-cents-per-million rate exactly,
-// including large products; free prices and zero units are valid, negatives fail.
+// UsageCharge converts units through the price denominator and money resolution
+// exactly, even for one unit or large products. Free prices and zero units are
+// valid; negative units and prices fail.
 func TestUsageCharge(t *testing.T) {
 	tests := []struct {
 		name                 string
@@ -125,6 +126,13 @@ func TestUsageCharge(t *testing.T) {
 		wantTicks            string
 		wantError            bool
 	}{
+		{
+			name:                 "one unit retains an exact sub-cent charge",
+			units:                1,
+			pricePerMillionCents: 5,
+			wantTicks:            "5",
+			wantError:            false,
+		},
 		{
 			name:                 "small consumption retains fractional cents",
 			units:                1_000,

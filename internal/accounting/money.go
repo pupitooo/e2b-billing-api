@@ -6,7 +6,13 @@ import (
 	"math/big"
 )
 
+// TicksPerCent defines the fixed resolution of stored monetary amounts.
 const TicksPerCent int64 = 1_000_000
+
+// PriceUnitCount is the resource unit count covered by a current catalog price.
+// Store this on each historical price version when introducing other bases:
+// https://github.com/pupitooo/e2b-billing-api/issues/29
+const PriceUnitCount int64 = 1_000_000
 
 // Amount is an immutable, non-negative number of ticks. Its zero value is zero.
 // Arithmetic uses arbitrary precision; no method mutates an input's big.Int.
@@ -34,13 +40,21 @@ func FromCents(cents int64) (Amount, error) {
 	return amount, nil
 }
 
-// UsageCharge prices one event with the assignment's whole-cents-per-million rate.
+// UsageCharge converts units to ticks using the whole-cents-per-million price.
+// The price unit count and ticks per cent currently cancel, but measure different
+// things. Multiply before dividing to retain exact amounts below a whole cent.
 func UsageCharge(units, pricePerMillionCents int64) (Amount, error) {
 	if units < 0 || pricePerMillionCents < 0 {
 		return Amount{}, fmt.Errorf("units and price must be non-negative")
 	}
 	var amount Amount
 	amount.ticks.Mul(big.NewInt(units), big.NewInt(pricePerMillionCents))
+	amount.ticks.Mul(&amount.ticks, big.NewInt(TicksPerCent))
+	var remainder big.Int
+	amount.ticks.QuoRem(&amount.ticks, big.NewInt(PriceUnitCount), &remainder)
+	if remainder.Sign() != 0 {
+		return Amount{}, fmt.Errorf("charge cannot be represented in whole ticks")
+	}
 	return amount, nil
 }
 
