@@ -1,5 +1,17 @@
 # Financial rules and shared accounting primitives
 
+## Summary
+
+This document defines the shared financial rules, their transaction boundaries,
+and the migration and verification requirements:
+
+- [Exact money and credit](#exact-money-and-credit): tick precision, exact charge calculations, signed credit entries, and allocation order.
+- [Historical prices and groups](#historical-prices-and-groups): customer overrides, consumption-time pricing, supported intervals, and stable grouping keys.
+- [Rounding and invoice presentation](#rounding-and-invoice-presentation): cumulative half-up rounding, balancing credit lines, immutable snapshots, and invoice totals.
+- [UTC months, limits, add-ons, and late usage](#utc-months-limits-add-ons-and-late-usage): supported years, gross spend limits, full monthly add-on charges, and routing after closure.
+- [Transaction and closing contract](#transaction-and-closing-contract): customer locks, atomic financial effects, retries, fixed receipt cohorts, and invoice issuance.
+- [Migration and verification](#migration-and-verification): converting cent credit to ticks, incompatible legacy allocations, and Go and SQL coverage.
+
 `internal/accounting` implements pure Go calculations for historical rating,
 exact credit, UTC months, limits, add-ons, and invoice presentation. The usage API acknowledges durable inbox receipt; the standalone worker applies
 these rules transactionally. Financial commands and immutable invoice issuance
@@ -20,7 +32,7 @@ money resolution are separate constants:
 ```text
 price_unit_count = 1_000_000
 ticks_per_cent = 1_000_000
-gross_charge_ticks = units * price_per_million_cents * ticks_per_cent / price_unit_count
+gross_charge_ticks = (((units * price_per_million_cents) * ticks_per_cent) / price_unit_count)
 used_credit_ticks = min(new_charge_ticks, available_credit_ticks)
 remaining_credit_ticks = available_credit_ticks - used_credit_ticks
 net_charge_ticks = new_charge_ticks - used_credit_ticks

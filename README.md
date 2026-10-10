@@ -6,7 +6,7 @@ The project uses the selected [option C architecture](docs/brainstorming/archite
 
 The [billing model guide](docs/architecture/billing-model.md) describes customers, price history, credit records, rated usage, monthly spend, add-ons, and seed data. The [financial rules](docs/architecture/accounting-rules.md) define the shared Go calculations, exact credit before rounding, and transaction/closing contract. Transactional accounting, financial APIs, and immutable monthly invoices are implemented.
 
-The [foundation PostgreSQL ERD](docs/diagrams/implemented-data-model/implemented-data-model.png) shows the tables, columns, and foreign keys through migration 004, including `usage_ratings`. The billing model guide describes the later closure and invoice records. Its [editable Mermaid source](docs/diagrams/implemented-data-model/implemented-data-model.mmd) accompanies the preview.
+The [implemented PostgreSQL ERD](docs/diagrams/implemented-data-model/implemented-data-model.png) shows all 18 tables, columns, and foreign keys through migration 007, including rating links, closing cohorts, and immutable invoice records. Its [editable Mermaid source](docs/diagrams/implemented-data-model/implemented-data-model.mmd) accompanies the preview.
 
 The [usage-to-invoice flow](docs/architecture/usage-to-invoice.md) maps usage events, rating, exact groups, credit, rounding, invoice lines, and invoices to database records, including exact tick credit and immutable invoice snapshots.
 
@@ -633,17 +633,17 @@ make install-hooks
 ```
 
 Every subsequent normal commit checks the staged snapshot with `gofmt`, the
-project's numeric-literal rule, and `go vet`, including integration-tagged test
+`wsl` whitespace rules, the project's numeric-literal rule, and `go vet`, including integration-tagged test
 code. A formatting violation or vet finding stops the commit. The hook preserves
 partial staging and never formats or stages files automatically. Fix reported problems, then stage the intended
 changes and commit again.
 
 | Command | Behavior |
 | --- | --- |
-| `make fmt` | Group decimal numeric literals, preserve plain calendar years, and apply `gofmt`. |
-| `make fmt-check` | Check `gofmt` and numeric-literal grouping; change no files. |
-| `make vet` | Run `go vet ./...` and `go vet -tags=integration ./...`. |
-| `make check` | Run `gofmt`, numeric-literal, and vet checks together, as CI does. |
+| `make fmt` | Group decimal numeric literals, preserve plain calendar years, and apply `gofmt` plus `wsl` whitespace fixes. |
+| `make fmt-check` | Check `gofmt`, `wsl`, and numeric-literal grouping; change no files. |
+| `make vet` | Run `go vet` for `cmd/`, `internal/`, and `tests/` with default and integration build tags. |
+| `make check` | Run `gofmt`, `wsl`, numeric-literal, and vet checks together, as CI does. |
 | `make install-hooks` | Set this clone's `core.hooksPath` to the tracked `.githooks` directory. |
 
 These commands use installed Go when available, otherwise Docker builds the
@@ -651,6 +651,18 @@ These commands use installed Go when available, otherwise Docker builds the
 database is needed. `E2B_GO_CHECKS_DOCKER=1 make check` explicitly uses Docker;
 CI uses this mode to match the pinned project toolchain. Local private `tools/`
 worktrees and dependency directories are excluded from formatting.
+
+The pinned `wsl` and Go analysis dependencies are defined in an isolated
+[tool module](scripts/whitespace/go.mod); enabled checks are defined in
+[scripts/whitespace.env](scripts/whitespace.env). Local commands and Docker use
+the same versions and policy. They separate completed blocks and returns in longer blocks, keep error
+checks next to their operations, and remove blank lines at block boundaries.
+Declarations and their initialization may stay together. Both ordinary and
+integration-tagged packages are checked. `make fmt` repairs these rules;
+`make fmt-check`, the staged hook, and CI enforce them without editing files.
+The first use with installed Go downloads the pinned tool and its dependencies.
+Semantic grouping of preparation, calculation, persistence, and assertions still
+requires review. See the [wsl documentation](https://github.com/bombsimon/wsl).
 
 The [numeric-literal checker](cmd/number-format/main.go) requires underscore
 groups of three for decimal Go literals with five or more digits, for example
@@ -673,6 +685,8 @@ in [gofmt](https://pkg.go.dev/cmd/gofmt) and [go vet](https://pkg.go.dev/cmd/vet
 
 `make test` is the primary test command. Start PostgreSQL with `make up SERVICE=postgres` before running all tests or the database suite; the Go suite builds and starts the API and worker automatically.
 
+Follow the [final acceptance test procedure](docs/guides/final-acceptance-testing.md) to verify every assignment requirement, walk through the October/November example with explicit checkpoints, inspect persisted accounting state, and exercise outages, retries, and restart in isolated Compose projects.
+
 | Command | Purpose |
 | --- | --- |
 | `make test` | Run all test suites. |
@@ -691,12 +705,12 @@ The [handler tests](internal/httpapi/handler_test.go) use `httptest` to check ro
 The SQL suite applies pending migrations and discovers all `tests/sql/*.sql` files. [Inbox tests](tests/sql/usage_inbox.sql), [billing model tests](tests/sql/billing_model.sql), and [assignment seed tests](tests/sql/assignment_seed.sql) run in UTC and `Asia/Shanghai` and roll back their data. Seed checks use a private schema, preserving edited application data. Output identifies the file and time zone; any failure makes the command fail.
 
 The original [API happy-path request](tests/api/usage_batches_test.go) and response
-expectations remain unchanged. The [acceptance tests](tests/api/acceptance_test.go)
+expectations remain unchanged. The [acceptance tests](tests/api/usage_batches_test.go)
 send HTTP requests to the running service and inspect committed rows through
 a separate PostgreSQL connection. They cover durable receipt, preserved retry
 metadata, atomic conflicts, invalid later events, and concurrent HTTP retries.
 They remove only their owned rows, retaining any pre-existing fixed happy-path
-fixture. The [repository tests](tests/inbox/idempotence_test.go) additionally
+fixture. The [repository tests](tests/inbox/usage_inbox_test.go) additionally
 exercise deterministic lock waits, competing commits/rollbacks, canceled
 transactions, and each conflicting content field. Each test drops its private
 schema. The API stays running for exploration; `-count=1` executes every test.

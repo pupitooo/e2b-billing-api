@@ -1,38 +1,55 @@
 ---
-title: Usage events to invoice
+title: How CPU usage becomes a monthly invoice
 config:
   layout: dagre
   flowchart:
-    wrappingWidth: 340
-    nodeSpacing: 35
-    rankSpacing: 40
+    wrappingWidth: 270
+    nodeSpacing: 30
+    rankSpacing: 45
     useMaxWidth: false
 ---
-%% User-requested conceptual flow, recorded on 9 October 2026.
-%% This is an accounting pipeline, not seven services or seven SQL tables.
-%% Pure Go rating, exact credit allocation, and rounding helpers are implemented.
-%% The database worker integration remains subsequent work.
-%% Credit precedes rounding; migration 004 stores credit in exact ticks.
-%% InvoiceLine and Invoice are planned immutable snapshots, not existing tables.
+%% Implemented accounting flow, clarified on 10 October 2026.
+%% Numbered boxes explain transformations, not services or SQL statement order.
+%% Example: one customer, metric, price version, usage month, and billing month.
+%% All 1_000 events arrive before October closes; no add-ons are included.
+%% The 2-cent starting credit is illustrative; 1 cent = 1_000_000 ticks.
+%% Group and credit boxes show cumulative results after all events are processed.
+%% Steps 2-4 commit together for each event; credit uses exact ticks.
+%% The worker also maintains booked_charge_cents as a running gross projection.
+%% Closing snapshots lines in invoices.snapshot.lines and freezes linked groups.
 flowchart TB
-    events["Usage events<br/>Customer used 1,000 CPU seconds<br/>usage_inbox: raw integer units"]
-    rating["Rating<br/>Price rule: USD 0.05 / 1,000,000 units<br/>price_versions + usage_ratings"]
-    group["RatedUsageGroup<br/>Sum compatible usage + exact gross ticks<br/>rated_usage_groups"]
-    credits["Credits (optional)<br/>Deduct eligible usage credit before rounding<br/>Current DB: exact tick ledger and balance"]
-    rounding["Rounding<br/>Round cumulative gross and net to cents<br/>Credit line balances their difference"]
-    line["InvoiceLine (planned)<br/>Immutable usage, credit, and add-on lines<br/>Proposed invoice_lines table"]
-    invoice["Invoice (planned)<br/>Customer, address, number, and cent total<br/>Proposed invoices table"]
+    subgraph intake["A. API receives measurements"]
+        events["1. Store usage events<br/>1_000 events × 1_000 CPU seconds<br/>Total: 1_000_000 resource units"]
+    end
 
-    events --> rating
-    rating -->|"1,000 units x 5 = 5,000 ticks"| group
-    group --> credits
-    credits -->|"Preserve fractional-cent credit in ticks"| rounding
-    rounding --> line
-    line --> invoice
+    subgraph processing["B. Worker processes each event atomically (1 cent = 1_000_000 ticks)"]
+        direction LR
+        rating["2. Price each event (Rating)<br/>Historical price: 5 cents per million units<br/>1_000 units → 5_000 money ticks"]
+        group["3. Accumulate compatible events<br/>(RatedUsageGroup)<br/>After all events: 1_000_000 units<br/>Gross: 5_000_000 ticks = USD 0.05"]
+        credits["4. Apply available usage credit<br/>Starting credit: USD 0.02<br/>Total used: 2_000_000 ticks; left: 0<br/>Final net: 3_000_000 ticks"]
+
+        rating --> group --> credits
+    end
+
+    subgraph closing["C. An explicit monthly close builds and freezes the invoice"]
+        direction LR
+        rounding["5. Round group totals to cents<br/>Gross: 5_000_000 ticks → 5 cents<br/>Net: 3_000_000 ticks → 3 cents<br/>Displayed credit: 5 − 3 = 2 cents"]
+        lines["6. Build invoice lines<br/>(InvoiceLine snapshots)<br/>Usage: +USD 0.05<br/>Credit: −USD 0.02"]
+        invoice["7. Issue one monthly invoice<br/>Add buyer details and invoice number<br/>Total payable: USD 0.03<br/>Issued values are immutable"]
+
+        rounding --> lines --> invoice
+    end
+
+    intake -->|"Accepted events wait in usage_inbox"| processing
+    processing -->|"At closing, read stored group totals; credit is already allocated"| closing
 
     classDef input fill:#e9f7ee,stroke:#287d4e,color:#173b28;
     classDef accounting fill:#edf0ff,stroke:#56649c,color:#24335c;
-    classDef planned fill:#f2f3f5,stroke:#6b7280,color:#253044,stroke-dasharray:5 4;
+    classDef document fill:#fff4df,stroke:#a66a15,color:#593a0c;
     class events input;
-    class rating,group,credits,rounding accounting;
-    class line,invoice planned;
+    class rating,group,credits accounting;
+    class rounding,lines,invoice document;
+
+    style intake fill:#f7fcf9,stroke:#287d4e,color:#173b28;
+    style processing fill:#f8f9ff,stroke:#56649c,color:#24335c;
+    style closing fill:#fffbf3,stroke:#a66a15,color:#593a0c;
