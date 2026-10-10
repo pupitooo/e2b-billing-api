@@ -432,16 +432,24 @@ func TestCloseMonth(t *testing.T) {
 	})
 	t.Run("fixed cohort resumes after price recovery and excludes later commits", func(t *testing.T) {
 		scenario := struct {
-			invoiceTime       string
-			originalUnits     int64
-			laterUnits        int64
-			wantFirstError    error
-			wantOctoberTotal  int64
-			wantNovemberTotal int64
-			wantCohort        int
-		}{invoiceTime: "2026-12-01T00:00:00Z", originalUnits: 100_000_000, laterUnits: 100_000_000, wantFirstError: billing.ErrConflict, wantOctoberTotal: 400, wantNovemberTotal: 400, wantCohort: 1}
+			invoiceTime         string
+			originalUnits       int64
+			laterUnits          int64
+			wantFirstError      error
+			wantOctoberTotal    int64
+			wantNovemberTotal   int64
+			wantCohort          int
+			wantProcessingError string
+			wantLog             missingPriceLog
+		}{
+			invoiceTime: "2026-12-01T00:00:00Z", originalUnits: 100_000_000, laterUnits: 100_000_000,
+			wantFirstError: billing.ErrConflict, wantOctoberTotal: 400, wantNovemberTotal: 400, wantCohort: 1,
+			wantProcessingError: "P0 missing_valid_price: no valid price for customer acme and metric unpriced at 2026-10-10T12:00:00Z",
+			wantLog:             missingPriceLog{Level: "ERROR", Priority: "P0", ErrorCode: "missing_valid_price", Source: "cohort", EventID: "original", CustomerID: "acme", Metric: "unpriced", PeriodStart: "2026-10-10T12:00:00Z"},
+		}
 		pool := billingDatabase(t)
 		ctx := context.Background()
+		logs := captureBillingLogs(t)
 		invoiceTime := parseBillingTime(t, scenario.invoiceTime)
 		store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
 		transport := inbox.NewPostgres(pool, time.Second)
@@ -455,6 +463,16 @@ func TestCloseMonth(t *testing.T) {
 		_, err := store.CloseMonth(ctx, "acme", "2026-10")
 		if !errors.Is(err, scenario.wantFirstError) {
 			t.Fatalf("unpriced cohort error=%v want %v", err, scenario.wantFirstError)
+		}
+		var processingError string
+		if err := pool.QueryRow(ctx, "SELECT COALESCE(processing_error,'') FROM usage_inbox WHERE source=$1 AND event_id=$2", event.Source, event.EventID).Scan(&processingError); err != nil {
+			t.Fatalf("Read P0 cohort processing error: %v", err)
+		}
+		if processingError != scenario.wantProcessingError {
+			t.Errorf("Unpriced cohort processing_error=%q; want %q", processingError, scenario.wantProcessingError)
+		}
+		if got := readMissingPriceLogs(t, logs); !reflect.DeepEqual(got, []missingPriceLog{scenario.wantLog}) {
+			t.Errorf("Closing catalog incident log=%+v; want %+v", got, scenario.wantLog)
 		}
 		later := event
 		later.EventID = "later"
@@ -487,6 +505,9 @@ func TestCloseMonth(t *testing.T) {
 		}
 		if october.TotalCents != scenario.wantOctoberTotal || november.TotalCents != scenario.wantNovemberTotal || cohort != scenario.wantCohort {
 			t.Fatalf("recovered cohort: October=%d November=%d members=%d; want %d %d %d", october.TotalCents, november.TotalCents, cohort, scenario.wantOctoberTotal, scenario.wantNovemberTotal, scenario.wantCohort)
+		}
+		if got := readMissingPriceLogs(t, logs); !reflect.DeepEqual(got, []missingPriceLog{scenario.wantLog}) {
+			t.Errorf("Closing recovery reports=%+v; want only original %+v", got, scenario.wantLog)
 		}
 	})
 }

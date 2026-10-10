@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"e2b/billing-api/internal/accounting"
 	"e2b/billing-api/internal/usage"
 	"github.com/jackc/pgx/v5"
 )
+
+const missingPriceErrorCode = "missing_valid_price"
+const missingPricePriority = "P0"
 
 type receipt struct {
 	event      usage.Event
@@ -19,6 +23,7 @@ type receipt struct {
 // ProcessBatch accounts for one receipt. Concurrent workers may select the same
 // candidate, but serialize on its account before locking or changing the receipt.
 // Unsupported input is quarantined visibly; database failures roll back for retry.
+// A missing valid price commits its P0 error before emitting an operational report.
 func (s *Store) ProcessBatch(ctx context.Context) (bool, error) {
 	var candidate receipt
 	err := s.pool.QueryRow(ctx, `SELECT source,event_id,customer_id FROM usage_inbox
@@ -33,55 +38,88 @@ func (s *Store) ProcessBatch(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	err = s.transact(ctx, func(tx pgx.Tx) error { return processReceipt(ctx, tx, candidate) })
+	err = s.accountReceipt(ctx, candidate)
 
 	return err == nil, err
 }
 
-func processReceipt(ctx context.Context, tx pgx.Tx, candidate receipt) error {
-	credit, err := lockAccount(ctx, tx, candidate.event.CustomerID)
-	if errors.Is(err, ErrNotFound) {
-		return quarantine(ctx, tx, candidate.event, "unknown customer")
-	}
+// accountReceipt reports catalog incidents only after the quarantine commits.
+// Both polling and invoice closing use this transaction and reporting boundary.
+func (s *Store) accountReceipt(ctx context.Context, candidate receipt) error {
+	var missingPrice *accounting.MissingPriceError
+	err := s.transact(ctx, func(tx pgx.Tx) error {
+		var err error
+		missingPrice, err = processReceipt(ctx, tx, candidate)
 
+		return err
+	})
 	if err != nil {
 		return err
 	}
 
+	if missingPrice != nil {
+		slog.ErrorContext(ctx, "Usage has no valid price catalog; repair the catalog immediately",
+			"priority", missingPricePriority, "error_code", missingPriceErrorCode,
+			"source", candidate.event.Source, "event_id", candidate.event.EventID,
+			"customer_id", missingPrice.CustomerID, "metric", missingPrice.Metric,
+			"period_start", missingPrice.PeriodStart.UTC().Format(time.RFC3339Nano), "error", missingPrice)
+	}
+
+	return nil
+}
+
+// processReceipt keeps financial writes atomic and returns a catalog incident
+// separately from transaction failure so its quarantine can commit without charges.
+func processReceipt(ctx context.Context, tx pgx.Tx, candidate receipt) (*accounting.MissingPriceError, error) {
+	credit, err := lockAccount(ctx, tx, candidate.event.CustomerID)
+	if errors.Is(err, ErrNotFound) {
+		return nil, quarantine(ctx, tx, candidate.event, "unknown customer")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
 	if err := catalogLock(ctx, tx, false); err != nil {
-		return err
+		return nil, err
 	}
 
 	item, err := loadPendingReceipt(ctx, tx, candidate.event)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
+		return nil, nil
 	}
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	prices, err := loadPrices(ctx, tx, item.event.CustomerID, item.event.Metric)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	rating, err := accounting.Rate(item.event, prices)
 	if err != nil {
-		return quarantine(ctx, tx, item.event, err.Error())
+		var missingPrice *accounting.MissingPriceError
+		if errors.As(err, &missingPrice) {
+			message := fmt.Sprintf("%s %s: %s", missingPricePriority, missingPriceErrorCode, missingPrice)
+			return missingPrice, quarantine(ctx, tx, item.event, message)
+		}
+
+		return nil, quarantine(ctx, tx, item.event, err.Error())
 	}
 
 	closed, err := routingMonths(ctx, tx, item.event)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	month, err := accounting.BillingMonth(rating.UsageMonth, item.receivedAt, closed)
 	if err != nil {
-		return quarantine(ctx, tx, item.event, err.Error())
+		return nil, quarantine(ctx, tx, item.event, err.Error())
 	}
 
-	return persistRating(ctx, tx, item, rating, month, credit)
+	return nil, persistRating(ctx, tx, item, rating, month, credit)
 }
 
 func loadPendingReceipt(ctx context.Context, tx pgx.Tx, key usage.Event) (receipt, error) {

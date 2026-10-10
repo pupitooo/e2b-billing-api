@@ -1,6 +1,7 @@
 package accounting_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -49,6 +50,7 @@ func TestRate(t *testing.T) {
 		wantUsageMonth           string
 		wantChargeTicks          string
 		wantError                bool
+		wantMissingPrice         bool
 		wantErrorMessage         string
 	}{
 		{
@@ -188,15 +190,61 @@ func TestRate(t *testing.T) {
 			wantError:     true,
 		},
 		{
-			name:          "missing catalog is rejected rather than priced as free",
+			name:             "missing catalog returns a catalog incident without a free fallback",
+			customerID:       "cyberdyne",
+			metric:           "cpu_seconds",
+			schemaVersion:    1,
+			periodStart:      "2026-10-10T12:00:00Z",
+			periodEnd:        "2026-10-10T13:00:00Z",
+			units:            1,
+			prices:           nil,
+			wantError:        true,
+			wantMissingPrice: true,
+			wantErrorMessage: "no valid price for customer cyberdyne and metric cpu_seconds at 2026-10-10T12:00:00Z",
+		},
+		{
+			name:             "another metric's prices cannot cover a missing catalog",
+			customerID:       "acme",
+			metric:           "memory_seconds",
+			schemaVersion:    1,
+			periodStart:      "2026-10-10T12:00:00Z",
+			periodEnd:        "2026-10-10T13:00:00Z",
+			units:            1,
+			prices:           prices,
+			wantError:        true,
+			wantMissingPrice: true,
+			wantErrorMessage: "no valid price for customer acme and metric memory_seconds at 2026-10-10T12:00:00Z",
+		},
+		{
+			name:             "another customer's override cannot cover a missing default",
+			customerID:       "cyberdyne",
+			metric:           "cpu_seconds",
+			schemaVersion:    1,
+			periodStart:      "2026-10-10T12:00:00Z",
+			periodEnd:        "2026-10-10T13:00:00Z",
+			units:            1,
+			prices:           []accounting.PriceVersion{acmeOctober},
+			wantError:        true,
+			wantMissingPrice: true,
+			wantErrorMessage: "no valid price for customer cyberdyne and metric cpu_seconds at 2026-10-10T12:00:00Z",
+		},
+		{
+			name:          "an explicitly configured zero price remains valid",
 			customerID:    "cyberdyne",
 			metric:        "cpu_seconds",
 			schemaVersion: 1,
 			periodStart:   "2026-10-10T12:00:00Z",
 			periodEnd:     "2026-10-10T13:00:00Z",
-			units:         1,
-			prices:        nil,
-			wantError:     true,
+			units:         1_000_000,
+			prices: []accounting.PriceVersion{{
+				ID: "free", Metric: "cpu_seconds",
+				EffectiveFrom: instant(t, "2026-10-01T00:00:00Z"), PricePerMillionCents: 0,
+			}},
+			wantPriceID:              "free",
+			wantPricePerMillionCents: 0,
+			wantUsageMonth:           "2026-10-01T00:00:00Z",
+			wantChargeTicks:          "0",
+			wantError:                false,
 		},
 		{
 			name:          "duplicate owner and effective time are rejected",
@@ -317,15 +365,17 @@ func TestRate(t *testing.T) {
 			wantError:                false,
 		},
 		{
-			name:          "usage before any applicable price is rejected",
-			customerID:    "cyberdyne",
-			metric:        "cpu_seconds",
-			schemaVersion: 1,
-			periodStart:   "2026-09-30T12:00:00Z",
-			periodEnd:     "2026-09-30T13:00:00Z",
-			units:         1,
-			prices:        prices,
-			wantError:     true,
+			name:             "usage before every effective_from returns a catalog incident",
+			customerID:       "cyberdyne",
+			metric:           "cpu_seconds",
+			schemaVersion:    1,
+			periodStart:      "2026-09-30T12:00:00Z",
+			periodEnd:        "2026-09-30T13:00:00Z",
+			units:            1,
+			prices:           prices,
+			wantError:        true,
+			wantMissingPrice: true,
+			wantErrorMessage: "no valid price for customer cyberdyne and metric cpu_seconds at 2026-09-30T12:00:00Z",
 		},
 		{
 			name:                     "Acme second October event costs eight dollars",
@@ -404,6 +454,15 @@ func TestRate(t *testing.T) {
 
 				if tt.wantErrorMessage != "" && err.Error() != tt.wantErrorMessage {
 					t.Errorf("Rate(%+v, %+v) error = %q; want %q", event, tt.prices, err, tt.wantErrorMessage)
+				}
+
+				var missingPrice *accounting.MissingPriceError
+				if gotMissingPrice := errors.As(err, &missingPrice); gotMissingPrice != tt.wantMissingPrice {
+					t.Fatalf("Rate(%+v, %+v) missing price classification = %t; want %t", event, tt.prices, gotMissingPrice, tt.wantMissingPrice)
+				}
+
+				if tt.wantMissingPrice && (missingPrice.CustomerID != tt.customerID || missingPrice.Metric != tt.metric || !missingPrice.PeriodStart.Equal(event.PeriodStart)) {
+					t.Errorf("Rate missing price context = %+v; want customer=%s metric=%s period_start=%s", missingPrice, tt.customerID, tt.metric, tt.periodStart)
 				}
 
 				return

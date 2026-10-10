@@ -139,6 +139,15 @@ and the [generation and delivery proposals, including the completed-month requir
 
 Default and customer prices can coexist at the same instant. `UNIQUE NULLS NOT DISTINCT (customer_id, metric, effective_from)` prevents two default prices at that instant as well as duplicate customer versions; see [PostgreSQL unique constraints](https://www.postgresql.org/docs/18/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS). The rater selects the latest eligible customer override first and otherwise the latest eligible default. It rejects unsupported segments crossing a price boundary; the database does not select the applicable price.
 
+Every price has a required finite `effective_from`; no undated baseline is supported.
+The seed preserves the assignment's original effective starts. Provision an additional
+metric and its applicable price before the platform generates its first usage, using
+a start covering that consumption. Missing a valid price is a P0 catalog incident:
+the receipt retains `P0 missing_valid_price: ...` without financial effects and the
+receipt orchestrator logs the incident after commit, during polling or invoice closing.
+Append the correct dated price and explicitly release the investigated receipt for
+another attempt. See the [provisioning and recovery contract](accounting-rules.md#catalog-provisioning-and-p0-recovery).
+
 ## Initial data and migrations
 
 Run the existing commands:

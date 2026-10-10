@@ -199,6 +199,15 @@ Pricing both million units at the later 6-cent rate would produce 12 cents. Usin
 
 Acme has its own 4-cent price throughout the example period. The default change to 6 cents does not replace that eligible customer price. A late October event also uses its historical consumption price, even if it is received in November.
 
+All versions require a finite, non-null `effective_from`. The seed supplies the
+assignment's dated prices; an additional metric must have its applicable price
+configured before its first measurement. There is no undated baseline. If no
+price covers the original consumption time, the receipt retains
+`P0 missing_valid_price: ...` and has no financial effect. Accounting reports the
+P0 incident after committing that error. An operator appends the correct dated
+price and explicitly releases the investigated receipt before another attempt.
+See the [catalog provisioning and recovery contract](accounting-rules.md#catalog-provisioning-and-p0-recovery).
+
 A successful assignment is recorded in `usage_ratings(source, event_id, group_id)`. Its primary key lets one inbox identity contribute to one group exactly once. Foreign keys require both the event and group. The selected price is traceable through `rated_usage_groups.price_version_id`; the rating link does not store a separate amount for each event.
 
 Each rating segment must fit within one UTC month and one applicable price version. The link trigger checks the customer, metric, and month boundaries; it neither selects the price nor checks for a price change inside the interval. The initial rater rejects unsupported crossing segments as visible processing errors. Splitting one receipt across several price groups would require extending the current one-event-to-one-group relationship and defining how to divide units precisely.

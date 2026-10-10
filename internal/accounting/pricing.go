@@ -17,6 +17,19 @@ type PriceVersion struct {
 	PricePerMillionCents int64
 }
 
+// MissingPriceError identifies a catalog gap at the original consumption time.
+// Provision prices before metering; no undated or zero-price fallback is implied.
+type MissingPriceError struct {
+	CustomerID  string
+	Metric      string
+	PeriodStart time.Time
+}
+
+func (e *MissingPriceError) Error() string {
+	return fmt.Sprintf("no valid price for customer %s and metric %s at %s",
+		e.CustomerID, e.Metric, e.PeriodStart.UTC().Format(time.RFC3339Nano))
+}
+
 type Rating struct {
 	Price      PriceVersion
 	UsageMonth time.Time
@@ -103,7 +116,9 @@ func latestEligiblePrice(event usage.Event, prices []PriceVersion) (PriceVersion
 	}
 
 	if !found {
-		return PriceVersion{}, fmt.Errorf("no price for customer %s and metric %s at usage time", event.CustomerID, event.Metric)
+		return PriceVersion{}, &MissingPriceError{
+			CustomerID: event.CustomerID, Metric: event.Metric, PeriodStart: event.PeriodStart,
+		}
 	}
 
 	return selected, nil
