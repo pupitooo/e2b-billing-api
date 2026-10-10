@@ -9,6 +9,13 @@ import (
 	"syscall"
 )
 
+const (
+	senderStateVersion        = 1
+	maxSenderStateBytes       = 32 << 20
+	stateDirectoryPermissions = 0700
+	stateFilePermissions      = 0600
+)
+
 // State keeps the immutable plan, release cursor, and durable delivery receipts
 // together. A crash cannot advance generation without preserving its events.
 type State struct {
@@ -29,11 +36,11 @@ type Store struct {
 }
 
 func OpenStore(path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), stateDirectoryPermissions); err != nil {
 		return nil, fmt.Errorf("create state directory: %w", err)
 	}
 
-	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0600)
+	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, stateFilePermissions)
 	if err != nil {
 		return nil, fmt.Errorf("open state lock: %w", err)
 	}
@@ -57,7 +64,7 @@ func (s *Store) Load() (*State, error) {
 	}
 	defer file.Close()
 	var state State
-	if err := decodeStrict(io.LimitReader(file, 32<<20), &state); err != nil {
+	if err := decodeStrict(io.LimitReader(file, maxSenderStateBytes), &state); err != nil {
 		return nil, fmt.Errorf("invalid sender state; retain the file for investigation: %w", err)
 	}
 
@@ -114,7 +121,7 @@ func (s *Store) saveJSON(state any) error {
 }
 
 func (s *State) validate() error {
-	if s.Version != 1 {
+	if s.Version != senderStateVersion {
 		return fmt.Errorf("unsupported sender state version %d", s.Version)
 	}
 

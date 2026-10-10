@@ -6,6 +6,20 @@ import (
 	"time"
 )
 
+const (
+	defaultStartupTimeout    = 10 * time.Second
+	defaultReadHeaderTimeout = 5 * time.Second
+	defaultReadTimeout       = 15 * time.Second
+	defaultWriteTimeout      = 35 * time.Second
+	defaultIdleTimeout       = 90 * time.Second
+	defaultIngestionTimeout  = 10 * time.Second
+	defaultRollbackTimeout   = 5 * time.Second
+	defaultShutdownTimeout   = 45 * time.Second
+	defaultPoolMaxConns      = 8
+	defaultPoolMinConns      = 2
+	defaultMaxInFlight       = 32
+)
+
 type config struct {
 	startupTimeout    time.Duration
 	readHeaderTimeout time.Duration
@@ -25,12 +39,12 @@ type config struct {
 // workload assumptions and measurement limits are recorded in the README.
 func loadConfig(getenv func(string) string) (config, error) {
 	cfg := config{
-		startupTimeout: 10 * time.Second, readHeaderTimeout: 5 * time.Second,
-		readTimeout: 15 * time.Second, writeTimeout: 35 * time.Second,
-		idleTimeout: 90 * time.Second, ingestionTimeout: 10 * time.Second,
-		rollbackTimeout: 5 * time.Second,
-		shutdownTimeout: 45 * time.Second, poolMaxConns: 8, poolMinConns: 2,
-		maxInFlight: 32,
+		startupTimeout: defaultStartupTimeout, readHeaderTimeout: defaultReadHeaderTimeout,
+		readTimeout: defaultReadTimeout, writeTimeout: defaultWriteTimeout,
+		idleTimeout: defaultIdleTimeout, ingestionTimeout: defaultIngestionTimeout,
+		rollbackTimeout: defaultRollbackTimeout,
+		shutdownTimeout: defaultShutdownTimeout, poolMaxConns: defaultPoolMaxConns, poolMinConns: defaultPoolMinConns,
+		maxInFlight: defaultMaxInFlight,
 	}
 	for _, setting := range []struct {
 		name  string

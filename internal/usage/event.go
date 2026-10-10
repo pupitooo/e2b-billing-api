@@ -8,6 +8,9 @@ import (
 	"unicode/utf8"
 )
 
+// SchemaVersionV1 identifies the original usage event contract.
+const SchemaVersionV1 int32 = 1
+
 // MinUTCYear and MaxUTCYear bound supported calendar years after UTC conversion.
 const (
 	MinUTCYear = 1000

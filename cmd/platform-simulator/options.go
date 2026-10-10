@@ -12,6 +12,14 @@ import (
 	"e2b/billing-api/internal/simulator"
 )
 
+const (
+	defaultSandboxes        = 1
+	defaultBatchSize        = 100
+	defaultRequestTimeout   = 15 * time.Second
+	defaultRetryMax         = 30 * time.Second
+	duplicateScenarioCopies = 1
+)
+
 type commandOptions struct {
 	Action, Scenario, Mode, StatePath, Source, ScenarioFile, BaseURL string
 	Sandboxes, BatchSize, MaxAttempts, Duplicates                    int
@@ -29,15 +37,15 @@ func parseCommandOptions(args []string, errorOutput io.Writer) (commandOptions, 
 	flags.StringVar(&options.StatePath, "state", "/state/run.json", "durable sender state file; retain it across restarts")
 	flags.StringVar(&options.Source, "source", "platform-simulator", "stable producer namespace for the saved run")
 	flags.StringVar(&options.ScenarioFile, "file", "", "custom scenario JSON path")
-	flags.IntVar(&options.Sandboxes, "sandboxes", 1, "sandbox count per customer in the assignment")
+	flags.IntVar(&options.Sandboxes, "sandboxes", defaultSandboxes, "sandbox count per customer in the assignment")
 	flags.DurationVar(&options.Interval, "interval", time.Hour, "assignment measurement interval, dividing 1h (1m to 1h)")
 	flags.BoolVar(&options.Advance, "advance", false, "explicitly release the next operator barrier")
 	flags.StringVar(&options.BaseURL, "api-url", "http://api:8080", "billing HTTP base URL")
-	flags.IntVar(&options.BatchSize, "batch-size", 100, "maximum events per request (1 to 1000)")
+	flags.IntVar(&options.BatchSize, "batch-size", defaultBatchSize, "maximum events per request (1 to 1000)")
 	flags.DurationVar(&options.BatchDelay, "delay", 0, "delay between successful batches")
-	flags.DurationVar(&options.Timeout, "timeout", 15*time.Second, "timeout of each HTTP attempt")
+	flags.DurationVar(&options.Timeout, "timeout", defaultRequestTimeout, "timeout of each HTTP attempt")
 	flags.DurationVar(&options.RetryMin, "retry-min", time.Second, "initial retry delay")
-	flags.DurationVar(&options.RetryMax, "retry-max", 30*time.Second, "maximum retry backoff; Retry-After is a minimum")
+	flags.DurationVar(&options.RetryMax, "retry-max", defaultRetryMax, "maximum retry backoff; Retry-After is a minimum")
 	flags.IntVar(&options.MaxAttempts, "max-attempts", 0, "attempt limit per batch; zero retries until interrupted")
 	flags.IntVar(&options.Duplicates, "duplicates", 0, "extra identical copies per batch (0 to 10)")
 	flags.BoolVar(&options.LoseResponse, "lose-response", false, "ignore the first successful response once per saved run")
@@ -56,7 +64,7 @@ func parseCommandOptions(args []string, errorOutput io.Writer) (commandOptions, 
 func (options commandOptions) sender(output io.Writer) *simulator.Sender {
 	duplicates := options.Duplicates
 	if options.Scenario == "duplicates" && duplicates == 0 {
-		duplicates = 1
+		duplicates = duplicateScenarioCopies
 	}
 
 	return &simulator.Sender{
@@ -91,6 +99,6 @@ func runBillingWorkflow(ctx context.Context, options commandOptions, output io.W
 }
 
 func (options commandOptions) changesTransportInputs() bool {
-	return options.Sandboxes != 1 || options.Interval != time.Hour || options.Advance ||
-		options.BatchSize != 100 || options.BatchDelay != 0 || options.Duplicates != 0 || options.Reverse
+	return options.Sandboxes != defaultSandboxes || options.Interval != time.Hour || options.Advance ||
+		options.BatchSize != defaultBatchSize || options.BatchDelay != 0 || options.Duplicates != 0 || options.Reverse
 }

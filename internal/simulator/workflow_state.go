@@ -8,6 +8,8 @@ import (
 	"os"
 )
 
+const workflowStateVersion = 1
+
 type workflowState struct {
 	Version              int                        `json:"version"`
 	Name                 string                     `json:"name"`
@@ -25,7 +27,7 @@ type workflowState struct {
 func openWorkflowState(store *Store, options WorkflowOptions) (*workflowState, error) {
 	encoded, _ := json.Marshal(options.Plan)
 	fingerprint := fmt.Sprintf("%x", sha256.Sum256(encoded))
-	state := &workflowState{Version: 1, Name: options.Plan.Name, Source: options.Source, Fingerprint: fingerprint,
+	state := &workflowState{Version: workflowStateVersion, Name: options.Plan.Name, Source: options.Source, Fingerprint: fingerprint,
 		StepCount: len(options.Plan.Steps), Captures: map[string]json.RawMessage{}, LostSteps: map[int]bool{}}
 	data, err := os.ReadFile(store.path)
 	if os.IsNotExist(err) && options.Action != "status" {
@@ -55,6 +57,6 @@ func (s *workflowState) matchesPlan(options WorkflowOptions, fingerprint string)
 }
 
 func (s *workflowState) validCheckpoint() bool {
-	return s.Version == 1 && s.NextStep >= 0 && s.NextStep <= s.StepCount &&
+	return s.Version == workflowStateVersion && s.NextStep >= 0 && s.NextStep <= s.StepCount &&
 		s.Captures != nil && s.LostSteps != nil
 }

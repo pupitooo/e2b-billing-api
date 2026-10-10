@@ -667,6 +667,17 @@ The first use with installed Go downloads the pinned tool and its dependencies.
 Semantic grouping of preparation, calculation, persistence, and assertions still
 requires review. See the [wsl documentation](https://github.com/bombsimon/wsl).
 
+Use named constants for values that encode domain rules, supported schema or
+checkpoint versions, protocol limits, retry policy, operational defaults, and
+parsing boundaries. Name each constant for its meaning and keep it near the
+owning responsibility; equal values with different meanings need distinct names.
+Prefer standard-library constants where available.
+
+Ordinary zero values, indexing, and counters may remain literal. Keep test inputs,
+assignment fixtures, and expected outputs explicit; test expectations must not
+derive from production constants. Review this semantic rule manually:
+`make fmt` and `make check` do not enforce constant names.
+
 The [numeric-literal checker](cmd/number-format/main.go) requires underscore
 groups of three for decimal Go literals with five or more digits, for example
 `10_000` and `1_000_000`. Fractional digits group from the decimal point, as in

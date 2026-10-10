@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+const (
+	retryBackoffMultiplier = 2
+	retryJitterDivisor     = 4
+)
+
 type deliveryOutcome struct {
 	Retry      bool
 	RetryAfter time.Duration
@@ -87,12 +92,12 @@ func stopDeliveryAtLimit(store *Store, state *State, limit int) error {
 // waitForDeliveryRetry keeps server Retry-After as a lower bound, applies jitter
 // to the client backoff, and allows cancellation throughout the wait.
 func (s *Sender) waitForDeliveryRetry(ctx context.Context, delay, minimum time.Duration) (time.Duration, error) {
-	jitter := time.Duration(rand.Int64N(max(1, int64(delay/4))))
+	jitter := time.Duration(rand.Int64N(max(1, int64(delay/retryJitterDivisor))))
 	pause := max(min(delay+jitter, s.RetryMax), minimum)
 	s.log("Retrying unchanged measurements in %s\n", pause)
 	if err := s.sleep(ctx, pause); err != nil {
 		return delay, err
 	}
 
-	return min(delay*2, s.RetryMax), nil
+	return min(delay*retryBackoffMultiplier, s.RetryMax), nil
 }

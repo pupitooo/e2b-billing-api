@@ -5,11 +5,17 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	maxAcknowledgementBytes = 65_536
+	maxErrorPreviewBytes    = 4_096
 )
 
 // request performs exactly one exchange. HTTP acknowledgement classification
@@ -31,21 +37,21 @@ func (s *Sender) request(ctx context.Context, body []byte) deliveryOutcome {
 		return deliveryOutcome{Retry: true, Err: fmt.Errorf("HTTP outcome unknown: %w", err)}
 	}
 	defer response.Body.Close()
-	data, readErr := io.ReadAll(io.LimitReader(response.Body, 65_537))
+	data, readErr := io.ReadAll(io.LimitReader(response.Body, maxAcknowledgementBytes+1))
 
 	return classifyDeliveryResponse(response, data, readErr)
 }
 
 func classifyDeliveryResponse(response *http.Response, data []byte, readErr error) deliveryOutcome {
-	if response.StatusCode == 429 || response.StatusCode >= 500 {
+	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
 		return deliveryOutcome{
 			Retry: true, RetryAfter: retryAfter(response.Header.Get("Retry-After")),
-			Err: fmt.Errorf("HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(data[:min(len(data), 4_096)]))),
+			Err: fmt.Errorf("HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(data[:min(len(data), maxErrorPreviewBytes)]))),
 		}
 	}
 
 	if response.StatusCode != http.StatusAccepted {
-		return deliveryOutcome{Err: fmt.Errorf("HTTP %d requires investigation; measurements retained: %s", response.StatusCode, strings.TrimSpace(string(data[:min(len(data), 4_096)])))}
+		return deliveryOutcome{Err: fmt.Errorf("HTTP %d requires investigation; measurements retained: %s", response.StatusCode, strings.TrimSpace(string(data[:min(len(data), maxErrorPreviewBytes)])))}
 	}
 
 	if readErr != nil {
@@ -56,7 +62,7 @@ func classifyDeliveryResponse(response *http.Response, data []byte, readErr erro
 		Status string `json:"status"`
 	}
 	mediaType, _, mediaErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if mediaErr != nil || mediaType != "application/json" || len(data) > 65_536 ||
+	if mediaErr != nil || mediaType != "application/json" || len(data) > maxAcknowledgementBytes ||
 		decodeStrict(bytes.NewReader(data), &result) != nil || result.Status != "accepted" {
 		return deliveryOutcome{Err: fmt.Errorf("HTTP 202 has an invalid acknowledgement; measurements retained")}
 	}
@@ -67,7 +73,7 @@ func classifyDeliveryResponse(response *http.Response, data []byte, readErr erro
 func retryAfter(value string) time.Duration {
 	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds > 0 {
 		// Saturate instead of overflowing; the wait remains cancelable.
-		return time.Duration(min(seconds, int64((1<<63-1)/time.Second))) * time.Second
+		return time.Duration(min(seconds, int64(math.MaxInt64/time.Second))) * time.Second
 	}
 
 	if instant, err := http.ParseTime(value); err == nil {

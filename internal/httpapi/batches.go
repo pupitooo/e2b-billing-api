@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"slices"
 	"strconv"
@@ -19,6 +20,15 @@ const (
 	maxBatchBytes      = 1 << 20
 	maxBatchEvents     = 1_000
 	maxIdentifierBytes = 256
+
+	highSurrogateMin         = 0xd800
+	highSurrogateMax         = 0xdbff
+	lowSurrogateMin          = 0xdc00
+	lowSurrogateMax          = 0xdfff
+	unicodeEscapeBytes       = 6
+	unicodeEscapePrefixBytes = 2
+	hexadecimalRadix         = 16
+	unicodeCodeUnitBits      = 16
 )
 
 var eventFields = []string{
@@ -267,24 +277,24 @@ func hasUnpairedSurrogate(raw []byte) bool {
 			continue
 		}
 
-		value, _ := strconv.ParseUint(string(raw[index+2:index+6]), 16, 16)
-		if value >= 0xdc00 && value <= 0xdfff {
+		value, _ := strconv.ParseUint(string(raw[index+unicodeEscapePrefixBytes:index+unicodeEscapeBytes]), hexadecimalRadix, unicodeCodeUnitBits)
+		if value >= lowSurrogateMin && value <= lowSurrogateMax {
 			return true
 		}
 
-		if value >= 0xd800 && value <= 0xdbff {
-			if index+12 > len(raw) || raw[index+6] != '\\' || raw[index+7] != 'u' {
+		if value >= highSurrogateMin && value <= highSurrogateMax {
+			if index+2*unicodeEscapeBytes > len(raw) || raw[index+unicodeEscapeBytes] != '\\' || raw[index+unicodeEscapeBytes+1] != 'u' {
 				return true
 			}
 
-			low, err := strconv.ParseUint(string(raw[index+8:index+12]), 16, 16)
-			if err != nil || low < 0xdc00 || low > 0xdfff {
+			low, err := strconv.ParseUint(string(raw[index+unicodeEscapeBytes+unicodeEscapePrefixBytes:index+2*unicodeEscapeBytes]), hexadecimalRadix, unicodeCodeUnitBits)
+			if err != nil || low < lowSurrogateMin || low > lowSurrogateMax {
 				return true
 			}
 
-			index += 11
+			index += 2*unicodeEscapeBytes - 1
 		} else {
-			index += 5
+			index += unicodeEscapeBytes - 1
 		}
 	}
 
@@ -296,9 +306,9 @@ func isNull(raw []byte) bool {
 }
 
 func invalidJSON(message, field string) *requestError {
-	return &requestError{status: 400, Code: "invalid_json", Message: message, Field: field}
+	return &requestError{status: http.StatusBadRequest, Code: "invalid_json", Message: message, Field: field}
 }
 
 func invalidBatch(message, field string) *requestError {
-	return &requestError{status: 422, Code: "invalid_batch", Message: message, Field: field}
+	return &requestError{status: http.StatusUnprocessableEntity, Code: "invalid_batch", Message: message, Field: field}
 }

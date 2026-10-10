@@ -2,8 +2,14 @@ package simulator
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
+)
+
+const (
+	minHTTPStatus = http.StatusContinue
+	maxHTTPStatus = 599
 )
 
 func validateWorkflowStep(step WorkflowStep) error {
@@ -11,7 +17,7 @@ func validateWorkflowStep(step WorkflowStep) error {
 		return fmt.Errorf("step %s: method must be GET or POST", step.Name)
 	}
 
-	if !validWorkflowPath(step.Request.Path) || step.Want.Status < 100 || step.Want.Status > 599 {
+	if !validWorkflowPath(step.Request.Path) || step.Want.Status < minHTTPStatus || step.Want.Status > maxHTTPStatus {
 		return fmt.Errorf("step %s: invalid relative path or expected status", step.Name)
 	}
 

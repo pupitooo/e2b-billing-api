@@ -9,6 +9,8 @@ import (
 	"e2b/billing-api/internal/accounting"
 )
 
+const maxIdentifierBytes = 256
+
 type ValidationError struct {
 	Field   string
 	Message string
@@ -17,7 +19,7 @@ type ValidationError struct {
 func (e *ValidationError) Error() string { return e.Field + ": " + e.Message }
 
 func ValidateIdentifier(field, value string) error {
-	if strings.TrimSpace(value) == "" || !utf8.ValidString(value) || strings.ContainsRune(value, 0) || len(value) > 256 {
+	if strings.TrimSpace(value) == "" || !utf8.ValidString(value) || strings.ContainsRune(value, 0) || len(value) > maxIdentifierBytes {
 		return &ValidationError{Field: field, Message: "Use nonblank Unicode without NUL, at most 256 UTF-8 bytes."}
 	}
 
@@ -29,7 +31,7 @@ func validateTime(field string, value time.Time) error {
 		return &ValidationError{Field: field, Message: err.Error()}
 	}
 
-	if value.Nanosecond()%1_000 != 0 {
+	if value.Nanosecond()%int(time.Microsecond) != 0 {
 		return &ValidationError{Field: field, Message: "Use at most microsecond precision."}
 	}
 

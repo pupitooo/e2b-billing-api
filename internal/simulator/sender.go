@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+const (
+	maxBatchEvents     = 1_000
+	maxDuplicateCopies = 10
+)
+
 const maxBatchBytes = 1_048_576
 
 // Sender controls transport independently of the saved measurements.
@@ -38,7 +43,7 @@ func (s *Sender) validate() error {
 		return fmt.Errorf("an HTTP client with a positive timeout is required")
 	}
 
-	if s.BatchSize < 1 || s.BatchSize > 1_000 {
+	if s.BatchSize < 1 || s.BatchSize > maxBatchEvents {
 		return fmt.Errorf("batch-size must be between 1 and 1000")
 	}
 
@@ -46,7 +51,7 @@ func (s *Sender) validate() error {
 		return fmt.Errorf("delay must be non-negative and retry delays must satisfy 0 < retry-min <= retry-max <= 1h")
 	}
 
-	if s.MaxAttempts < 0 || s.Duplicates < 0 || s.Duplicates > 10 {
+	if s.MaxAttempts < 0 || s.Duplicates < 0 || s.Duplicates > maxDuplicateCopies {
 		return fmt.Errorf("max-attempts must be non-negative and duplicates must be between 0 and 10")
 	}
 

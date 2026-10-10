@@ -5,6 +5,14 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"e2b/billing-api/internal/usage"
+)
+
+const (
+	maxAssignmentSandboxes     = 1_000
+	assignmentMeasurementCount = 6
+	maxScenarioBytes           = 16 << 20
 )
 
 const maxScenarioEvents = 10_000
@@ -26,7 +34,7 @@ type Plan struct {
 // Assignment splits the assignment's six hourly totals into exact integer
 // increments while retaining consumption times and deterministic identities.
 func Assignment(source string, sandboxes int, interval time.Duration) (Plan, error) {
-	if sandboxes < 1 || sandboxes > 1_000 {
+	if sandboxes < 1 || sandboxes > maxAssignmentSandboxes {
 		return Plan{}, fmt.Errorf("sandboxes must be between 1 and 1000")
 	}
 
@@ -35,7 +43,7 @@ func Assignment(source string, sandboxes int, interval time.Duration) (Plan, err
 	}
 
 	segments := int(time.Hour / interval)
-	if 6*sandboxes*segments > maxScenarioEvents {
+	if assignmentMeasurementCount*sandboxes*segments > maxScenarioEvents {
 		return Plan{}, fmt.Errorf("the scenario must contain at most %d events", maxScenarioEvents)
 	}
 
@@ -112,7 +120,7 @@ func splitHour(source string, input hourInput, sandboxes int, interval time.Dura
 			events = append(events, Event{
 				Source:        source,
 				EventID:       fmt.Sprintf("assignment-%s-%s-s%04d-p%04d", input.customer, start.Format("2006-01-02"), sandbox+1, segment+1),
-				SchemaVersion: 1, CustomerID: input.customer,
+				SchemaVersion: usage.SchemaVersionV1, CustomerID: input.customer,
 				SandboxID: fmt.Sprintf("%s-sandbox-%04d", input.customer, sandbox+1),
 				Metric:    "cpu_seconds", PeriodStart: period, PeriodEnd: period.Add(interval), Units: units,
 			})
@@ -142,7 +150,7 @@ func Custom(reader io.Reader, source string) (Plan, error) {
 			} `json:"events"`
 		} `json:"steps"`
 	}
-	if err := decodeStrict(io.LimitReader(reader, 16<<20), &input); err != nil {
+	if err := decodeStrict(io.LimitReader(reader, maxScenarioBytes), &input); err != nil {
 		return Plan{}, fmt.Errorf("decode scenario: %w", err)
 	}
 

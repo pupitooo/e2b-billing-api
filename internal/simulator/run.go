@@ -104,7 +104,7 @@ func readRunStatus(options Options) error {
 func resumeRun(store *Store, options Options) (*State, error) {
 	state, err := store.Load()
 	if os.IsNotExist(err) && options.generates() && options.Plan != nil {
-		state = &State{Version: 1, Plan: *options.Plan, Delivered: make([]bool, len(options.Plan.events()))}
+		state = &State{Version: senderStateVersion, Plan: *options.Plan, Delivered: make([]bool, len(options.Plan.events()))}
 		err = store.Save(state)
 		if err == nil {
 			fmt.Fprintf(options.Output, "Prepared scenario %q with stable identities in %s\n", state.Plan.Name, options.StatePath)
