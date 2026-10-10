@@ -1,5 +1,5 @@
 # Local documentation stays private until explicitly included.
-# Track API documentation, published architecture guides, simulator scenarios, and their explicitly included diagrams.
+# Track API documentation, published guides, simulator scenarios, and their explicitly included diagrams.
 /docs/*
 !/docs/api/
 /docs/api/*
@@ -10,6 +10,9 @@
 !/docs/architecture/billing-model.md
 !/docs/architecture/usage-to-invoice.md
 !/docs/architecture/accounting-rules.md
+!/docs/guides/
+/docs/guides/*
+!/docs/guides/final-acceptance-testing.md
 !/docs/simulator/
 /docs/simulator/*
 !/docs/simulator/custom-scenario.json

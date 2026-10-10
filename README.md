@@ -673,6 +673,8 @@ in [gofmt](https://pkg.go.dev/cmd/gofmt) and [go vet](https://pkg.go.dev/cmd/vet
 
 `make test` is the primary test command. Start PostgreSQL with `make up SERVICE=postgres` before running all tests or the database suite; the Go suite builds and starts the API and worker automatically.
 
+Follow the [final acceptance test procedure](docs/guides/final-acceptance-testing.md) to verify every assignment requirement, walk through the October/November example with explicit checkpoints, inspect persisted accounting state, and exercise outages, retries, and restart in isolated Compose projects.
+
 | Command | Purpose |
 | --- | --- |
 | `make test` | Run all test suites. |
