@@ -6,14 +6,14 @@ This guide follows metered usage from receipt to an immutable monthly invoice,
 connecting financial calculations, database fields, and the assignment's examples:
 
 - [How to read the flow diagram](#how-to-read-the-flow-diagram): the three timing boundaries, what the arrows carry, and the units used in the example.
-- [Implemented PostgreSQL schema (ERD)](#implemented-postgresql-schema-erd): all actual tables, columns, keys, and declared relationships through migration 007.
+- [Implemented PostgreSQL schema (ERD)](#implemented-postgresql-schema-erd): all current tables, columns, keys, and declared relationships.
 - [Why storing everything in cents is insufficient](#1-why-storing-everything-in-cents-is-insufficient): how rounding small measurements loses charges and how exact ticks preserve their value.
 - [One example through the entire flow](#2-one-example-through-the-entire-flow): one workload across usage events, rating, groups, credit, rounding, invoice lines, and an invoice.
 - [Usage events](#3-usage-events-what-was-consumed): the inbox contract, timestamp bounds, durable receipt, and retry content checks.
 - [Historical rating](#4-rating-the-cost-under-the-historical-price): price versions, customer overrides, exact charges, rating links, interval boundaries, and an [example of incorrect current-price billing](#example-why-summing-all-units-and-using-the-current-price-fails).
 - [Rated usage groups](#5-ratedusagegroup-the-rated-accounting-intermediate): grouping keys, stored totals, shared rounding boundaries, and frozen invoiced groups.
 - [Credits](#6-credits-gross-charge-allocated-credit-and-balance): gross charges, ledger entries, balances, group allocations, [gross spend limits](#why-the-limit-uses-gross-charges), and [credit before rounding](#what-credit-before-rounding-means).
-- [Rounding](#7-rounding-when-and-where-cents-are-produced): half-up boundaries, gross and net cent presentation, balancing credit lines, and the [historical cent-increment design](#historical-design-before-migration-004-book-only-each-new-cent-increment).
+- [Rounding](#7-rounding-when-and-where-cents-are-produced): half-up boundaries, gross and net cent presentation, balancing credit lines, and the [running gross projection](#running-gross-projection-during-accounting).
 - [Invoice lines](#8-invoiceline-what-appears-on-a-particular-invoice): immutable usage and add-on snapshots, exact audit amounts, and traceability to source events.
 - [Monthly invoices](#9-invoice-an-immutable-monthly-document): customer numbering, buyer snapshots, signed line totals, idempotent closing, and [complete assignment invoice examples](#example-complete-assignment-invoices).
 - [Late usage](#10-late-usage-why-there-are-two-distinct-periods): original consumption months, later billing months, historical prices, spend limits, and closing boundaries.
@@ -21,7 +21,7 @@ connecting financial calculations, database fields, and the assignment's example
 
 Billing answers several different questions in sequence: what the customer consumed, how much that consumption costs, how much credit covers, and what appears on a particular invoice. `RatedUsageGroup` connects measured usage to its accounting result. It retains the shared pricing meaning of many measurements and their exact financial value, so small charges survive rounding.
 
-This document connects the explanation from the "Calculating in ticks" discussion to the project's database model. It follows one small example through the entire flow, then explains price changes, credit allocation, rounding, late usage, and the assignment's invoices.
+This document describes the application's current accounting flow and database model. It follows one small example through the entire flow, then explains price changes, credit allocation, rounding, late usage, and the assignment's invoices.
 
 ## How to read the flow diagram
 
@@ -51,15 +51,15 @@ Steps 3 and 4 show the cumulative state **after all 1_000 events**, while step 2
 
 The phase boxes distinguish receipt, accounting, and issuance. The seven numbered steps describe accounting transformations; they do not each require their own service or table. `InvoiceLine` values are stored together in `invoices.snapshot.lines`. The next section shows the actual tables and relationships.
 
-The schema below builds on [inbox migration 001](../../migrations/001_usage_inbox.sql) and [accounting migration 002](../../migrations/002_billing_model.sql), introduced in [PR #8](https://github.com/pupitooo/e2b-billing-api/pull/8). [Migration 003](../../migrations/003_assignment_seed.sql) contains the initial catalog. Migration 004 converts credit to exact ticks. Shared Go calculations are implemented in `internal/accounting`; the worker persists them transactionally through `internal/billing`. Migrations 005–007 add closures, operation history, durable cohorts, invoice snapshots, and frozen-group links. The [financial rules](accounting-rules.md) describe the current contract.
+Shared Go calculations are implemented in `internal/accounting`; the worker persists them transactionally through `internal/billing`. PostgreSQL stores the inbox, price catalog, rated groups, exact credit ledger and balances, monthly gross usage, closing cohorts, and immutable invoice snapshots. The [financial rules](accounting-rules.md) describe the accounting contract.
 
-The flow diagram follows the required `Credits → Rounding` order. On 9 October 2026 the user confirmed credit allocation in ticks before rounding. [Migration 004](../../migrations/004_exact_credit.sql) therefore converts balances, allocations, and the ledger to exact ticks. The earlier cent-based design is retained below as a historical alternative; the current policy uses exact ticks.
+The flow diagram follows the required `Credits → Rounding` order. Credit balances, allocations, and ledger entries use exact ticks. Invoice presentation rounds each group's gross and net amounts to cents after credit allocation.
 
 ## Implemented PostgreSQL schema (ERD)
 
-This ERD shows all **18 actual tables** after migrations `001` through `007`, including the migration runner's `schema_migrations` table. It uses the SQL table and column names, types, primary keys, foreign keys, and database cardinalities. The schema was checked against the migrations on **10 October 2026**.
+This ERD shows all **18 current tables**, including the migration runner's `schema_migrations` table. It uses the SQL table and column names, types, primary keys, foreign keys, and database cardinalities.
 
-![Implemented PostgreSQL schema through migration 007](../diagrams/implemented-data-model/implemented-data-model.png)
+![Current implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
 
 [Open full-size PNG](../diagrams/implemented-data-model/implemented-data-model.png) · [Editable Mermaid source](../diagrams/implemented-data-model/implemented-data-model.mmd).
 
@@ -143,7 +143,7 @@ Invoice calculation can work with a few already rated groups instead of loading 
 
 ## 3. Usage events: what was consumed
 
-An event might say: "Cyberdyne's sandbox consumed 1_000 `cpu_seconds` during this interval." It is an increment to count exactly once. A repeatedly reported lifetime counter would require a different contract.
+An event might say: "Cyberdyne's sandbox consumed 1_000 `cpu_seconds` during this interval." It is an increment to count exactly once. If each report instead contained the total consumption since the sandbox started, the consumer would need to calculate new usage as the difference between successive readings. That reporting model would require a different event contract.
 
 In the database this is one `usage_inbox` row:
 
@@ -251,11 +251,11 @@ booked_charge_cents     5
 allocated_credit_ticks  2_000_000
 ```
 
-`price_version_id` refers to the seeded default version. The example customer's starting credit is illustrative. The cent value is a rounded gross projection; the migration itself does not calculate it. The group's net charge is `5_000_000 − 2_000_000 = 3_000_000` ticks; the gross charge retains the full consumption value.
+`price_version_id` refers to the seeded default version. The example customer's starting credit is illustrative. The worker calculates the cent value as a rounded gross projection. The group's net charge is `5_000_000 − 2_000_000 = 3_000_000` ticks; the gross charge retains the full consumption value.
 
 Grouping also enforces a correctness rule: adding sandbox or batch to the key would give each one its own rounding boundary, potentially changing the charge for the same total units. Omitting price or months would combine consumption with different accounting meanings.
 
-A group's identity cannot change; running totals can increase before issuance. Migration 007 freezes invoiced groups against updates and deletes. Database constraints do not automatically prove that units equal linked event sums, ticks match selected prices, or cents follow rounding. The transactional worker maintains these relationships, which integration tests verify.
+A group's identity cannot change; running totals can increase before issuance. Database triggers protect invoiced groups against updates and deletes. Database constraints do not automatically prove that units equal linked event sums, ticks match selected prices, or cents follow rounding. The transactional worker maintains these relationships, which integration tests verify.
 
 ## 6. Credits: gross charge, allocated credit, and balance
 
@@ -306,11 +306,7 @@ remaining credit = 995_000 ticks = 0.995 cent
 net usage = 0 ticks
 ```
 
-Before migration 004, `credit_balance_cents`, `credit_entries.amount_cents`, and `allocated_credit_cents` were `bigint` columns. They could represent neither this debit nor the remaining 0.995 cent. A 5_000-tick debit is only a fraction of a cent.
-
-Migration 004 introduces non-negative `credit_balance_ticks` and `allocated_credit_ticks`, plus signed integer `credit_entries.amount_ticks`. It multiplies the original cents by a million and preserves history; incompatible legacy allocations exceeding exact gross charges are rejected atomically. `accounting.AllocateCredit` allocates exact credit to newly processed usage. Allocations follow transaction order under the customer lock; a later grant does not rewrite earlier allocations. Fractional-cent credit remains in the account as ticks.
-
-The historical alternative compatible with the columns before migration 004 instead allocates credit against new cumulative **cent increments** of a group. It preserves exact usage ticks, but operationally computes gross cents first and then allocates cent credit. These are distinct policies. The confirmed current policy allocates exact ticks before rounding; the historical cent alternative below explains the difference.
+`credit_balance_ticks` and `allocated_credit_ticks` are non-negative exact integers; `credit_entries.amount_ticks` is a signed exact integer. `accounting.AllocateCredit` allocates available credit to each newly processed event's exact charge. Allocations follow transaction order under the customer lock; a later grant does not rewrite earlier allocations. Fractional-cent credit remains in the account as ticks, even when a group's rounded gross projection is still zero cents.
 
 ## 7. Rounding: when and where cents are produced
 
@@ -332,19 +328,18 @@ round_half_up_cents(ticks) = floor((ticks + 500_000) / 1_000_000)
 
 The current `InvoiceAmounts` rounds the group's cumulative gross and net amounts. The credit line is the negative difference between those cent values, rather than an independently rounded exact debit. Line totals therefore equal rounded net usage. With 1 cent gross and exactly 0.5 cent of credit, net usage of 0.5 cent rounds to 1 cent; displayed credit is 0 cents, while the ledger retains an exact 500_000-tick debit. The issued invoice snapshot retains those exact amounts for audit.
 
-### Historical design before migration 004: book only each new cent increment
+### Running gross projection during accounting
 
-This section retains the original cent alternative and its column names at that time. The assignment allows credit balances to be queried before invoice issuance. After every event, the earlier design therefore calculates the rounded **total group state**, subtracts previously booked cents, and allocates credit only against the difference:
+After every event, the worker adds its exact charge to the group and replaces `booked_charge_cents` with the rounded **cumulative gross amount**. In the same transaction, it allocates credit against the event's exact charge:
 
 ```text
-new_booked_cents = round_half_up_cents(new_exact_charge_ticks)
-delta_cents = new_booked_cents - old_booked_charge_cents
-credit_debit_cents = min(credit_balance_cents, delta_cents)
+credit_debit_ticks = min(credit_balance_ticks, event_charge_ticks)
 
-booked_charge_cents = new_booked_cents
-allocated_credit_cents += credit_debit_cents
-credit_balance_cents -= credit_debit_cents
-credit_entries.amount_cents = -credit_debit_cents  // only when positive
+exact_charge_ticks += event_charge_ticks
+booked_charge_cents = round_half_up_cents(exact_charge_ticks)
+allocated_credit_ticks += credit_debit_ticks
+credit_balance_ticks -= credit_debit_ticks
+credit_entries.amount_ticks = -credit_debit_ticks  // only when the debit is positive
 ```
 
 The group grows as follows with 1_000-unit measurements at 5 cents per million:
@@ -356,18 +351,17 @@ The group grows as follows with 1_000-unit measurements at 5 cents per million:
 | 200 | 200_000 | 1_000_000 | 1 |
 | 1_000 | 1_000_000 | 5_000_000 | 5 |
 
-Exact values remain available when the running cent projection changes. Between the 100th and 200th events, one cent has already been booked, so it is not added again. All cent increments sum to the rounded result for the entire group.
+The projection remains 1 cent between the 100th and 200th events, while exact gross ticks continue to increase and each event can consume available credit. The worker replaces the projection with the rounded group total; it does not sum individually rounded event charges.
 
-This preserves the same gross charge under different splits of **the same open group**. It does not prove that credit allocations are independent of the order of different groups, late input, or new grants. The earlier design uses credit available at processing time and does not retroactively change historical allocations when later grants arrive; that policy requires explicit worker tests.
+Splitting the same consumption into different events preserves the exact gross total and its rounded projection within **the same open group**. Credit uses the balance available at each event's processing time; allocations across different groups can depend on processing order and intervening grants.
 
-The invoice then snapshots already booked gross cents and allocated credit. Closing does not allocate credit again or round individual events again. Operationally, this historical alternative converts gross charges to cents before allocating credit. The diagram's exact-credit-before-rounding flow and the historical cent columns must be read with that distinction in mind.
+At closing, `InvoiceAmounts` calculates the invoice's cent presentation from the group's exact gross and allocated credit ticks. Closing does not allocate credit again. The snapshot preserves both the displayed cents and the exact audit amounts.
 
 ## 8. InvoiceLine: what appears on a particular invoice
 
 `RatedUsageGroup` retains the rated accounting intermediate. `InvoiceLine` preserves what appeared on a specific issued invoice. A group can grow during an open period; an issued line must retain its values when later measurements, prices, or addresses change.
 
-The logical ERD proposed separate relational invoice lines. The implementation stores
-ordered lines inside immutable `invoices.snapshot`, with `invoiced_usage_groups` linking
+The implementation stores ordered lines inside immutable `invoices.snapshot`, with `invoiced_usage_groups` linking
 back to frozen accounting groups. Each usage line snapshots metric, original month,
 price version, units, exact gross/credit ticks, description, and signed cent presentation.
 Add-on lines retain subscription identity and purchased whole-cent price. The snapshot
@@ -377,6 +371,38 @@ an issued document. The public schema is in [OpenAPI](../api/openapi.yaml).
 The current policy derives usage and credit lines with `InvoiceAmounts(exact_charge_ticks, allocated_credit_ticks)`. Credit can be presented as a combined line by summing already calculated cent differences, but its origin and exact ticks must remain traceable. Combining lines cannot introduce another rounding step.
 
 Add-on charges reach the invoice through a separate path: `addon_subscriptions.monthly_price_cents` retains the purchase price. It requires neither resource rating nor usage credit and is already in whole cents. An invoice can therefore contain lines that did not originate as usage events.
+
+### Example: invoice lines for ACME-0002
+
+The implemented [assignment scenario](../simulator/billing-assignment.json) produces the following ordered lines for Acme's November 2026 invoice, `ACME-0002`, in USD. The descriptions below are the values emitted by the current API. CPU units are seconds; the original usage month is retained even when the invoice bills them later.
+
+| Kind | Description | Original usage month | CPU seconds | `amount_cents` | Amount (USD) |
+| --- | --- | --- | ---: | ---: | ---: |
+| `usage` | Late usage from 2026-10 | 2026-10 | 50_000_000 | 200 | +2.00 |
+| `usage` | Usage | 2026-11 | 100_000_000 | 400 | +4.00 |
+| `addon` | concurrency_pack | — | — | 2_000 | +20.00 |
+| `credit` | Used credit | — | — | -600 | -6.00 |
+| **Total** | | | | **2_000** | **20.00** |
+
+The usage lines display gross charges. One negative credit line deducts the USD 6.00 already allocated to those groups; the USD 20.00 add-on remains payable. The invoice's `total_cents` is `200 + 400 + 2_000 - 600 = 2_000`. Issuing this document does not consume credit again.
+
+The first row is stored in `invoices.snapshot.lines` and returned by the API with its audit fields:
+
+```json
+{
+  "kind": "usage",
+  "description": "Late usage from 2026-10",
+  "amount_cents": 200,
+  "price_version_id": "cpu-acme-2026-10-01",
+  "metric": "cpu_seconds",
+  "usage_month": "2026-10",
+  "units": "50000000",
+  "gross_ticks": "200000000",
+  "credit_ticks": "200000000"
+}
+```
+
+The price version identifies Acme's historical rate of 4 cents per million CPU seconds. Exact tick amounts and units are decimal strings in JSON; `amount_cents` is a signed integer. Here, `credit_ticks` records the exact allocation to this usage group, while the separate negative credit line presents the combined deduction for both groups. The add-on line carries `subscription_id: "acme-pack"`; it has no usage month, resource units or usage tick fields.
 
 The intended usage audit path is:
 
@@ -402,6 +428,20 @@ under the account lock. Numbering is per customer: `ACME-0001`, `ACME-0002`;
 Cyberdyne's sequence is independent. Retrying a close returns the original snapshot.
 
 `total_cents` is the exact integer sum of signed lines. The address comes from `customers` at issuance and is stored in a snapshot. Later customer changes must preserve the issued document.
+
+### Production note: external invoice reference (planned)
+
+For production, retain the invoice ID assigned by an external invoicing system such as Stripe, Chargebee, or Fakturoid, together with the provider name. This reference connects the internal customer/month invoice to its external document; the internal invoice number remains a separate identifier. No provider has been selected, and this integration is not implemented.
+
+Recommended design: store `provider` and `external_invoice_id` in separate integration metadata linked to the internal invoice, so the reference can be recorded after external creation without changing the immutable financial snapshot. External creation should use a stable idempotency key derived from the internal invoice identity; retries must recover the same external document instead of creating another invoice.
+
+### Invoice generation workflow
+
+Closing has three phases: capture or resume a fixed cohort of accepted receipts, process those receipts in their individual accounting transactions, then publish the invoice atomically under the customer account lock. A new closure requires the whole UTC month to have ended. Earlier committed accounting survives an interrupted close; retrying the same customer/month resumes work or returns the original invoice. Issuance uses the credit already allocated during accounting.
+
+1. **Capture:** commit the customer/month closing record and the identities of its pending receipts. Receipts outside this fixed cohort route to another open month, even if their receipt timestamp is earlier.
+2. **Process:** account for each captured receipt in a separate transaction. A processing error blocks issuance; a timeout or storage failure leaves committed progress available for retry.
+3. **Publish:** under the customer account lock, snapshot buyer details and signed invoice lines, freeze the rated groups, close the month, and advance numbering in one transaction.
 
 ### Example: complete assignment invoices
 
