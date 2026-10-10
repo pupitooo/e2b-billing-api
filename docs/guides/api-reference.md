@@ -3,7 +3,7 @@
 Run `make docs` and open the printed **API reference** address, by default
 [http://127.0.0.1:8082/reference/](http://127.0.0.1:8082/reference/).
 Scalar provides the three-panel `modern` layout and an embedded **Test Request**
-client. The [OpenAPI 3.1.2 specification](openapi.yaml) defines every endpoint's
+client. The [OpenAPI 3.1.2 specification](../api/openapi.yaml) defines every endpoint's
 fields, examples, validation, status codes, and retry/conflict semantics.
 
 The `api-docs` Compose service serves Scalar and bundled JavaScript locally.
@@ -23,5 +23,5 @@ and the [event contract](../architecture/usage-to-invoice.md#3-usage-events-what
 
 API interface changes must update the specification in the same change. Refresh
 Scalar after editing `openapi.yaml`; guides rebuild and refresh automatically.
-See [documentation maintenance](../guides/documentation.md) for publication,
+See [documentation maintenance](documentation.md) for publication,
 validation, and the one-port routing configuration.

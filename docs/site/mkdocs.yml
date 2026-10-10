@@ -35,7 +35,7 @@ nav:
       - Runtime configuration: guides/runtime-configuration.md
       - Database operations: guides/database-operations.md
   - API:
-      - Reference guide: api/index.md
+      - Reference guide: guides/api-reference.md
       - API reference: /reference/
   - Simulator:
       - Transport scenarios: simulator/transport-scenarios.md

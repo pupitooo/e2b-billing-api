@@ -59,7 +59,10 @@ Keep every public guide in English. Use ordinary relative Markdown links within
 `docs/`; they work both in repository viewers and the generated site. Links to
 repository files outside `docs/` are rewritten to the corresponding GitHub file
 only while rendering, so the portal does not expose source code or local files.
-The root README remains the operational entry point and contract register.
+OpenAPI source links resolve to `/reference/openapi.yaml` in the portal. Keep
+guide routes outside `/api/` and `/reference/`, which are reserved for proxies;
+the build rejects colliding navigation pages. The root README remains the
+operational entry point and contract register.
 
 For a new guide:
 
@@ -86,7 +89,7 @@ files, unresolved document links, and invalid anchors fail the build. Generated
 HTML is temporary container data; nothing is written into the checkout.
 Isolated build scenarios also verify that private Markdown and JSON stay out of
 the output and search index, theme assets survive, and missing selected documents
-or broken links/anchors fail. CI runs the same checks before the application suite.
+broken links/anchors, or navigation under reserved proxy routes fail. CI runs the same checks before the application suite.
 
 The documentation image uses pinned Material and Scalar images. The Material
 image supplies MkDocs, its extensions and theme; Caddy is copied from the same
