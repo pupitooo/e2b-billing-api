@@ -6,6 +6,7 @@ The project uses the selected [option C architecture](docs/brainstorming/archite
 
 Transactional accounting, financial APIs, and immutable monthly invoices are implemented. For the design and financial details, start with:
 
+- [Assignment architecture and coverage](docs/architecture/submission-overview.md): the usage flow, interface owners, tools, implemented behaviour and remaining limits.
 - [Billing model — Architectural decisions and rationale](docs/architecture/billing-model.md#architectural-decisions-and-rationale): design choices and trade-offs.
 - [Billing model — Implemented PostgreSQL schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001009): the complete ERD and its editable source.
 - [Financial rules — Exact money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit): tick precision and credit allocation.
@@ -121,7 +122,7 @@ waits, CPU, disk/WAL behavior, overload responses, and accounting backlog. At
 0.2 s would imply about 1.7 occupied connections on average; p95 is not the mean
 and this example does not cover peaks. Validate representative payloads, retries,
 worker competition, and sustained storage growth before changing budgets or
-adding replicas. See the [architecture growth TODOs](docs/brainstorming/architecture-options.md#todo-higher-load-and-evolution-beyond-c).
+adding replicas. See the [scaling proposal](docs/brainstorming/architecture-options.md#scaling-to-billions-of-records).
 
 ### Initialize the database
 
@@ -801,7 +802,7 @@ run its tests with `make go-test RUN=EventValidate`.
 
 ![Option C: building blocks and interfaces](docs/diagrams/option-c-components/option-c-components.png)
 
-[Native Mermaid source](docs/diagrams/option-c-components/option-c-components.mmd).
+[Native Mermaid source](docs/diagrams/option-c-components/option-c-components.mmd) · [Component and interface explanation](docs/diagrams/option-c-components/README.md).
 
 The diagram records the selected architecture. The available HTTP endpoints are:
 

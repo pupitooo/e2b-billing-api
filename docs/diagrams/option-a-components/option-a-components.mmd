@@ -1,5 +1,5 @@
 ---
-title: Option A - synchronous Go and SQLite
+title: Alternative option A - synchronous Go and SQLite
 config:
   layout: dagre
   flowchart:
@@ -21,7 +21,7 @@ flowchart LR
     end
 
     platform <-->|"HTTP / JSON<br/>POST /usage/batches<br/>Accounting result after commit"| api
-    platform <-->|"HTTP GET<br/>/customers/{id}/spend-status"| api
+    platform <-->|"HTTP GET<br/>/customers/{id}/limit-status"| api
     callers <-->|"HTTP commands and queries<br/>Credit, prices, add-ons,<br/>limits, invoices, closing"| api
 
     classDef platformNode fill:#e8f1fb,stroke:#31588a,color:#172b4d;

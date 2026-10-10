@@ -1,5 +1,5 @@
 ---
-title: Option D - Kafka ingestion and separate accounting
+title: Alternative option D - Kafka ingestion and separate accounting
 config:
   layout: dagre
   flowchart:
@@ -38,7 +38,7 @@ flowchart TB
     deltas -->|"Kafka consumer protocol<br/>Progress after financial commit"| worker
     worker -->|"SQL: customer lock + one commit<br/>Financial effect + processed delta ID"| accounting
     api <-->|"SQL commands and queries<br/>Spend state + invoice snapshots"| accounting
-    platform <-->|"HTTP GET<br/>/customers/{id}/spend-status<br/>Processed status + lag"| api
+    platform <-->|"HTTP GET<br/>/customers/{id}/limit-status<br/>Processed status + lag"| api
     callers <-->|"HTTP commands and queries<br/>Credit, prices, add-ons,<br/>limits, invoices, closing"| api
 
     classDef platformNode fill:#e8f1fb,stroke:#31588a,color:#172b4d;
