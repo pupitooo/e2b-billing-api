@@ -18,6 +18,22 @@ if [ "${E2B_GO_CHECKS_DOCKER:-0}" = 1 ] || ! command -v go >/dev/null 2>&1; then
 fi
 
 formatter="$(go env GOROOT)/bin/gofmt"
+. ./scripts/whitespace.env
+
+# The Docker image contains the pinned binary; installed Go uses the same release.
+# Both passes include integration-only tests without executing them.
+whitespace_go() {
+  for build_tags in '' integration; do
+    if [ -x /usr/local/bin/e2b-wsl ]; then
+      /usr/local/bin/e2b-wsl -default none -enable "$WSL_CHECKS" \
+        -branch-max-lines "$WSL_BRANCH_MAX_LINES" -tags "$build_tags" "$@" ./cmd/... ./internal/... ./tests/...
+    else
+      go run -mod=readonly -modfile=./scripts/whitespace/go.mod github.com/bombsimon/wsl/v5/cmd/wsl \
+        -default none -enable "$WSL_CHECKS" \
+        -branch-max-lines "$WSL_BRANCH_MAX_LINES" -tags "$build_tags" "$@" ./cmd/... ./internal/... ./tests/...
+    fi
+  done
+}
 
 # Check or repair first-party Go files without traversing private worktrees,
 # Git metadata, or third-party dependency trees. find preserves spaced paths.
@@ -36,16 +52,16 @@ check_format() {
   fi
 }
 
-# Vet checks both ordinary packages and integration-only test code without
-# executing tests or connecting to PostgreSQL or the HTTP API.
+# Vet checks first-party packages and integration-only tests without executing
+# them. Match the linter's package scope so ignored local tooling stays excluded.
 vet_go() {
-  go vet ./...
-  go vet -tags=integration ./...
+  go vet ./cmd/... ./internal/... ./tests/...
+  go vet -tags=integration ./cmd/... ./internal/... ./tests/...
 }
 
 case "$mode" in
-  fmt) go run ./cmd/number-format -fix .; format_go -w ;;
-  fmt-check) check_format; go run ./cmd/number-format . ;;
+  fmt) go run ./cmd/number-format -fix .; format_go -w; whitespace_go -fix; format_go -w ;;
+  fmt-check) check_format; go run ./cmd/number-format .; whitespace_go ;;
   vet) vet_go ;;
-  check) check_format; go run ./cmd/number-format .; vet_go ;;
+  check) check_format; go run ./cmd/number-format .; whitespace_go; vet_go ;;
 esac

@@ -50,13 +50,16 @@ func TestAssignment(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+
 				again, err := Assignment(tt.source, tt.sandboxes, tt.interval)
 				if err != nil || sameJSON(plan, again) != tt.wantDeterministic {
 					t.Fatalf("Plan is not deterministic: %v", err)
 				}
+
 				if count := len(plan.events()); count != tt.wantEventCount {
 					t.Fatalf("Event count = %d", count)
 				}
+
 				totals := make(map[string]int64)
 				previous := make(map[string]time.Time)
 				for _, event := range plan.events() {
@@ -65,17 +68,21 @@ func TestAssignment(t *testing.T) {
 					if event.Units < 0 || event.PeriodStart.Location() != time.UTC || event.PeriodEnd.Sub(event.PeriodStart) != tt.interval {
 						t.Errorf("Invalid measurement split: %+v", event)
 					}
+
 					sandbox := key + "/" + event.SandboxID
 					if end, present := previous[sandbox]; present && !end.Equal(event.PeriodStart) {
 						t.Errorf("Intervals do not meet for %s", sandbox)
 					}
+
 					previous[sandbox] = event.PeriodEnd
 				}
+
 				for key, units := range wantTotals {
 					if totals[key] != units {
 						t.Errorf("%s = %d, want %d", key, totals[key], units)
 					}
 				}
+
 				if len(totals) != len(wantTotals) || (plan.Steps[2].Barrier != "") != tt.wantBarrier {
 					t.Error("Unexpected fixture groups or missing late-October barrier")
 				}
@@ -211,9 +218,11 @@ func TestCustom(t *testing.T) {
 				if (err != nil) != tt.wantError {
 					t.Fatalf("Custom(%s) error = %v; want error=%t", tt.input, err, tt.wantError)
 				}
+
 				if tt.wantError {
 					return
 				}
+
 				got := plan.events()[0]
 				if got.Source != tt.wantSource || got.Units != tt.wantUnits || got.PeriodStart.Format(time.RFC3339) != tt.wantPeriodStart {
 					t.Errorf("Custom event = %+v; want source %q, units %d, start %s", got, tt.wantSource, tt.wantUnits, tt.wantPeriodStart)
@@ -231,5 +240,6 @@ func simulatorPlan(t *testing.T) Plan {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	return plan
 }

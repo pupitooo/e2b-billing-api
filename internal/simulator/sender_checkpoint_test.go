@@ -60,6 +60,7 @@ func TestCheckpointDeliveryReceipt(t *testing.T) {
 			if err := store.Save(state); err != nil {
 				t.Fatalf("Save initial delivery flags %v: %v", tc.delivered, err)
 			}
+
 			if tc.storageUnavailable {
 				if err := os.Rename(directory, directory+"-offline"); err != nil {
 					t.Fatalf("Make checkpoint storage unavailable: %v", err)
@@ -71,24 +72,29 @@ func TestCheckpointDeliveryReceipt(t *testing.T) {
 				if err == nil {
 					t.Fatalf("checkpointDeliveryReceipt(batch=%v, delivered=%v) error = nil; want prefix %q", tc.batch, tc.delivered, tc.wantErrorPrefix)
 				}
+
 				if !strings.HasPrefix(err.Error(), tc.wantErrorPrefix) {
 					t.Errorf("checkpointDeliveryReceipt(batch=%v) error = %q; want prefix %q", tc.batch, err, tc.wantErrorPrefix)
 				}
 			} else if err != nil {
 				t.Fatalf("checkpointDeliveryReceipt(batch=%v, delivered=%v) error = %v; want nil", tc.batch, tc.delivered, err)
 			}
+
 			if !reflect.DeepEqual(state.Delivered, tc.wantDelivered) || state.LastError != tc.wantLastError {
 				t.Errorf("checkpointDeliveryReceipt(batch=%v) in-memory flags=%v error=%q; want flags=%v error=%q", tc.batch, state.Delivered, state.LastError, tc.wantDelivered, tc.wantLastError)
 			}
+
 			if tc.storageUnavailable {
 				if err := os.Rename(directory+"-offline", directory); err != nil {
 					t.Fatalf("Restore checkpoint storage for verification: %v", err)
 				}
 			}
+
 			persisted, err := store.Load()
 			if err != nil {
 				t.Fatalf("Reload checkpoint after receipt attempt: %v", err)
 			}
+
 			if !reflect.DeepEqual(persisted.Delivered, tc.wantPersistedDelivery) || persisted.LastError != tc.wantPersistedError {
 				t.Errorf("checkpointDeliveryReceipt(batch=%v) persisted flags=%v error=%q; want flags=%v error=%q", tc.batch, persisted.Delivered, persisted.LastError, tc.wantPersistedDelivery, tc.wantPersistedError)
 			}

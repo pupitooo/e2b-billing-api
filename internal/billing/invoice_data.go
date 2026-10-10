@@ -45,14 +45,17 @@ func buildInvoice(ctx context.Context, tx pgx.Tx, customer string, month time.Ti
 	if err != nil {
 		return Invoice{}, err
 	}
+
 	invoice, err := invoiceHeader(customer, month, issuedAt, buyer)
 	if err != nil {
 		return invoice, err
 	}
+
 	charges, err := loadInvoiceCharges(ctx, tx, customer, month)
 	if err != nil {
 		return invoice, err
 	}
+
 	return assembleInvoice(invoice, month, charges)
 }
 
@@ -61,6 +64,7 @@ func loadInvoiceBuyer(ctx context.Context, tx pgx.Tx, customer string) (invoiceB
 	err := tx.QueryRow(ctx, `SELECT c.name,c.country,c.billing_address,s.next_invoice_number
         FROM customers c JOIN customer_billing_state s USING(customer_id) WHERE customer_id=$1`, customer).
 		Scan(&buyer.Name, &buyer.Country, &buyer.BillingAddress, &buyer.NextNumber)
+
 	return buyer, err
 }
 
@@ -69,10 +73,12 @@ func loadInvoiceCharges(ctx context.Context, tx pgx.Tx, customer string, month t
 	if err != nil {
 		return invoiceCharges{}, err
 	}
+
 	addons, err := loadInvoiceAddons(ctx, tx, customer, month)
 	if err != nil {
 		return invoiceCharges{}, err
 	}
+
 	return invoiceCharges{Usage: usage, Addons: addons}, nil
 }
 
@@ -90,8 +96,10 @@ func loadInvoiceUsage(ctx context.Context, tx pgx.Tx, customer string, month tim
 		if err != nil {
 			return nil, err
 		}
+
 		groups = append(groups, group)
 	}
+
 	return groups, rows.Err()
 }
 
@@ -103,12 +111,15 @@ func scanInvoiceUsage(row pgx.Row) (invoiceUsage, error) {
 	if err := row.Scan(&group.PriceVersionID, &group.Metric, &group.UsageMonth, &group.Units, &grossTicks, &creditTicks); err != nil {
 		return group, err
 	}
+
 	var err error
 	group.Gross, err = amount(grossTicks)
 	if err != nil {
 		return group, err
 	}
+
 	group.Credit, err = amount(creditTicks)
+
 	return group, err
 }
 
@@ -125,7 +136,9 @@ func loadInvoiceAddons(ctx context.Context, tx pgx.Tx, customer string, month ti
 		if err := rows.Scan(&addon.SubscriptionID, &addon.Name, &addon.PriceCents); err != nil {
 			return nil, err
 		}
+
 		addons = append(addons, addon)
 	}
+
 	return addons, rows.Err()
 }

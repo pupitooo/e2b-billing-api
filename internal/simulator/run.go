@@ -24,12 +24,15 @@ func Run(ctx context.Context, options Options) error {
 	if options.Output == nil {
 		options.Output = io.Discard
 	}
+
 	if err := options.validate(); err != nil {
 		return err
 	}
+
 	if options.Action == "status" {
 		return readRunStatus(options)
 	}
+
 	store, err := OpenStore(options.StatePath)
 	if err != nil {
 		return err
@@ -45,9 +48,11 @@ func Run(ctx context.Context, options Options) error {
 			return err
 		}
 	}
+
 	if options.delivers() {
 		return options.Sender.Send(ctx, store, state, options.Action == "replay")
 	}
+
 	return nil
 }
 
@@ -55,19 +60,23 @@ func (options Options) validate() error {
 	if options.StatePath == "" || (options.Mode != "fast" && options.Mode != "step") {
 		return fmt.Errorf("state is required and mode must be fast or step")
 	}
+
 	switch options.Action {
 	case "run", "generate", "send", "status", "replay":
 	default:
 		return fmt.Errorf("action must be run, generate, send, status, or replay")
 	}
+
 	if options.delivers() {
 		if options.Sender == nil {
 			return fmt.Errorf("sender is required for delivery")
 		}
+
 		if err := options.Sender.validate(); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -86,7 +95,9 @@ func readRunStatus(options Options) error {
 	if err != nil {
 		return fmt.Errorf("read saved run: %w", err)
 	}
+
 	printStatus(options.Output, state)
+
 	return nil
 }
 
@@ -99,9 +110,11 @@ func resumeRun(store *Store, options Options) (*State, error) {
 			fmt.Fprintf(options.Output, "Prepared scenario %q with stable identities in %s\n", state.Plan.Name, options.StatePath)
 		}
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("open saved run: %w", err)
 	}
+
 	return state, nil
 }
 
@@ -109,31 +122,38 @@ func releaseScenario(ctx context.Context, store *Store, state *State, options Op
 	if options.Plan == nil || !sameJSON(state.Plan, *options.Plan) {
 		return fmt.Errorf("scenario differs from the saved run; retain its state and use send to resume pending measurements")
 	}
+
 	// A retry completes released work before generating another step. Explicit
 	// offline generation remains allowed to extend the durable pending buffer.
 	if options.Action != "generate" && len(state.pending(false)) != 0 {
 		return nil
 	}
+
 	advance := options.Advance
 	for state.NextStep < len(state.Plan.Steps) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		step := state.Plan.Steps[state.NextStep]
 		if step.Barrier != "" {
 			if !advance {
 				return nil
 			}
+
 			advance = false
 		}
+
 		if err := checkpointGeneratedStep(store, state); err != nil {
 			return err
 		}
+
 		fmt.Fprintf(options.Output, "Generated step %q (%d measurements)\n", step.Name, len(step.Events))
 		if options.Mode == "step" {
 			return nil
 		}
 	}
+
 	return nil
 }
 
@@ -143,6 +163,7 @@ func checkpointGeneratedStep(store *Store, state *State) error {
 		state.NextStep--
 		return fmt.Errorf("save generated step: %w", err)
 	}
+
 	return nil
 }
 
@@ -154,6 +175,7 @@ func printStatus(output io.Writer, state *State) {
 	if state.LastError != "" {
 		fmt.Fprintf(output, "Last delivery error: %s\n", state.LastError)
 	}
+
 	if state.NextStep < len(state.Plan.Steps) {
 		step := state.Plan.Steps[state.NextStep]
 		fmt.Fprintf(output, "Next step: %s\n", step.Name)

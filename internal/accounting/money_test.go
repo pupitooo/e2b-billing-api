@@ -42,11 +42,14 @@ func TestFromTicks(t *testing.T) {
 				if err == nil {
 					t.Fatalf("FromTicks(%v) error = nil; want an error", tt.input)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("FromTicks(%v) error = %v; want nil", tt.input, err)
 			}
+
 			if got.Ticks().String() != tt.wantTicks {
 				t.Errorf("FromTicks(%v) = %s ticks; want %s ticks", tt.input, got.Ticks(), tt.wantTicks)
 			}
@@ -62,6 +65,7 @@ func TestFromTicks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("FromTicks(%s) error = %v; want nil", input, err)
 		}
+
 		input.SetInt64(mutateInputTo)
 		if got.Ticks().String() != wantTicks {
 			t.Errorf("FromTicks result after input changed to %d = %s ticks; want %s ticks", mutateInputTo, got.Ticks(), wantTicks)
@@ -103,11 +107,14 @@ func TestFromCents(t *testing.T) {
 				if err == nil {
 					t.Fatalf("FromCents(%d) error = nil; want an error", tt.cents)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("FromCents(%d) error = %v; want nil", tt.cents, err)
 			}
+
 			if got.Ticks().String() != tt.wantTicks {
 				t.Errorf("FromCents(%d) = %s ticks; want %s ticks", tt.cents, got.Ticks(), tt.wantTicks)
 			}
@@ -182,11 +189,14 @@ func TestUsageCharge(t *testing.T) {
 				if err == nil {
 					t.Fatalf("UsageCharge(%d, %d) error = nil; want an error", tt.units, tt.pricePerMillionCents)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("UsageCharge(%d, %d) error = %v; want nil", tt.units, tt.pricePerMillionCents, err)
 			}
+
 			if got.Ticks().String() != tt.wantTicks {
 				t.Errorf("UsageCharge(%d, %d) = %s ticks; want %s ticks", tt.units, tt.pricePerMillionCents, got.Ticks(), tt.wantTicks)
 			}
@@ -224,10 +234,12 @@ func TestAmountTicks(t *testing.T) {
 			if got.String() != tt.wantTicks {
 				t.Errorf("Amount.Ticks() = %s; want %s", got, tt.wantTicks)
 			}
+
 			got.SetInt64(tt.mutateTicksTo)
 			if original := tt.amount.Ticks().String(); original != tt.wantTicks {
 				t.Errorf("Amount.Ticks() after returned integer changed to %d = %s; want %s", tt.mutateTicksTo, original, tt.wantTicks)
 			}
+
 			if copied := copy.Ticks().String(); copied != tt.wantTicks {
 				t.Errorf("Copied amount after returned integer changed to %d = %s; want %s", tt.mutateTicksTo, copied, tt.wantTicks)
 			}
@@ -266,9 +278,11 @@ func TestAmountAdd(t *testing.T) {
 			if got.Ticks().String() != tt.wantTicks {
 				t.Errorf("Amount.Add(%s, %s) = %s ticks; want %s ticks", tt.leftTicks, tt.rightTicks, got.Ticks(), tt.wantTicks)
 			}
+
 			if left.Ticks().String() != tt.leftTicks || copy.Ticks().String() != tt.leftTicks {
 				t.Errorf("Amount.Add changed its receiver or value copy; want %s ticks", tt.leftTicks)
 			}
+
 			if right.Ticks().String() != tt.rightTicks {
 				t.Errorf("Amount.Add changed its argument to %s ticks; want %s ticks", right.Ticks(), tt.rightTicks)
 			}
@@ -341,14 +355,18 @@ func TestAmountSubtract(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Amount.Subtract(%s, %s) error = nil; want an error", tt.leftTicks, tt.rightTicks)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("Amount.Subtract(%s, %s) error = %v; want nil", tt.leftTicks, tt.rightTicks, err)
 			}
+
 			if got.Ticks().String() != tt.wantTicks {
 				t.Errorf("Amount.Subtract(%s, %s) = %s ticks; want %s ticks", tt.leftTicks, tt.rightTicks, got.Ticks(), tt.wantTicks)
 			}
+
 			if left.Ticks().String() != tt.leftTicks || right.Ticks().String() != tt.rightTicks {
 				t.Errorf("Amount.Subtract changed its operands; want %s and %s ticks", tt.leftTicks, tt.rightTicks)
 			}
@@ -418,11 +436,14 @@ func TestAmountRoundCents(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Amount.RoundCents(%s ticks) error = nil; want an error", tt.ticks)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("Amount.RoundCents(%s ticks) error = %v; want nil", tt.ticks, err)
 			}
+
 			if got != tt.wantCents {
 				t.Errorf("Amount.RoundCents(%s ticks) = %d cents; want %d cents", tt.ticks, got, tt.wantCents)
 			}
@@ -519,12 +540,15 @@ func TestAllocateCredit(t *testing.T) {
 					net.Add(net, allocation.NetCharge.Ticks())
 				}
 			}
+
 			if used.String() != tt.wantUsedTicks {
 				t.Errorf("AllocateCredit used = %s ticks; want %s ticks", used, tt.wantUsedTicks)
 			}
+
 			if remaining.Ticks().String() != tt.wantRemainingTicks {
 				t.Errorf("AllocateCredit remaining = %s ticks; want %s ticks", remaining.Ticks(), tt.wantRemainingTicks)
 			}
+
 			if net.String() != tt.wantNetChargeTicks {
 				t.Errorf("AllocateCredit net charge = %s ticks; want %s ticks", net, tt.wantNetChargeTicks)
 			}
@@ -648,14 +672,18 @@ func TestInvoiceAmounts(t *testing.T) {
 				if err == nil {
 					t.Fatalf("InvoiceAmounts(%s, %s ticks) error = nil; want an error", tt.grossTicks, tt.creditTicks)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("InvoiceAmounts(%s, %s ticks) error = %v; want nil", tt.grossTicks, tt.creditTicks, err)
 			}
+
 			if got != tt.want {
 				t.Errorf("InvoiceAmounts(%s, %s ticks) = %+v; want %+v", tt.grossTicks, tt.creditTicks, got, tt.want)
 			}
+
 			if got.GrossCents-got.CreditCents != got.NetCents {
 				t.Errorf("InvoiceAmounts lines do not balance: %+v; want gross - credit = net", got)
 			}
@@ -707,8 +735,10 @@ func TestInvoiceAmounts(t *testing.T) {
 				if err != nil {
 					t.Fatalf("InvoiceAmounts for %s error = %v; want nil", group.name, err)
 				}
+
 				gotNetCents += got.NetCents
 			}
+
 			if gotNetCents != tt.wantNetCents {
 				t.Errorf("InvoiceAmounts net total = %d cents; want %d cents", gotNetCents, tt.wantNetCents)
 			}
@@ -783,11 +813,14 @@ func TestLimitReached(t *testing.T) {
 				if err == nil {
 					t.Fatalf("LimitReached(%s ticks) error = nil; want an error", tt.grossTicks)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("LimitReached(%s ticks) error = %v; want nil", tt.grossTicks, err)
 			}
+
 			if got != tt.wantReached {
 				t.Errorf("LimitReached(%s ticks) = %v; want %v", tt.grossTicks, got, tt.wantReached)
 			}
@@ -803,10 +836,12 @@ func ticks(t *testing.T, value string) accounting.Amount {
 	if !ok {
 		t.Fatalf("Invalid tick fixture: %s", value)
 	}
+
 	amount, err := accounting.FromTicks(integer)
 	if err != nil {
 		t.Fatalf("Invalid tick fixture %s: %v", value, err)
 	}
+
 	return amount
 }
 

@@ -50,9 +50,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 			if err != nil || duration <= 0 {
 				return config{}, fmt.Errorf("%s must be a positive Go duration", setting.name)
 			}
+
 			*setting.value = duration
 		}
 	}
+
 	for _, setting := range []struct {
 		name  string
 		value *int32
@@ -66,18 +68,23 @@ func loadConfig(getenv func(string) string) (config, error) {
 			if err != nil || count < 0 {
 				return config{}, fmt.Errorf("%s must be a nonnegative int32", setting.name)
 			}
+
 			*setting.value = int32(count)
 		}
 	}
+
 	if cfg.poolMaxConns == 0 || cfg.poolMinConns > cfg.poolMaxConns {
 		return config{}, fmt.Errorf("E2B_API_DB_MAX_CONNS must be positive and at least E2B_API_DB_MIN_CONNS")
 	}
+
 	if cfg.maxInFlight == 0 {
 		return config{}, fmt.Errorf("E2B_API_MAX_IN_FLIGHT_BATCHES must be positive")
 	}
+
 	if cfg.readHeaderTimeout > cfg.readTimeout {
 		return config{}, fmt.Errorf("E2B_API_READ_HEADER_TIMEOUT must not exceed E2B_API_READ_TIMEOUT")
 	}
+
 	// Subtraction avoids overflow for otherwise valid, extremely large durations.
 	// A slow body and database cancellation must leave time for rollback and a reply.
 	if cfg.readTimeout >= cfg.writeTimeout ||
@@ -85,9 +92,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 		cfg.rollbackTimeout >= cfg.writeTimeout-cfg.readTimeout-cfg.ingestionTimeout {
 		return config{}, fmt.Errorf("E2B_API_WRITE_TIMEOUT must exceed the read timeout, ingestion timeout, and %s rollback budget combined", cfg.rollbackTimeout)
 	}
+
 	if cfg.readHeaderTimeout >= cfg.shutdownTimeout ||
 		cfg.writeTimeout >= cfg.shutdownTimeout-cfg.readHeaderTimeout {
 		return config{}, fmt.Errorf("E2B_API_SHUTDOWN_TIMEOUT must exceed the header and write timeouts combined")
 	}
+
 	return cfg, nil
 }

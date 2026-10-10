@@ -20,6 +20,7 @@ func (s *Sender) request(ctx context.Context, body []byte) deliveryOutcome {
 	if err != nil {
 		return deliveryOutcome{Err: err}
 	}
+
 	request.Header.Set("Content-Type", "application/json")
 	// A redirect must not move measurements to a different endpoint or turn a
 	// POST into GET. Inspect its response as a protocol error instead.
@@ -31,6 +32,7 @@ func (s *Sender) request(ctx context.Context, body []byte) deliveryOutcome {
 	}
 	defer response.Body.Close()
 	data, readErr := io.ReadAll(io.LimitReader(response.Body, 65_537))
+
 	return classifyDeliveryResponse(response, data, readErr)
 }
 
@@ -41,12 +43,15 @@ func classifyDeliveryResponse(response *http.Response, data []byte, readErr erro
 			Err: fmt.Errorf("HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(data[:min(len(data), 4_096)]))),
 		}
 	}
+
 	if response.StatusCode != http.StatusAccepted {
 		return deliveryOutcome{Err: fmt.Errorf("HTTP %d requires investigation; measurements retained: %s", response.StatusCode, strings.TrimSpace(string(data[:min(len(data), 4_096)])))}
 	}
+
 	if readErr != nil {
 		return deliveryOutcome{Retry: true, Err: fmt.Errorf("HTTP 202 body outcome unknown: %w", readErr)}
 	}
+
 	var result struct {
 		Status string `json:"status"`
 	}
@@ -55,6 +60,7 @@ func classifyDeliveryResponse(response *http.Response, data []byte, readErr erro
 		decodeStrict(bytes.NewReader(data), &result) != nil || result.Status != "accepted" {
 		return deliveryOutcome{Err: fmt.Errorf("HTTP 202 has an invalid acknowledgement; measurements retained")}
 	}
+
 	return deliveryOutcome{}
 }
 
@@ -63,8 +69,10 @@ func retryAfter(value string) time.Duration {
 		// Saturate instead of overflowing; the wait remains cancelable.
 		return time.Duration(min(seconds, int64((1<<63-1)/time.Second))) * time.Second
 	}
+
 	if instant, err := http.ParseTime(value); err == nil {
 		return max(0, time.Until(instant))
 	}
+
 	return 0
 }

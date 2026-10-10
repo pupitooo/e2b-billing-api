@@ -29,9 +29,11 @@ func (w Worker) Run(ctx context.Context) error {
 	if err := w.validate(); err != nil {
 		return err
 	}
+
 	if err := writeHeartbeat(w.HeartbeatFile); err != nil {
 		return err
 	}
+
 	defer os.Remove(w.HeartbeatFile)
 
 	for ctx.Err() == nil {
@@ -39,16 +41,20 @@ func (w Worker) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
+
 		if err := writeHeartbeat(w.HeartbeatFile); err != nil {
 			return err
 		}
+
 		if err != nil {
 			w.Logger.Error("Worker batch failed; retrying after the polling interval", "error", err)
 		}
+
 		if !more || err != nil {
 			waitForPoll(ctx, w.PollInterval)
 		}
 	}
+
 	return nil
 }
 
@@ -56,9 +62,11 @@ func (w Worker) validate() error {
 	if w.ProcessBatch == nil || w.Logger == nil {
 		return fmt.Errorf("worker requires a batch processor and logger")
 	}
+
 	if w.PollInterval <= 0 || w.BatchTimeout <= 0 || w.HeartbeatFile == "" {
 		return fmt.Errorf("worker requires positive intervals and a heartbeat file")
 	}
+
 	return nil
 }
 
@@ -71,6 +79,7 @@ func (w Worker) processNextBatch(ctx context.Context) (bool, error) {
 	if err == nil {
 		err = batchCtx.Err()
 	}
+
 	return more, err
 }
 
@@ -92,6 +101,7 @@ func RunUntilStopped(ctx context.Context, w Worker, shutdownTimeout time.Duratio
 	if shutdownTimeout <= 0 {
 		return fmt.Errorf("worker shutdown timeout must be positive")
 	}
+
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
 	select {
@@ -115,20 +125,24 @@ func CheckHealth(filename string, maxAge time.Duration, now func() time.Time) er
 	if maxAge <= 0 || now == nil {
 		return fmt.Errorf("heartbeat requires a positive maximum age and a clock")
 	}
+
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("read worker heartbeat: %w", err)
 	}
+
 	last, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(data)))
 	if err != nil {
 		return fmt.Errorf("parse worker heartbeat: %w", err)
 	}
+
 	// Sample after the read: an atomic replacement may contain a timestamp newer
 	// than a time captured by the caller before reading the file.
 	age := now().Sub(last)
 	if age < 0 || age > maxAge {
 		return fmt.Errorf("worker heartbeat is outside the allowed age of %s", maxAge)
 	}
+
 	return nil
 }
 
@@ -144,11 +158,14 @@ func writeHeartbeat(filename string) error {
 		file.Close()
 		return fmt.Errorf("write worker heartbeat: %w", err)
 	}
+
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close worker heartbeat: %w", err)
 	}
+
 	if err := os.Rename(file.Name(), filename); err != nil {
 		return fmt.Errorf("replace worker heartbeat: %w", err)
 	}
+
 	return nil
 }

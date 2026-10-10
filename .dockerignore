@@ -1,6 +1,10 @@
 **
 !go.mod
 !go.sum
+!scripts/
+!scripts/whitespace/
+!scripts/whitespace/go.mod
+!scripts/whitespace/go.sum
 !cmd/
 !cmd/**
 !internal/

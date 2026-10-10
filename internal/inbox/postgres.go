@@ -28,29 +28,35 @@ func OpenPool(ctx context.Context, connectionString string, limits ...PoolLimits
 	if err != nil {
 		return nil, errors.New("invalid PostgreSQL connection configuration")
 	}
+
 	if len(limits) > 1 {
 		return nil, errors.New("only one inbox pool limit may be supplied")
 	}
+
 	if len(limits) == 1 {
 		limit := limits[0]
 		if limit.MaxConns <= 0 || limit.MinConns < 0 || limit.MinConns > limit.MaxConns {
 			return nil, errors.New("inbox pool requires positive maximum connections and minimum between zero and maximum")
 		}
+
 		config.MaxConns, config.MinConns = limit.MaxConns, limit.MinConns
 		// MinIdleConns can also be specified in the DSN and must fit the budget.
 		if config.MinIdleConns > config.MaxConns {
 			return nil, errors.New("pool_min_idle_conns exceeds the inbox connection budget")
 		}
 	}
+
 	config.ConnConfig.RuntimeParams["timezone"] = "UTC"
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("create inbox connection pool: %w", err)
 	}
+
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("connect to inbox database: %w", err)
 	}
+
 	return pool, nil
 }
 
@@ -84,10 +90,12 @@ func (store *Postgres) InsertBatch(ctx context.Context, events []usage.Event, re
 	if err := validateInboxBatch(events, receivedAt); err != nil {
 		return err
 	}
+
 	unique, err := orderedUniqueEvents(events)
 	if err != nil {
 		return err
 	}
+
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
 		return fmt.Errorf("begin inbox transaction: %w", err)
@@ -96,15 +104,18 @@ func (store *Postgres) InsertBatch(ctx context.Context, events []usage.Event, re
 	if _, err := transaction.Exec(ctx, "SET LOCAL synchronous_commit = on"); err != nil {
 		return fmt.Errorf("configure durable inbox commit: %w", err)
 	}
+
 	receivedAt = receivedAt.UTC().Truncate(time.Microsecond)
 	for index, event := range unique {
 		if err := insertInboxEvent(ctx, transaction, event, receivedAt, index); err != nil {
 			return err
 		}
 	}
+
 	if err := transaction.Commit(ctx); err != nil {
 		return fmt.Errorf("commit inbox batch: %w", err)
 	}
+
 	return nil
 }
 
@@ -112,14 +123,17 @@ func validateInboxBatch(events []usage.Event, receivedAt time.Time) error {
 	if len(events) == 0 {
 		return errors.New("usage batch must contain at least one event")
 	}
+
 	if receivedAt.IsZero() || receivedAt.UTC().Year() < usage.MinUTCYear || receivedAt.UTC().Year() > usage.MaxUTCYear {
 		return fmt.Errorf("received_at must be supplied with a UTC year between %d and %d", usage.MinUTCYear, usage.MaxUTCYear)
 	}
+
 	for index, event := range events {
 		if err := event.Validate(); err != nil {
 			return fmt.Errorf("validate inbox event %d: %w", index, err)
 		}
 	}
+
 	return nil
 }
 
@@ -131,6 +145,7 @@ func orderedUniqueEvents(events []usage.Event) ([]usage.Event, error) {
 		if ordered[i].Source != ordered[j].Source {
 			return ordered[i].Source < ordered[j].Source
 		}
+
 		return ordered[i].EventID < ordered[j].EventID
 	})
 	unique := ordered[:0]
@@ -141,11 +156,14 @@ func orderedUniqueEvents(events []usage.Event) ([]usage.Event, error) {
 				if !sameMeasurement(previous, event) {
 					return nil, &ConflictError{event.Source, event.EventID}
 				}
+
 				continue
 			}
 		}
+
 		unique = append(unique, event)
 	}
+
 	return unique, nil
 }
 
@@ -168,9 +186,11 @@ func insertInboxEvent(ctx context.Context, transaction pgx.Tx, event usage.Event
 	if err != nil {
 		return fmt.Errorf("insert inbox event %d: %w", index, err)
 	}
+
 	if result.RowsAffected() == 0 {
 		return compareInboxEvent(ctx, transaction, event, index)
 	}
+
 	return nil
 }
 
@@ -188,9 +208,11 @@ func compareInboxEvent(ctx context.Context, transaction pgx.Tx, event usage.Even
 	if err != nil {
 		return fmt.Errorf("compare inbox event %d: %w", index, err)
 	}
+
 	if !identical {
 		return &ConflictError{event.Source, event.EventID}
 	}
+
 	return nil
 }
 

@@ -46,16 +46,20 @@ func (s *Store) CloseMonth(ctx context.Context, customer, monthValue string) (In
 	if err := ValidateIdentifier("customer_id", customer); err != nil {
 		return Invoice{}, err
 	}
+
 	month, err := ParseMonth(monthValue)
 	if err != nil {
 		return Invoice{}, err
 	}
+
 	if err := s.beginClosing(ctx, customer, month); err != nil {
 		return Invoice{}, err
 	}
+
 	if err := s.drainClosing(ctx, customer, month); err != nil {
 		return Invoice{}, err
 	}
+
 	return s.issueInvoice(ctx, customer, month)
 }
 
@@ -67,23 +71,29 @@ func (s *Store) issueInvoice(ctx context.Context, customer string, month time.Ti
 		if _, err := lockAccount(ctx, tx, customer); err != nil {
 			return err
 		}
+
 		previous, err := invoiceInTransaction(ctx, tx, customer, month)
 		if err == nil {
 			result = previous
 			return nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+
 		if err := closingReady(ctx, tx, customer, month); err != nil {
 			return err
 		}
+
 		result, err = buildInvoice(ctx, tx, customer, month)
 		if err != nil {
 			return err
 		}
+
 		return freezeInvoice(ctx, tx, result, month)
 	})
+
 	return result, err
 }
 
@@ -91,20 +101,25 @@ func (s *Store) Invoice(ctx context.Context, customer, monthValue string) (Invoi
 	if err := ValidateIdentifier("customer_id", customer); err != nil {
 		return Invoice{}, err
 	}
+
 	month, err := ParseMonth(monthValue)
 	if err != nil {
 		return Invoice{}, err
 	}
+
 	var encoded []byte
 	err = s.pool.QueryRow(ctx, "SELECT snapshot FROM invoices WHERE customer_id=$1 AND billing_month=$2", customer, month).Scan(&encoded)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Invoice{}, ErrNotFound
 	}
+
 	if err != nil {
 		return Invoice{}, err
 	}
+
 	var result Invoice
 	err = json.Unmarshal(encoded, &result)
+
 	return result, err
 }
 
@@ -114,7 +129,9 @@ func invoiceInTransaction(ctx context.Context, tx pgx.Tx, customer string, month
 	if err != nil {
 		return Invoice{}, err
 	}
+
 	var result Invoice
 	err = json.Unmarshal(encoded, &result)
+
 	return result, err
 }

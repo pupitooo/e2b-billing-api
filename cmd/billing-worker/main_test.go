@@ -200,19 +200,24 @@ func TestLoadConfig(t *testing.T) {
 			if tt.emptyEnvironment {
 				getenv = func(string) string { return "" }
 			}
+
 			got, err := loadConfig(getenv)
 			if tt.wantError {
 				if err == nil {
 					t.Fatalf("loadConfig(%v) error = nil; want an error", tt.overrides)
 				}
+
 				if !strings.Contains(err.Error(), tt.wantErrorContains) {
 					t.Errorf("loadConfig error = %q; want text %q", err, tt.wantErrorContains)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("loadConfig(%v) error = %v; want nil", tt.overrides, err)
 			}
+
 			if got != tt.want {
 				t.Errorf("loadConfig(%v) = %+v; want %+v", tt.overrides, got, tt.want)
 			}
@@ -264,6 +269,7 @@ func TestRun(t *testing.T) {
 						t.Fatalf("Write command health fixture: %v", err)
 					}
 				}
+
 				getenv := configEnvironment(map[string]string{"E2B_WORKER_HEARTBEAT_FILE": filename})
 				if got := run([]string{"healthcheck"}, getenv); got != tt.wantExitCode {
 					t.Fatalf("Healthcheck exit code = %d, want %d", got, tt.wantExitCode)
@@ -305,9 +311,11 @@ func TestRun(t *testing.T) {
 				for name, value := range tt.values {
 					values[name] = value
 				}
+
 				if got := run(tt.args, configEnvironment(values)); got != tt.wantExitCode {
 					t.Fatalf("Invalid command exit code = %d, want %d", got, tt.wantExitCode)
 				}
+
 				if _, err := os.Stat(filename); errors.Is(err, os.ErrNotExist) != tt.wantHeartbeatMissing {
 					t.Fatalf("Invalid command published a heartbeat: %v", err)
 				}
@@ -329,5 +337,6 @@ func configEnvironment(values map[string]string) func(string) string {
 	for name, value := range values {
 		settings[name] = value
 	}
+
 	return func(name string) string { return settings[name] }
 }

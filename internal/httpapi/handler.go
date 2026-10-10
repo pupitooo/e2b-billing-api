@@ -31,6 +31,7 @@ func NewHandler(store BatchStore, ingestionTimeout time.Duration, maxInFlight in
 		registerLimitRoutes(mux, financial[0], ingestionTimeout)
 		registerInvoiceRoutes(mux, financial[0], ingestionTimeout)
 	}
+
 	inFlight := make(chan struct{}, maxInFlight)
 	mux.HandleFunc("POST /usage/batches", func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -40,11 +41,13 @@ func NewHandler(store BatchStore, ingestionTimeout time.Duration, maxInFlight in
 			writeInboxUnavailable(w)
 			return
 		}
+
 		postUsageBatches(w, r, store, ingestionTimeout)
 	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+
 	return mux
 }
 
@@ -55,12 +58,14 @@ func postUsageBatches(w http.ResponseWriter, r *http.Request, store BatchStore, 
 		writeRequestError(w, validationError)
 		return
 	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), ingestionTimeout)
 	defer cancel()
 	if err := insertUsageBatch(ctx, store, batch.Events, receivedAt); err != nil {
 		writeUsageStoreError(w, err)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_, _ = w.Write([]byte("{\"status\":\"accepted\"}\n"))
@@ -70,14 +75,17 @@ func readUsageBatch(w http.ResponseWriter, r *http.Request) (usageBatch, *reques
 	if err := usageRequestHeaders(r); err != nil {
 		return usageBatch{}, err
 	}
+
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBatchBytes))
 	if err != nil {
 		var sizeError *http.MaxBytesError
 		if errors.As(err, &sizeError) {
 			return usageBatch{}, &requestError{status: http.StatusRequestEntityTooLarge, Code: "request_too_large", Message: "The request body must not exceed 1048576 bytes."}
 		}
+
 		return usageBatch{}, invalidJSON("Could not read the JSON request body.", "")
 	}
+
 	return parseUsageBatch(body)
 }
 
@@ -85,9 +93,11 @@ func usageRequestHeaders(r *http.Request) *requestError {
 	if !usesJSONUTF8(r) {
 		return &requestError{status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: "Use application/json with UTF-8 encoding."}
 	}
+
 	if !usesIdentityEncoding(r) {
 		return &requestError{status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: "Compressed request bodies are not supported."}
 	}
+
 	return nil
 }
 
@@ -95,6 +105,7 @@ func insertUsageBatch(ctx context.Context, store BatchStore, events []usage.Even
 	if store == nil {
 		return errors.New("inbox store is not configured")
 	}
+
 	return store.InsertBatch(ctx, events, receivedAt)
 }
 
@@ -106,8 +117,10 @@ func writeUsageStoreError(w http.ResponseWriter, err error) {
 			Message: "The event identity already has different measurement content.",
 			Source:  conflict.Source, EventID: conflict.EventID,
 		})
+
 		return
 	}
+
 	// A failed/lost commit response can leave the outcome unknown. Clients
 	// must retain the original keys and content when retrying after 503.
 	writeInboxUnavailable(w)
