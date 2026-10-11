@@ -4,20 +4,20 @@
 
 The worker accounts for accepted usage asynchronously. Financial effects and
 inbox completion commit together; database failures roll back for retry.
-See the [financial rules — Transaction and closing contract](../../docs/architecture/accounting-rules.md#transaction-and-closing-contract)
+See the [financial rules — Transaction and closing contract](../architecture/accounting-rules.md#transaction-and-closing-contract)
 for locking, atomicity, and closing guarantees, and the
-[usage-to-invoice guide — Historical rating](../../docs/architecture/usage-to-invoice.md#4-rating-the-cost-under-the-historical-price)
+[usage-to-invoice guide — Historical rating](../architecture/usage-to-invoice.md#4-rating-the-cost-under-the-historical-price)
 for pricing and supported interval boundaries.
 
 Unsupported input remains in `usage_inbox.processing_error` until explicitly
 released. A missing valid price is a **P0 catalog incident**, reported in worker
 JSON logs with `priority=P0` and `error_code=missing_valid_price`. It quarantines the
 receipt without financial effects and never blocks invoice issuance. Follow the
-[financial rules — Catalog provisioning and P0 recovery](../../docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery)
+[financial rules — Catalog provisioning and P0 recovery](../architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery)
 for the complete diagnostic and recovery contract.
 
 To recover, correct the cause first. Missing historical prices require the
-[controlled database repair](../guides/accounting-recovery.md#controlled-historical-price-repair); ordinary
+[controlled database repair](#controlled-historical-price-repair); ordinary
 `POST /prices` rejects backdated versions. Then explicitly release only the
 investigated receipt:
 

@@ -22,6 +22,11 @@ Start `make up SERVICE=worker` as well to process submitted measurements. `make 
 starts all services, including the worker. The CLI simulator stays idle until
 explicitly invoked.
 
+These commands use the selected [Compose project](local-development.md#compose-projects-and-ports),
+`e2b-local` by default. For clean assignment accounts, use the
+[isolated assignment setup](../simulator/billing-scenarios.md#start-an-isolated-assignment-environment)
+before experimenting; its GUI and Adminer show that project's separate database.
+
 ## Runtime and source separation
 
 The console consists of buildless HTML, CSS and JavaScript in the repository's
@@ -93,7 +98,8 @@ of rollback. Browser storage is a convenience for this demonstration, not a
 replacement for the Go simulator's durable producer buffering.
 
 The assignment runner loads the existing `billing-assignment.json` fixture from
-the published portal. It advances only when the declared status and response match.
+the published portal; its [24-step table](../simulator/billing-scenarios.md#billing-assignment)
+documents each action and expected result. It advances only when the declared status and response match.
 Accounting checks poll briefly with a visible stop control; failed expectations
 retain the current step. For declared response-loss faults, the runner sends the
 command, simulates losing its successful reply, and repeats the same original
@@ -103,32 +109,34 @@ request. This demonstrates server idempotency without causing a real outage.
 
 The walkthrough expects fresh seeded Acme and Cyberdyne accounts, unchanged seed
 prices, no prior purchases/invoices, and the literal versions and balances in the
-fixture. GUI experimentation can change that state. A separate Compose project
-isolates its named database and simulator volumes from the ordinary local stack:
+fixture. GUI experimentation can change that state. Follow the complete
+[isolated assignment setup](../simulator/billing-scenarios.md#start-an-isolated-assignment-environment)
+for project selection, port exports, migrations, service health, CLI execution,
+and checkpoints. It uses `e2b-assignment-01`, API port `8183`, portal port `8182`,
+and PostgreSQL port `5542` as examples; choose a new name and free ports when
+needed. Open the **Billing demo GUI** link printed by `make links` in that same
+project. Default port `8082` belongs to development with the default settings.
 
-```sh
-make COMPOSE='docker compose -p e2b-gui-demo' \
-  E2B_API_PORT=8181 E2B_DOCS_PORT=8182 E2B_POSTGRES_PORT=5542 up SERVICE=postgres
-make COMPOSE='docker compose -p e2b-gui-demo' migrate
-make COMPOSE='docker compose -p e2b-gui-demo' \
-  E2B_API_PORT=8181 E2B_DOCS_PORT=8182 E2B_POSTGRES_PORT=5542 up
-```
+Choose either the CLI simulator or **Assignment demo** to drive the sequence.
+After CLI steps, refresh the account views to inspect stored results. The GUI's
+request history contains only requests made by that browser, and its walkthrough
+cursor is independent of the CLI checkpoint. Running both drivers against the
+same accounts can fail fresh-account checks or response expectations.
 
-The commands presume `e2b-gui-demo` has no existing volume. Open the printed portal
-on port `8182`. This uses the same Compose file and adds no permanent services to
-the application architecture. Closing the stack with `down` retains its volumes;
-use a new project name for another fresh run.
-
-Only ended UTC calendar months can close. As of 10 October 2026, the first portion
-of the fixed assignment can run, but its October/November invoices require the
-server clock to reach `2026-12-01T00:00:00Z`. The GUI does not override clocks or
-weaken this rule. The server, not the browser's eligibility hint, decides whether
-a month can close. Unfinished month responses remain visible with `422`.
+Only ended UTC calendar months can close. Before `2026-11-01T00:00:00Z`, the
+assignment completes steps 1–12 and stops at October invoice issuance with HTTP
+`422`; November closure requires `2026-12-01T00:00:00Z`. The GUI does not override
+clocks. The server, not the browser's eligibility hint, decides whether a month
+can close. The completed operations remain stored for inspection.
 
 Late usage received after closure can also route according to receipt month;
 reproducing the exact fixed November invoice requires the original workflow's
 receipt-time assumptions. See [public billing scenario prerequisites](../simulator/billing-scenarios.md#run-the-complete-assignment)
 and the [late usage contract](../architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage).
+
+Changing project names selects separate volumes; `make down` retains them. Use a
+previously unused name for fresh accounts. For missing API names or occupied
+ports, follow [simulator connectivity troubleshooting](troubleshooting.md#troubleshoot-simulator-connectivity).
 
 ## Database inspection and maintenance
 

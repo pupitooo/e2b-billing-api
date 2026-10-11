@@ -1,5 +1,4 @@
 {
-  "auditDate": "2026-10-10",
   "baseCommit": "8f5d601fff8f90ce800dd584eab5bcd7ec656327",
   "scope": "Selected single-edit behavior mutations, not exhaustive repository mutation coverage.",
   "guiScope": "Uncommitted completed GUI snapshot; app.mjs was not mutated. Source/test hashes are before the regression patch.",
@@ -488,6 +487,7 @@
     },
     {
       "id": "M024",
+      "currentApplicability": "Retired: the batch metadata field and its validator have been removed. Recorded mutation results are retained as audit evidence; current tests reject the extra property before storage.",
       "layer": "unit",
       "source": "internal/httpapi/batches.go",
       "lineAtBaseline": 117,

@@ -1,25 +1,38 @@
 # E2B billing documentation
 
-The project implements the assignment in Go and PostgreSQL. Read the
-[architecture and assignment coverage](architecture/submission-overview.md) for
-responsibilities and current limits, then follow a measurement through the
-[usage-to-invoice walkthrough](architecture/usage-to-invoice.md).
+The project implements the assignment in Go and PostgreSQL. Run `make docs`
+for this searchable portal; its guides also remain readable in the repository.
 
-Run `make docs` for this searchable portal. The **API reference** navigation entry
-opens Scalar with its embedded request client on the same browser origin.
-The source Markdown also remains readable directly in the repository.
+## Quick links
 
-| Topic | Guides |
+| I want to… | Start here |
 | --- | --- |
-| Start and operate | [Local development](guides/local-development.md), [runtime configuration](guides/runtime-configuration.md), [database operations](guides/database-operations.md) |
-| Explore HTTP interfaces | [API endpoints and callers](guides/api-reference.md#api-endpoints-and-callers), [API reference guide](guides/api-reference.md), [OpenAPI specification](api/openapi.yaml) |
-| Demonstrate in the browser | [Billing demo GUI](/demo/), [demo console guide](guides/demo-console.md), [Adminer database browser](/database/) |
-| Reproduce usage and billing | [Transport simulator](simulator/transport-scenarios.md), [public billing scenarios](simulator/billing-scenarios.md), [scenario style](simulator/scenario-style.md) |
-| Verify and contribute | [Tests and filters](guides/testing.md), [test quality and mutation audit](guides/test-mutation-audit.md), [acceptance procedure](guides/final-acceptance-testing.md), [development conventions](guides/development.md) |
-| Understand accounting | [Financial rules](architecture/accounting-rules.md), [billing model and schema](architecture/billing-model.md), [usage to invoice](architecture/usage-to-invoice.md) |
-| Compare and measure | [Architecture options](brainstorming/architecture-options.md), [capacity and local measurements](architecture/capacity-and-measurements.md), [published diagrams](diagrams/index.md) |
-| Investigate failures | [Accounting quarantine and historical-price recovery](guides/accounting-recovery.md) |
-| Maintain documentation | [Publication, preview, checks, and service upgrade](guides/documentation.md) |
+| Run the project | [Local setup](guides/local-development.md) |
+| Try billing in the browser | [Demo guide](guides/demo-console.md), [Demo console](/demo/) |
+| Connect to the database | [Database](guides/database-operations.md#database-connection), [Database browser](/database/) |
+| Run tests | [Tests](guides/testing.md) |
+| Send an API request | [API reference](/reference/) with the embedded request client |
+| Understand the billing flow | [Usage to invoice](architecture/usage-to-invoice.md) |
+
+## Browse by topic
+
+These categories and page names match the navigation menu.
+
+| Category | Pages |
+| --- | --- |
+| Get started | [Local setup](guides/local-development.md), [Demo guide](guides/demo-console.md), [Demo console](/demo/) |
+| Operations | [Database](guides/database-operations.md), [Migrations](guides/migrations.md), [Configuration](guides/runtime-configuration.md), [Troubleshooting](guides/troubleshooting.md), [Recovery](guides/accounting-recovery.md), [Database browser](/database/) |
+| API | [API guide](guides/api-reference.md), [API reference](/reference/), [OpenAPI specification](api/openapi.yaml) |
+| Billing | [Financial rules](architecture/accounting-rules.md), [Data model](architecture/billing-model.md), [Usage to invoice](architecture/usage-to-invoice.md), [Invoice creation](diagrams/invoice-issuance/README.md) |
+| Simulator | [Transport scenarios](simulator/transport-scenarios.md), [Billing scenarios](simulator/billing-scenarios.md), [Scenario format](simulator/scenario-style.md) |
+| Testing | [Tests](guides/testing.md), [Test quality](guides/test-mutation-audit.md), [Acceptance](guides/final-acceptance-testing.md) |
+| Development | [Conventions](guides/development.md), [Documentation](guides/documentation.md) |
+| Architecture | [Overview](architecture/submission-overview.md), [Decisions](architecture/decisions.md), [Design options](brainstorming/architecture-options.md), [Invoice scheduling proposals](brainstorming/invoice-scheduling.md), [Capacity](architecture/capacity-and-measurements.md), [Diagrams](diagrams/index.md), [Components](diagrams/option-c-components/README.md) |
+
+Use the [isolated assignment setup](simulator/billing-scenarios.md#start-an-isolated-assignment-environment)
+to reproduce billing scenarios without changing development accounts.
+The [acceptance overview](guides/final-acceptance-testing.md) links the four parts
+of the complete verification procedure in execution order.
 
 The [root README](../README.md#system-contracts) holds the system contract register.
 Design proposals and public-product context do not expand assignment requirements.

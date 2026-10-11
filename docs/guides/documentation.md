@@ -8,6 +8,11 @@ make api-docs
 make links
 ```
 
+These commands act on the selected [Compose project](local-development.md#compose-projects-and-ports).
+Keep its project and port exports when starting the portal or printing links.
+Each project's GUI, Scalar client, and Adminer connect to that project's API and
+database; a portal from another project shows different data.
+
 The `docs` service is the documentation portal, published on
 `127.0.0.1:${E2B_DOCS_PORT:-8082}`. It serves Markdown guides with Material for
 MkDocs navigation and browser-side search, and proxies `/reference/` to the
@@ -59,6 +64,23 @@ simulator volumes remain in place. Update saved Scalar browser bookmarks to
 service-specific commands such as `make logs SERVICE=docs` to
 `make logs SERVICE=api-docs` when investigating Scalar. `make logs SERVICE=docs`
 now inspects MkDocs and the documentation gateway.
+
+## Navigation and reading order
+
+The [home page](../index.md) uses the same categories and short page names as
+[the navigation](../site/mkdocs.yml). Keep their topic lists aligned. Local setup
+puts basic startup before optional project and port details; operations separate
+database inspection, migrations, configuration, troubleshooting, and recovery.
+Billing separates financial rules, the data model, and the worked usage flow.
+Architecture holds implementation rationale and explicitly labelled proposals.
+
+The [acceptance overview](final-acceptance-testing.md) links four sequential
+parts. Preserve section numbers, shell variables, helper functions, evidence,
+project selection, reset checkpoints, and previous/next links when moving steps.
+A page boundary does not establish a fresh test environment.
+
+When moving a section, update its incoming links and rebase relative links to
+the destination directory, including images and links to repository source.
 
 ## Publication boundary
 

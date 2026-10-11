@@ -145,6 +145,11 @@ Invoice calculation can work with a few already rated groups instead of loading 
 
 An event might say: "Cyberdyne's sandbox consumed 1_000 `cpu_seconds` during this interval." It is an increment to count exactly once. If each report instead contained the total consumption since the sandbox started, the consumer would need to calculate new usage as the difference between successive readings. That reporting model would require a different event contract.
 
+`POST /usage/batches` accepts an envelope containing only `events`. The envelope
+has no separate identity; extra properties return `400` before storage. Retries
+may regroup measurements while preserving each `(source, event_id)` and its
+content. The whole batch is accepted atomically.
+
 In the database this is one `usage_inbox` row:
 
 | Columns | Meaning |
@@ -428,7 +433,7 @@ invoice line -> frozen rated group -> usage_ratings -> usage_inbox
 delivery dates never shift its boundaries. For example, a January invoice created
 on 20 February still has the January calendar period; later input follows the
 late-usage rule. See the [fixed contract](accounting-rules.md#fixed-calendar-month-contract)
-and the [generation versus delivery proposals](accounting-rules.md#invoice-generation-and-delivery-proposal).
+and the [generation versus delivery proposals](../brainstorming/invoice-scheduling.md#invoice-generation-and-delivery-proposal).
 
 The `invoices` table stores customer, billing month, number, total cents, and the full
 immutable buyer/financial JSON snapshot. Its primary key permits one invoice per

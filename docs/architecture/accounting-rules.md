@@ -13,8 +13,8 @@ and the migration and verification requirements:
 - [Rounding and invoice presentation](#rounding-and-invoice-presentation): cumulative half-up rounding, balancing credit lines, immutable snapshots, and invoice totals.
 - [UTC months, limits, add-ons, and late usage](#utc-months-limits-add-ons-and-late-usage): supported years, gross spend limits, full monthly add-on charges, and routing after closure.
 - [Transaction and closing contract](#transaction-and-closing-contract): customer locks, atomic financial effects, retries, the processed-usage cutoff, and invoice issuance.
-- [Invoice generation and delivery (proposal)](#invoice-generation-and-delivery-proposal): first-day generation, customer-selected days, late input, and scheduling safeguards.
-- [Migration and verification](#migration-and-verification): converting cent credit to ticks, incompatible legacy allocations, and Go and SQL coverage.
+- [Invoice generation and delivery (proposal)](../brainstorming/invoice-scheduling.md#invoice-generation-and-delivery-proposal): first-day generation, customer-selected days, late input, and scheduling safeguards.
+- [Migration and verification](../guides/migrations.md#migration-and-verification): converting cent credit to ticks, incompatible legacy allocations, and Go and SQL coverage.
 
 `internal/accounting` implements pure Go calculations for historical rating,
 exact credit, UTC months, limits, add-ons, and invoice presentation. The usage API acknowledges durable inbox receipt; the standalone worker applies
@@ -52,6 +52,20 @@ Whole months define accounting periods; they do not guarantee that all delayed
 measurements have arrived by issuance. A later invoice can therefore contain
 usage from an earlier month. Preserve its original `usage_month` for historical
 prices, gross spend limits, and audit while recording the later `billing_month`.
+
+## Completed-month requirement
+
+The API accepts only `month` as `YYYY-MM`.
+It has no closing-day or cutoff parameter; `closed_at` and `issued_at` come from
+the server clock. Before starting a new closure, `CloseMonth` requires the server's
+UTC time to be at or after the first instant of the following month. January is
+eligible from 1 February at `00:00:00Z`; closing it on 20 January returns HTTP `422`
+with `invalid_command` and field `month`. Ongoing and future months fail before
+publication, without changing credit, usage ratings, invoices,
+or numbering. A retry of an already issued invoice returns its original snapshot.
+Schedulers must also select completed months. Integration tests supply an explicit
+server clock to check the exact UTC boundary and run fixed assignment fixtures;
+HTTP callers cannot override that clock.
 
 ## Exact money and credit
 
@@ -370,94 +384,63 @@ Used prices and issued invoices cannot be silently rewritten. Retiring the old
 cohort and exclusion tables does not change the explicit operator recovery of
 quarantined usage or the worker's atomic financial transaction.
 
-## Invoice generation and delivery (proposal)
+## Money and months
 
-The following scheduling choices are proposals, not implemented customer settings
-or a selected product policy. Both preserve the fixed calendar-month contract.
-Final closure and invoice publication happen in the same transaction; delivering
-the resulting document is a separate operation. An unfinished preview, if added
-later, must remain distinguishable from an issued immutable invoice.
+All amounts are USD. Credit balances, allocations, and ledger entries use exact integer ticks. Limits, add-on prices, and the booked gross projection use integer cents. The initial price contract supports whole cents per million units: `price_per_million_cents` is `5`, `6`, or `4` for the assignment prices of USD 0.05, 0.06, and 0.04 per million.
 
-Assume earlier customer months are closed, February is open, and accepted input
-can be processed successfully. For the January 2027 invoice:
+One tick is one millionth of a cent, or USD 0.000_000_01. For this price contract:
 
-| Policy | Final closure and invoice generation | Delivery | January usage received on 5 February |
-| --- | --- | --- | --- |
-| Generate on the first day; deliver on the selected day | 1 February | 20 February | Appears on a later invoice because January is already closed. |
-| Generate and deliver on the selected day | 20 February | 20 February | Remains eligible for January if accounting commits before closing acquires the account lock. |
-
-The selected generation day provides a longer window for late input, at the cost
-of keeping the preceding month open and its final amount unavailable for longer.
-A selected delivery day changes notification timing; it never recalculates an
-already issued invoice. Neither choice guarantees that no input arrives later.
-Usage accounting and credit allocation continue independently of this schedule.
-
-**Recommended first extension:** run a monthly job on the first UTC day and call
-the existing invoice API for the preceding month of each customer. Keep generation
-and delivery separate, and add customer-specific generation days only if waiting
-for late input or a preferred issue date is a product requirement. For a customer
-with generation day 20, run January's close on 20 February and February's close
-on 20 March. A missed run must recover earlier missing months in increasing order.
-One customer's failed close must not prevent other customers from progressing;
-retry the same customer/month without reserving another invoice number.
-
-Before implementing customer schedules, choose the execution time in UTC, the
-rule for days 29–31 in shorter months, the effective date of preference changes,
-and recovery after outages. Generation and delivery need separate durable work
-tracking and retry identities. Delivery retries must not generate another invoice;
-provider idempotence, when available, is separate from database invoice uniqueness.
-
-**Completed-month requirement:** the API accepts only `month` as `YYYY-MM`.
-It has no closing-day or cutoff parameter; `closed_at` and `issued_at` come from
-the server clock. Before starting a new closure, `CloseMonth` requires the server's
-UTC time to be at or after the first instant of the following month. January is
-eligible from 1 February at `00:00:00Z`; closing it on 20 January returns HTTP `422`
-with `invalid_command` and field `month`. Ongoing and future months fail before
-publication, without changing credit, usage ratings, invoices,
-or numbering. A retry of an already issued invoice returns its original snapshot.
-Schedulers must also select completed months. Integration tests supply an explicit
-server clock to check the exact UTC boundary and run fixed assignment fixtures;
-HTTP callers cannot override that clock.
-
-The scheduler, customer day settings, document delivery, and an optional preview
-are not implemented. Whole UTC calendar months remain a fixed system contract;
-the scheduling alternatives remain open proposals.
-
-## Migration and verification
-
-For migration `009_processed_usage_closing.sql`, stop the API and worker before
-running `make migrate`, then restart them with the updated code. It removes the
-former closing-attempt, receipt-cohort and exclusion tables, including unfinished
-attempts. Raw usage, financial history, group freezes and issued invoices remain.
-Tests upgrade existing pending and quarantined attempts in UTC and Asia/Shanghai
-and verify retained balances, numbers and invoice immutability.
-
-Earlier migration `004_exact_credit.sql` converts:
-
-| Previous column | Current column | Conversion |
-| --- | --- | --- |
-| `customer_billing_state.credit_balance_cents` | `credit_balance_ticks` | cents × 1_000_000 |
-| `rated_usage_groups.allocated_credit_cents` | `allocated_credit_ticks` | cents × 1_000_000 |
-| `credit_entries.amount_cents` | `amount_ticks` | signed cents × 1_000_000 |
-
-Identities, signs, timestamps, operation keys, row counts, limits, and state
-versions survive. The runner commits schema changes and the version together
-under its advisory lock; repeated runs skip the conversion.
-
-Legacy allocations can exceed exact gross because the old model allowed credit
-up to rounded gross cents. Such groups need a reviewed accounting correction.
-The migration stops before changing history and rolls back atomically. On the
-old schema, inspect affected groups with:
-
-```sql
-SELECT group_id, exact_charge_ticks, allocated_credit_cents
-FROM rated_usage_groups
-WHERE allocated_credit_cents::numeric * 1_000_000 > exact_charge_ticks;
+```text
+price_unit_count = 1_000_000
+ticks_per_cent = 1_000_000
+exact_charge_ticks = (((units × price_per_million_cents) × ticks_per_cent) / price_unit_count)
 ```
 
-Go tests cover arbitrary precision, half-cent boundaries, exact credit, split
-events, historical prices, UTC and price boundaries, routing, limits, add-ons,
-and assignment totals of USD 20.00, USD 20.00, and USD 18.17 with credit balances
-of USD 13.00 and USD 7.00. SQL tests exercise real legacy conversion, sub-cent
-credit, constraints, and append-only history in UTC and Asia/Shanghai. These
-verify calculations and schema; runtime accounting, public command, and immutable invoice tests now cover their implementations.
+`accounting.PriceUnitCount` defines the resource units covered by the price; `accounting.TicksPerCent` defines monetary resolution. They currently have equal values and cancel in the formula. [Issue #29](https://github.com/pupitooo/e2b-billing-api/issues/29) proposes storing `price_unit_count` on each historical price version, backfilling existing versions with 1_000_000, and requiring new rates to be exactly representable in whole ticks. That proposal preserves the current tick scale; this implementation still uses a fixed price denominator.
+
+Integer-valued PostgreSQL `numeric` stores exact tick totals and aggregate units beyond the `bigint` range. Negative, fractional, infinite, and NaN values are rejected. The Go rater uses immutable arbitrary-precision integers and checks conversions to signed 64-bit cents. PostgreSQL documents the distinction between [exact numeric and floating-point types](https://www.postgresql.org/docs/18/datatype-numeric.html).
+
+Cyberdyne's first rate is USD 0.05 (5 cents) per 1_000_000 units. Its first 123_456_789 units are charged as follows:
+
+```text
+exact_charge_ticks = (((123_456_789 × 5) × 1_000_000) / 1_000_000)
+                   = (123_456_789 × 5)
+                   = 617_283_945 ticks
+ticks_per_dollar = (100 × 1_000_000) = 100_000_000
+exact_charge_usd = (617_283_945 / 100_000_000) = USD 6.172_839_45
+booked_gross_cents = floor(((617_283_945 + 500_000) / 1_000_000))
+                   = 617 cents = USD 6.17
+```
+
+First multiply units by the price in cents, then multiply by ticks per cent, and finally divide by the units covered by that price. The two million-valued constants cancel, so this rate charges 5 ticks per resource unit. The group stores the exact tick amount alongside its booked 617 gross cents; subsequent usage is added to the exact group total before rounding again.
+
+Credit is allocated against new exact ticks before rounding. The shared Go helpers round cumulative gross and net groups and derive a balancing credit line; migrations do not perform accounting. `allocated_credit_ticks` cannot exceed `exact_charge_ticks`, even when rounded gross cents are higher.
+
+`usage_month` and `billing_month` are finite first-of-month `date` values. Application code derives them in UTC. Late October usage billed in November retains `usage_month = 2026-10-01` and `billing_month = 2026-11-01`; its gross spend belongs to October. Billing months cannot precede usage months. Timestamps are finite `timestamptz` values. Subscription start months are checked against the purchase timestamp in UTC, independently of the SQL session's time zone.
+
+**The fixed billing contract is one immutable invoice per customer for a whole
+UTC calendar month.** A chosen generation or delivery day cannot change the
+period into a cycle starting on that day. `(customer_id, billing_month)` identifies
+both the final closure and invoice; `closed_at` records the actual closure time,
+not the end of a custom usage interval. See the [fixed calendar-month contract](#fixed-calendar-month-contract)
+and the [completed-month requirement](#completed-month-requirement).
+Scheduling and delivery remain [open proposals](../brainstorming/invoice-scheduling.md).
+
+Default and customer prices can coexist at the same instant. `UNIQUE NULLS NOT DISTINCT (customer_id, metric, effective_from)` prevents two default prices at that instant as well as duplicate customer versions; see [PostgreSQL unique constraints](https://www.postgresql.org/docs/18/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS). The rater selects the latest eligible customer override first and otherwise the latest eligible default. It rejects unsupported segments crossing a price boundary; the database does not select the applicable price.
+
+Every price has a required finite `effective_from`; no undated baseline is supported.
+The seed preserves the assignment's original effective starts. Provision an additional
+metric and its applicable price before the platform generates its first usage, using
+a start covering that consumption. Missing a valid price is a P0 catalog incident:
+the receipt retains `P0 missing_valid_price: ...` without financial effects and the
+receipt orchestrator logs the incident after commit during worker processing.
+Invoice closing never processes input or emits this incident. Repair the historical
+catalog through [controlled operator SQL](../guides/accounting-recovery.md#controlled-historical-price-repair),
+then explicitly release the investigated receipt for another attempt. Ordinary
+`POST /prices` accepts `effective_from` as a required `YYYY-MM-DD` UTC date and rejects
+dates before today, with rated-history protection for today. Public purchase dates
+use the same date format and are stored at midnight UTC. Credit audit timestamps
+are generated by the backend and are absent from grant requests and responses. See the [provisioning and recovery contract](#catalog-provisioning-and-p0-recovery).
+
+For operational upgrade procedures, read [migrations](../guides/migrations.md).
+Scheduling and delivery remain [open proposals](../brainstorming/invoice-scheduling.md).

@@ -2,7 +2,7 @@
 
 `make test` is the primary test command. Start PostgreSQL with `make up SERVICE=postgres` before running all tests or the database suite; the Go suite builds and starts the API and worker automatically.
 
-Follow the [final acceptance test procedure](../../docs/guides/final-acceptance-testing.md) to verify every assignment requirement, walk through the October/November example with explicit checkpoints, inspect persisted accounting state, and exercise outages, retries, and restart in isolated Compose projects.
+Follow the [final acceptance test procedure](final-acceptance-testing.md) to verify every assignment requirement, walk through the October/November example with explicit checkpoints, inspect persisted accounting state, and exercise outages, retries, and restart in isolated Compose projects.
 
 | Command | Purpose |
 | --- | --- |
@@ -60,7 +60,7 @@ go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
 
 [CI](../../.github/workflows/ci.yml) runs `make check` before `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check includes Go formatting and static analysis, SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
 
-Read the [test-quality and mutation audit](test-mutation-audit.md) for the 10 October 2026 findings, regression scenarios, exact mutation evidence and a practical workflow for reviewing AI-generated tests.
+Read the [test-quality and mutation audit](test-mutation-audit.md) for the findings, regression scenarios, exact mutation evidence and a practical workflow for reviewing AI-generated tests.
 
 ## Calendar commands and credit audit time
 

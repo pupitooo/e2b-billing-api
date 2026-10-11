@@ -31,36 +31,48 @@ validation:
 nav:
   - Home: index.md
   - Get started:
-      - Local development: guides/local-development.md
-      - Runtime configuration: guides/runtime-configuration.md
-      - Database operations: guides/database-operations.md
-      - Demo console guide: guides/demo-console.md
-      - Billing demo GUI: /demo/
-      - Adminer: /database/
+      - Local setup: guides/local-development.md
+      - Demo guide: guides/demo-console.md
+      - Demo console: /demo/
+  - Operations:
+      - Database: guides/database-operations.md
+      - Migrations: guides/migrations.md
+      - Configuration: guides/runtime-configuration.md
+      - Troubleshooting: guides/troubleshooting.md
+      - Recovery: guides/accounting-recovery.md
+      - Database browser: /database/
   - API:
-      - Reference guide: guides/api-reference.md
+      - API guide: guides/api-reference.md
       - API reference: /reference/
+  - Billing:
+      - Financial rules: architecture/accounting-rules.md
+      - Data model: architecture/billing-model.md
+      - Usage to invoice: architecture/usage-to-invoice.md
+      - Invoice creation: diagrams/invoice-issuance/README.md
   - Simulator:
       - Transport scenarios: simulator/transport-scenarios.md
       - Billing scenarios: simulator/billing-scenarios.md
-      - Scenario style: simulator/scenario-style.md
+      - Scenario format: simulator/scenario-style.md
+  - Testing:
+      - Tests: guides/testing.md
+      - Test quality: guides/test-mutation-audit.md
+      - Acceptance:
+          - Overview: guides/final-acceptance-testing.md
+          - Preparation: guides/acceptance/preparation.md
+          - Automated checks: guides/acceptance/automated-checks.md
+          - Assignment walkthrough: guides/acceptance/assignment.md
+          - Final checks: guides/acceptance/final-checks.md
   - Development:
-      - Tests and filters: guides/testing.md
-      - Test quality and mutation audit: guides/test-mutation-audit.md
-      - Acceptance procedure: guides/final-acceptance-testing.md
       - Conventions: guides/development.md
       - Documentation: guides/documentation.md
   - Architecture:
-      - Assignment coverage: architecture/submission-overview.md
-      - Financial rules: architecture/accounting-rules.md
-      - Billing model: architecture/billing-model.md
-      - Usage to invoice: architecture/usage-to-invoice.md
-      - Options and growth: brainstorming/architecture-options.md
-      - Capacity and measurements: architecture/capacity-and-measurements.md
+      - Overview: architecture/submission-overview.md
+      - Decisions: architecture/decisions.md
+      - Design options: brainstorming/architecture-options.md
+      - Invoice scheduling proposals: brainstorming/invoice-scheduling.md
+      - Capacity: architecture/capacity-and-measurements.md
       - Diagrams: diagrams/index.md
-      - Option C: diagrams/option-c-components/README.md
-      - Invoice issuance: diagrams/invoice-issuance/README.md
-  - Recovery: guides/accounting-recovery.md
+      - Components: diagrams/option-c-components/README.md
 extra:
   social:
     - icon: fontawesome/brands/github

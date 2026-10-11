@@ -20,7 +20,7 @@ The 1_000-event maximum also remains subject to the 1 MiB body limit. Spread
 minute reports with jitter; a synchronized burst and recovery backlog need
 separate capacity measurements and producer buffering.
 
-On 2026-10-09, a local Docker/Linux arm64 sample used 16 concurrent writers, private
+A local Docker/Linux arm64 sample used 16 concurrent writers, private
 schemas, two runs of 50 new batches, PostgreSQL 18.6, and the existing synchronous
 commit path. For 1_000-event batches, p95 latency including pool waiting was
 306–324 ms with 4 connections, 260–409 ms with 8, and 209–217 ms with 16.
@@ -47,4 +47,4 @@ waits, CPU, disk/WAL behavior, overload responses, and accounting backlog. At
 0.2 s would imply about 1.7 occupied connections on average; p95 is not the mean
 and this example does not cover peaks. Validate representative payloads, retries,
 worker competition, and sustained storage growth before changing budgets or
-adding replicas. See the [scaling proposal](../../docs/brainstorming/architecture-options.md#scaling-to-billions-of-records).
+adding replicas. See the [scaling proposal](../brainstorming/architecture-options.md#scaling-to-billions-of-records).
