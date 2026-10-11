@@ -135,3 +135,5 @@ node_modules/
 !/docs/guides/acceptance/final-checks.md
 !/docs/architecture/decisions.md
 !/docs/brainstorming/invoice-scheduling.md
+
+!/docs/simulator/delayed-billing.md

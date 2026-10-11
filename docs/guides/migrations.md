@@ -25,6 +25,16 @@ including the check for incompatible allocations that would stop migration 004.
 
 To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged.
 
+## Add-on lifecycle upgrade
+
+Migration `013_addon_cancellations.sql` adds `addon_cancellations`, preserves
+existing purchases, command results and frozen invoices, and replaces lifetime
+customer/add-on uniqueness with serialized, nonoverlapping activation months.
+Purchases and terminations reject updates and deletes. Run `make migrate` before
+starting the changed API; stop API and worker while changing the schema, then
+restart from the updated source. Existing uncancelled purchases continue recurring.
+Repeated migration runs leave every stored financial value unchanged.
+
 ## Upgrade from the old invoice-closing model
 
 Migration `009` replaces pending-usage capture with closing from processed groups.

@@ -230,6 +230,7 @@ func addonFinancialSnapshot(t *testing.T, pool *pgxpool.Pool) string {
         'invoices',(SELECT jsonb_agg(i ORDER BY customer_id,billing_month) FROM invoices i),
         'closed',(SELECT jsonb_agg(m ORDER BY customer_id,billing_month) FROM closed_billing_months m),
         'subscriptions',(SELECT jsonb_agg(s ORDER BY subscription_id) FROM addon_subscriptions s),
+        'cancellations',(SELECT jsonb_agg(c ORDER BY subscription_id) FROM addon_cancellations c),
         'operations',(SELECT jsonb_agg(o ORDER BY operation_scope,idempotency_key) FROM api_idempotency_operations o),
         'credit',(SELECT jsonb_agg(e ORDER BY credit_entry_id) FROM credit_entries e),
         'accounts',(SELECT jsonb_agg(a ORDER BY customer_id) FROM customer_billing_state a),

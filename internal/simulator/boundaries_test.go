@@ -117,22 +117,29 @@ func TestValidateWorkflowTransport(t *testing.T) {
 }
 
 // TestValidateWorkflowStep checks the supported HTTP status interval without
-// issuing requests; both endpoints are valid and adjacent outliers are rejected.
+// issuing requests; status endpoints and supported timeline clocks are valid,
+// while adjacent status outliers, invalid clocks and non-UTC instants fail.
 func TestValidateWorkflowStep(t *testing.T) {
 	cases := []struct {
-		name        string
-		status      int
-		wantError   bool
-		wantMessage string
+		name         string
+		businessTime string
+		status       int
+		wantError    bool
+		wantMessage  string
 	}{
 		{name: "below status interval", status: 99, wantError: true, wantMessage: "step probe: invalid relative path or expected status"},
 		{name: "lowest status", status: 100},
+		{name: "supported timeline UTC clock", status: 200, businessTime: "2026-11-01T00:00:00Z"},
+		{name: "first supported clock year", status: 200, businessTime: "1000-01-01T00:00:00Z"},
+		{name: "clock year below supported range", status: 200, businessTime: "0999-12-31T23:59:59Z", wantError: true, wantMessage: "step probe: business_time must be a supported UTC RFC3339 instant"},
+		{name: "date alone is not a clock instant", status: 200, businessTime: "2026-11-01", wantError: true, wantMessage: "step probe: business_time must be a supported UTC RFC3339 instant"},
+		{name: "non-UTC clock metadata rejected", status: 200, businessTime: "2026-11-01T08:00:00+08:00", wantError: true, wantMessage: "step probe: business_time must be a supported UTC RFC3339 instant"},
 		{name: "highest status", status: 599},
 		{name: "above status interval", status: 600, wantError: true, wantMessage: "step probe: invalid relative path or expected status"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			step := WorkflowStep{Name: "probe", Request: WorkflowRequest{Method: "GET", Path: "/healthz"}, Want: WorkflowExpectation{Status: tc.status}}
+			step := WorkflowStep{Name: "probe", BusinessTime: tc.businessTime, Request: WorkflowRequest{Method: "GET", Path: "/healthz"}, Want: WorkflowExpectation{Status: tc.status}}
 			err := validateWorkflowStep(step)
 			if (err != nil) != tc.wantError {
 				t.Fatalf("validateWorkflowStep(status=%d): error=%v; wantError=%t", tc.status, err, tc.wantError)

@@ -20,3 +20,10 @@ export function businessTime(runtime, realNow = new Date()) {
     ? new Date(runtime.fixed_now)
     : realNow;
 }
+
+// Timeline fixtures require the same explicit clock in API, worker and portal.
+export function requireBusinessTime(step, runtime) {
+  if (!step.business_time) return;
+  if (runtime?.clock_mode !== "fixed" || new Date(runtime.fixed_now).getTime() !== new Date(step.business_time).getTime())
+    throw new Error(`This step requires E2B_DEMO_NOW=${step.business_time}. Start services with that clock while preserving volumes, then reload this page.`);
+}

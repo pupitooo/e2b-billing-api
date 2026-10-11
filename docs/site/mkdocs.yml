@@ -52,6 +52,7 @@ nav:
   - Simulator:
       - Transport scenarios: simulator/transport-scenarios.md
       - Billing scenarios: simulator/billing-scenarios.md
+      - Delayed billing: simulator/delayed-billing.md
       - Scenario format: simulator/scenario-style.md
   - Testing:
       - Tests: guides/testing.md
@@ -107,6 +108,7 @@ extra:
     - diagrams/usage-to-invoice/usage-to-invoice.png
     - diagrams/usage-worker-accounting/usage-worker-accounting.mmd
     - diagrams/usage-worker-accounting/usage-worker-accounting.png
+    - simulator/billing-delayed-platform.json
     - simulator/billing-demo-invoice.json
     - simulator/billing-assignment.json
     - simulator/billing-command-retries.json

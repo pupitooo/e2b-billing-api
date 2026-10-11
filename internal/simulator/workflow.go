@@ -24,12 +24,13 @@ type Workflow struct {
 }
 
 type WorkflowStep struct {
-	Name    string              `json:"name"`
-	Request WorkflowRequest     `json:"request"`
-	Want    WorkflowExpectation `json:"want"`
-	Await   bool                `json:"await,omitempty"`
-	Capture string              `json:"capture,omitempty"`
-	Fault   WorkflowFault       `json:"fault,omitempty"`
+	Name         string              `json:"name"`
+	BusinessTime string              `json:"business_time,omitempty"`
+	Request      WorkflowRequest     `json:"request"`
+	Want         WorkflowExpectation `json:"want"`
+	Await        bool                `json:"await,omitempty"`
+	Capture      string              `json:"capture,omitempty"`
+	Fault        WorkflowFault       `json:"fault,omitempty"`
 }
 
 type WorkflowFault struct {

@@ -18,11 +18,12 @@
 - [UTC month boundary](#utc-month-boundary)
 - [Durable retries, outages, and restart](#durable-retries-outages-and-restart)
 - [Verification](#verification)
+- [Multi-month platform backlog](#multi-month-platform-backlog)
 
 The platform simulator runs named HTTP steps with explicit inputs and literal expected
 responses. It sends usage increments and financial commands to the real billing API;
 it never calculates expected prices, rounding, invoices, or credit. Accounting runs in
-the worker. These synthetic sandbox measurements use the assignment's seed catalog.
+the worker. These synthetic measurements preserve the assignment's seed catalog. The September backlog scenario explicitly provisions an additional historical price through the public API.
 
 Each JSON step states `name`, `request.method`, `request.path`, and `want.status`.
 Requests and expected response fields appear together. Response objects may contain
@@ -494,3 +495,10 @@ sets `want.usage_line_order` to `price_version_id` for its single-month, single-
 invoice: it orders only the expected leading usage lines by the captured IDs, then
 still checks complete array order and every amount. Other expectations keep their
 original array order.
+
+## Multi-month platform backlog
+
+The [delayed billing guide](delayed-billing.md) documents the
+[billing-delayed-platform fixture](billing-delayed-platform.json), including its
+trusted clock phases, cancellation policy, all five invoice calculations and
+related worker-delay regressions. It is selectable in the GUI's Assignment demo.

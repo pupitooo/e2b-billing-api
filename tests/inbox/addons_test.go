@@ -17,6 +17,7 @@ import (
 // TestPurchaseAddon snapshots full monthly prices and preserves retry identity;
 // separate cases explicitly declare conflicts, closure state, and final count.
 func TestPurchaseAddon(t *testing.T) {
+	t.Run("cancellation and later activation", testAddonReactivation)
 	t.Run("replay after catalog change and closing", testAddonReplayAfterClosing)
 	t.Run("stored IDs survive readable format", testStoredAddonIdentities)
 	t.Run("calendar date persistence", testAddonCalendarDates)

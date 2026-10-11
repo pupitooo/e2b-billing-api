@@ -56,7 +56,7 @@ by ID. There is no customer-creation API in the current application.
 | Usage | Submit a measurement or a JSON batch, load an example of late usage, and trace receipts to rated groups. |
 | Prices | Insert default/customer versions using today or a future UTC date; inspect live historical versions in SQL. |
 | Credit | Grant credit as E2B, inspect balance, grants, debits and allocations. |
-| Add-ons | Purchase a catalog add-on and inspect its stored subscription snapshot. |
+| Add-ons | Purchase or cancel a catalog add-on and inspect its immutable activation periods. |
 | Limits | Set, raise or remove a limit; query the selected month or server's current month. Zero is a real limit; null means unlimited. |
 | Invoices | Issue/retry a completed UTC month, retrieve its immutable snapshot, inspect exact audit values, and print the document. |
 | Assignment demo | Select the complete assignment or fixed-clock October invoice walkthrough; execute literal expectations with separate saved cursors. |
@@ -245,3 +245,11 @@ assignment checkpoints. It is not another running service. Browser review should
 also cover all screens, actual API replies, Adminer login/prefilled SQL, responsive
 layout and invoice printing. Financial browser experiments belong in an isolated
 schema or Compose project, not a user's existing demonstration data.
+
+## Delayed billing walkthrough
+
+Select **Delayed platform billing** in Assignment demo. The
+[scenario guide](../simulator/delayed-billing.md) lists the clock phases and expected
+invoices. Each step displays its required UTC business instant; mismatched startup
+metadata blocks sending and retains the cursor. Restart API, worker and portal
+with the same `E2B_DEMO_NOW`, preserving their database volume, then reload.

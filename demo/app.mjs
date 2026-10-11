@@ -1,4 +1,4 @@
-import { businessTime, loadRuntime } from "./runtime.mjs";
+import { businessTime, loadRuntime, requireBusinessTime } from "./runtime.mjs";
 import { APIClient } from "./transport.mjs";
 import { AssignmentRunner, workflowRequest } from "./workflow.mjs";
 import {
@@ -399,13 +399,18 @@ function addonsHTML() {
     field("addon_name", "Add-on name", "concurrency_pack") +
     field("purchased_at", "Purchase date · UTC", now().slice(0, 10), { type: "date" }) +
     field("idempotency_key", "Operation key", newKey(), { full: true });
+  const cancellationFields =
+    field("subscription_id", "Purchased subscription ID", "subscription/acme/concurrency_pack", {full: true}) +
+    field("cancelled_at", "Cancellation date · UTC", now().slice(0, 10), {type: "date"}) +
+    field("idempotency_key", "Operation key", newKey(), {full: true});
   return (
     intro(
       "Recurring add-ons",
       "A purchase snapshots the monthly price. The full price applies from the purchase UTC month; credit and spend limits do not cover add-ons.",
       dbButton("addons", "Live catalog / subscriptions"),
     ) +
-    `<div class="columns">${operationForm("addons", "Purchase for selected customer", fields, "Purchase add-on")}${panel("Assignment add-on", '<p class="catalog-label">SEED REFERENCE</p><h2>concurrency_pack</h2><p class="metric-value">$20.00 <span class="subtle" style="font-size:12px">/ month</span></p><p class="hint">One subscription per customer and add-on. Billing derives its ID. Use the live database link for current purchase state.</p>')}</div>`
+    `<div class="columns">${operationForm("addons", "Purchase for selected customer", fields, "Purchase add-on")}${panel("Assignment add-on", '<p class="catalog-label">SEED REFERENCE</p><h2>concurrency_pack</h2><p class="metric-value">$20.00 <span class="subtle" style="font-size:12px">/ month</span></p><p class="hint">One active purchase period per customer and add-on. The cancellation month costs the full price; later activation months cannot overlap it. Billing derives each purchase ID. Use the live database link for current purchase state.</p>')}</div>` +
+    operationForm("cancel-addon", "Cancel an owned purchase at month end", cancellationFields, "Cancel add-on")
   );
 }
 function limitsHTML() {
@@ -527,9 +532,9 @@ function assignmentHTML() {
   const last = state.assignment.last;
   return (
     intro(
-      plan.name === "billing-demo-invoice" ? "October invoice walkthrough" : "The complete billing assignment",
+      plan.name === "billing-delayed-platform" ? "Delayed platform billing" : plan.name === "billing-demo-invoice" ? "October invoice walkthrough" : "The complete billing assignment",
       "Advance one reviewed step at a time. Expected results are loaded from the published simulator fixture, not calculated by this GUI.",
-      `<label>Scenario <select id="walkthrough-scenario" ${runner.running ? "disabled" : ""}><option value="billing-assignment" ${state.walkthroughScenario === "billing-assignment" ? "selected" : ""}>Complete assignment</option><option value="billing-demo-invoice" ${state.walkthroughScenario === "billing-demo-invoice" ? "selected" : ""}>October invoice with add-on</option></select></label>` +
+      `<label>Scenario <select id="walkthrough-scenario" ${runner.running ? "disabled" : ""}><option value="billing-assignment" ${state.walkthroughScenario === "billing-assignment" ? "selected" : ""}>Complete assignment</option><option value="billing-demo-invoice" ${state.walkthroughScenario === "billing-demo-invoice" ? "selected" : ""}>October invoice with add-on</option><option value="billing-delayed-platform" ${state.walkthroughScenario === "billing-delayed-platform" ? "selected" : ""}>Delayed platform billing</option></select></label>` +
       '<button class="primary" id="next-step" ' +
         (runner.running || progress >= plan.steps.length ? "disabled" : "") +
         ">▷ " +
@@ -539,12 +544,14 @@ function assignmentHTML() {
         ">Stop polling</button>",
     ) +
     notice(
-      plan.name === "billing-demo-invoice"
+      plan.name === "billing-delayed-platform"
+        ? "Start with fresh Acme seed data. Each step shows its required business clock. Preserve volumes between clock changes. September–January invoice totals: $120, $0, $125, $142, $20. See the delayed billing guide for the full timeline."
+        : plan.name === "billing-demo-invoice"
         ? "Use fresh Cyberdyne seed data and E2B_DEMO_NOW=2026-11-01T00:00:00Z for both API and worker. Expected invoice: usage $6.17 + $12.00, add-on $20.00, total $38.17. Closing includes processed usage only."
         : "Use fresh seeded accounts and the original seed prices. With fixed clocks, run through step 18 at 2026-11-01T00:00:00Z, then restart API, worker and portal at 2026-12-01T00:00:00Z for step 19. Keep the database and this cursor. Late usage after closing follows its receipt month.",
     ) +
     `<p class="section-note">${progress} / ${plan.steps.length} verified steps · Source <code>${x(state.assignment.source)}</code> · Cursor survives reload. Lost-response steps send once, discard the observed success for demonstration, then repeat the same request.</p><div class="progress"><div style="width:${(progress / plan.steps.length) * 100}%"></div></div>` +
-    `<div class="workflow-grid"><section class="panel"><ol class="workflow-list">${plan.steps.map((item, i) => `<li class="workflow-step ${i < progress ? "done" : i === progress ? "current" : ""}"><span class="step-number">${i < progress ? "✓" : i + 1}</span><div class="step-title"><button data-step="${i}">${x(item.name)}</button><div class="step-path">${x(item.request.method)} ${x(item.request.path)}</div></div></li>`).join("")}</ol></section><div>${panel(`Step ${index + 1} · ${step.name}`, `<p class="section-note">${x(request.method)} ${x(request.path)}${step.await ? " · polls for committed accounting" : ""}</p><h4 class="eyebrow">REQUEST</h4><pre>${x(request.body || "(no request body)")}</pre><h4 class="eyebrow" style="margin-top:22px">LITERAL EXPECTED RESULT</h4><pre>${x(pretty(step.want))}</pre>`)}${last ? panel("Last executed step", `<p class="section-note">${x(last.name)}</p>${notice(last.differences.length ? last.differences.join("\n") : "The declared expected result matched.", last.differences.length ? "error" : "success")}<pre>${x(pretty(last.actual))}</pre>`) : ""}</div></div>`
+    `<div class="workflow-grid"><section class="panel"><ol class="workflow-list">${plan.steps.map((item, i) => `<li class="workflow-step ${i < progress ? "done" : i === progress ? "current" : ""}"><span class="step-number">${i < progress ? "✓" : i + 1}</span><div class="step-title"><button data-step="${i}">${x(item.name)}</button><div class="step-path">${x(item.request.method)} ${x(item.request.path)}</div></div></li>`).join("")}</ol></section><div>${panel(`Step ${index + 1} · ${step.name}`, `<p class="section-note">${x(request.method)} ${x(request.path)}${step.business_time ? " · required UTC clock " + x(step.business_time) : ""}${step.await ? " · polls for committed accounting" : ""}</p><h4 class="eyebrow">REQUEST</h4><pre>${x(request.body || "(no request body)")}</pre><h4 class="eyebrow" style="margin-top:22px">LITERAL EXPECTED RESULT</h4><pre>${x(pretty(step.want))}</pre>`)}${last ? panel("Last executed step", `<p class="section-note">${x(last.name)}</p>${notice(last.differences.length ? last.differences.join("\n") : "The declared expected result matched.", last.differences.length ? "error" : "success")}<pre>${x(pretty(last.actual))}</pre>`) : ""}</div></div>`
   );
 }
 
@@ -673,6 +680,11 @@ async function loadPlan() {
       last: null,
     };
   runner = new AssignmentRunner({
+    beforeStep: async (step) => {
+      if (!step.business_time) return;
+      runtime = await loadRuntime();
+      requireBusinessTime(step, runtime);
+    },
     plan,
     state: state.assignment,
     client,
@@ -713,7 +725,7 @@ $("#content").addEventListener("change", async (event) => {
   try {
     if (runner?.running) throw new Error("Wait for the running scenario step to finish.");
     const scenario = event.target.value;
-    if (!["billing-assignment", "billing-demo-invoice"].includes(scenario))
+    if (!["billing-assignment", "billing-demo-invoice", "billing-delayed-platform"].includes(scenario))
       throw new Error("Unknown walkthrough scenario.");
     state.walkthroughs[state.walkthroughScenario] = state.assignment;
     state.walkthroughScenario = scenario;

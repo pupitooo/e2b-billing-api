@@ -43,6 +43,7 @@ type invoiceExpectation struct {
 // Active add-on months cannot be skipped, including with no usage; purchases
 // serialize with closing, preserving fees or rejecting the backdated purchase.
 func TestCloseMonth(t *testing.T) {
+	t.Run("platform and worker backlog boundaries", testDelayedPlatformBacklog)
 	t.Run("rejection preserves complete financial state", testClosingRejectedState)
 	t.Run("add-on months cannot be skipped", testClosingAddonMonths)
 	t.Run("purchase and closing share the account lock", testClosingAddonOrder)

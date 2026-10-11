@@ -95,7 +95,9 @@ func scanInvoiceUsage(row pgx.Row) (billing.InvoiceUsage, error) {
 
 func loadInvoiceAddons(ctx context.Context, tx pgx.Tx, customer string, month time.Time) ([]billing.InvoiceAddon, error) {
 	rows, err := tx.Query(ctx, `SELECT subscription_id,addon_name,monthly_price_cents
-        FROM addon_subscriptions WHERE customer_id=$1 AND start_month<=$2 ORDER BY addon_name,subscription_id`, customer, month)
+        FROM addon_subscriptions s LEFT JOIN addon_cancellations c USING(subscription_id)
+        WHERE s.customer_id=$1 AND s.start_month<=$2 AND (c.end_month IS NULL OR c.end_month>=$2)
+        ORDER BY addon_name,subscription_id`, customer, month)
 	if err != nil {
 		return nil, err
 	}

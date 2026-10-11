@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { businessTime, loadRuntime } from "../../demo/runtime.mjs";
+import { businessTime, loadRuntime, requireBusinessTime } from "../../demo/runtime.mjs";
 import { invoiceEligible } from "../../demo/core.mjs";
 
 // loadRuntime reads portal configuration, rejects failed or malformed metadata,
@@ -50,4 +50,21 @@ test("businessTime", async (t) => {
       assert.equal(invoiceEligible(c.inputMonth, got), c.wantEligible, `invoiceEligible(${c.inputMonth}, ${got.toISOString()})`);
     });
   }
+});
+
+// requireBusinessTime accepts the fixture's trusted instant and rejects mismatched
+// or real clocks before a timeline step can send a financial request.
+test("requireBusinessTime", async (t) => {
+ const cases = [
+  {scenario:"matching fixed instant", inputStep:{business_time:"2026-11-01T00:00:00Z"}, inputRuntime:{clock_mode:"fixed",fixed_now:"2026-11-01T00:00:00Z"},wantError:false},
+  {scenario:"equivalent UTC offset",inputStep:{business_time:"2026-11-01T00:00:00Z"},inputRuntime:{clock_mode:"fixed",fixed_now:"2026-11-01T08:00:00+08:00"},wantError:false},
+  {scenario:"another fixed month",inputStep:{business_time:"2026-11-01T00:00:00Z"},inputRuntime:{clock_mode:"fixed",fixed_now:"2026-12-01T00:00:00Z"},wantError:true},
+  {scenario:"real clock cannot reproduce a timeline receipt",inputStep:{business_time:"2026-11-01T00:00:00Z"},inputRuntime:{clock_mode:"real"},wantError:true},
+  {scenario:"ordinary workflow has no clock requirement",inputStep:{},inputRuntime:{clock_mode:"real"},wantError:false},
+ ];
+ for (const c of cases) await t.test(c.scenario,()=>{
+  let error=null;
+  try{requireBusinessTime(c.inputStep,c.inputRuntime);}catch(err){error=err;}
+  assert.equal(Boolean(error),c.wantError,`step=${JSON.stringify(c.inputStep)} runtime=${JSON.stringify(c.inputRuntime)} error=${error}`);
+ });
 });

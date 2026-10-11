@@ -4,6 +4,7 @@ package inbox_test
 
 import (
 	"context"
+	"e2b/billing-api/internal/billing"
 	"e2b/billing-api/internal/postgres"
 	"os"
 	"path/filepath"
@@ -94,10 +95,11 @@ func TestAccountingIDSequencesMigration(t *testing.T) {
 				t.Fatal(err)
 			}
 			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) }})
-			original, err := store.CloseMonth(ctx, "acme", "2026-10")
-			if err != nil {
-				t.Fatal(err)
-			}
+			original := billing.Invoice{CustomerID: "acme", Month: "2026-10", Number: "ACME-0001", Currency: "USD", CustomerName: "Acme Inc.", Country: "US", BillingAddress: "1 Market St, San Francisco, CA 94105", IssuedAt: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), TotalCents: 0, GrossUsageMicrocents: "1000000", CreditUsedMicrocents: "1000000", Lines: []billing.InvoiceLine{
+				{Kind: "usage", Description: "Usage", AmountCents: 1, PriceVersionID: "cpu-acme-2026-10-01", Metric: "cpu_seconds", UsageMonth: "2026-10", Units: "250000", GrossMicrocents: "1000000", CreditMicrocents: "1000000"},
+				{Kind: "credit", Description: "Used credit", AmountCents: -1},
+			}}
+			publishLegacyInvoice(t, pool, original)
 			if original.TotalCents != tc.wantInvoiceCents {
 				t.Fatalf("Pre-upgrade invoice cents=%d; want %d", original.TotalCents, tc.wantInvoiceCents)
 			}

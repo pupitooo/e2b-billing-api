@@ -346,3 +346,35 @@ function invoiceBrowser(t, customer, month, storageError) {
   t.mock.method(globalThis, "setInterval", () => 0);
   return browser;
 }
+
+// timeline walkthrough selects the published plan, displays its required clock,
+// and sends no command until startup metadata matches; saved cursors then advance.
+test("timeline walkthrough",async(t)=>{
+ const cases=[
+  {scenario:"matching September clock executes the first price command",inputClock:"2026-09-01T00:00:00Z",wantIndex:1,wantRequests:[{method:"POST",path:"/api/prices",body:{idempotency_key:"delayed-september-price",customer_id:"acme",metric:"cpu_seconds",price_per_million_cents:5,effective_from:"2026-09-01"}}],wantToast:"Step matched its declared expected result."},
+  {scenario:"October clock blocks September receipt scenario before sending",inputClock:"2026-10-01T00:00:00Z",wantIndex:0,wantRequests:[],wantToast:"This step requires E2B_DEMO_NOW=2026-09-01T00:00:00Z. Start services with that clock while preserving volumes, then reload this page."},
+ ];
+ for(const c of cases)await t.test(c.scenario,async(t)=>{
+  const browser=invoiceBrowser(t,"acme","2026-09");
+  globalThis.location.hash="#assignment";
+  const fixture=JSON.parse(await readFile(new URL("../../docs/simulator/billing-delayed-platform.json",import.meta.url),"utf8"));
+  const requests=[];
+  t.mock.method(globalThis,"fetch",async(path,options={})=>{
+   if(path==="/api/healthz")return new Response("{}",{status:200});
+   if(path==="/demo/runtime.json")return new Response(JSON.stringify({clock_mode:"fixed",fixed_now:c.inputClock}),{status:200});
+   if(path.startsWith("/simulator/"))return new Response(JSON.stringify(fixture),{status:200});
+   requests.push({method:options.method,path,body:JSON.parse(options.body)});
+   return new Response('{"price_version_id":"new-price","price_per_million_cents":5,"effective_from":"2026-09-01"}',{status:200});
+  });
+  await import(`../../demo/app.mjs?timeline=${encodeURIComponent(c.scenario)}`);
+  await new Promise(resolve=>setImmediate(resolve));
+  await browser.content.listeners.change({target:{id:"walkthrough-scenario",value:"billing-delayed-platform"}});
+  assert.ok(browser.content.innerHTML.includes("Delayed platform billing"),"timeline selection must be visible");
+  assert.ok(browser.content.innerHTML.includes("required UTC clock 2026-09-01T00:00:00Z"),"required clock must be visible beside the step");
+  await browser.content.listeners.click({target:{id:"next-step",dataset:{},closest(){return this;},hasAttribute(){return false;}}});
+
+  assert.equal(JSON.parse(browser.saved).assignment.index,c.wantIndex,`clock=${c.inputClock}: cursor`);
+  assert.deepEqual(requests,c.wantRequests,`clock=${c.inputClock}: financial requests`);
+  assert.equal(browser.toast.textContent,c.wantToast,`clock=${c.inputClock}: outcome`);
+ });
+});

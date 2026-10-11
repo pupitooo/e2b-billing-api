@@ -52,7 +52,7 @@ boundaries, as explained in the [closing contract](../../architecture/accounting
 
 ## Financial presentation and atomic publication
 
-[`buildInvoice`](../../../internal/postgres/invoice_data.go) reads buyer details, the next customer sequence, exact rated groups and applicable add-on subscriptions while the account lock is held. Usage groups are selected by the **billing month** and ordered by original usage month, metric and price version. Add-ons use the stored subscription price for every month at or after `start_month`, including the purchase month; the current model has no cancellation end month or proration.
+[`buildInvoice`](../../../internal/postgres/invoice_data.go) reads buyer details, the next customer sequence, exact rated groups and applicable add-on subscriptions while the account lock is held. Usage groups are selected by the **billing month** and ordered by original usage month, metric and price version. Add-ons use the stored purchase price from `start_month` through the optional inclusive `addon_cancellations.end_month`. The purchase and cancellation months are charged in full; proration is not supported.
 
 [`invoiceUsageLine`](../../../internal/billing/invoice_lines.go) calls [`InvoiceAmounts`](../../../internal/accounting/money.go) for each group:
 

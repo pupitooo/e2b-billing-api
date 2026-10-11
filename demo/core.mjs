@@ -125,7 +125,7 @@ export function customerPath(customer, suffix) {
 export function buildCommand(operation, fields, customer) {
   const key = String(fields.idempotency_key || "");
   if (
-    ["prices", "credits", "addons", "spend-limit"].includes(operation) &&
+    ["prices", "credits", "addons", "cancel-addon", "spend-limit"].includes(operation) &&
     !key
   )
     throw new Error(
@@ -160,6 +160,16 @@ export function buildCommand(operation, fields, customer) {
         idempotency_key: key,
         addon_name: fields.addon_name,
         purchased_at: calendarDate(fields.purchased_at),
+      }),
+    };
+  if (operation === "cancel-addon")
+    return {
+      method: "POST",
+      path: customerPath(customer, "addons/cancel"),
+      body: wireJSON({
+        idempotency_key: key,
+        subscription_id: fields.subscription_id,
+        cancelled_at: calendarDate(fields.cancelled_at),
       }),
     };
   if (operation === "spend-limit")
