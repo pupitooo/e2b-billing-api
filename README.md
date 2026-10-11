@@ -1,250 +1,96 @@
 # E2B Billing API
 
-## 🚧 ⚠️ DISCLAIMER — Proof of concept 🚧
+## Disclaimer — proof of concept
 
-This application is a proof of concept for the assignment and requires further
-work before production deployment. It focuses on architectural design and the
-billing processes defined by the assignment.
-
-My aim was also to deliver the standard of work I am used to: comprehensive tests
-and documentation covering operating instructions, binding system contracts,
-and diagrams explaining the structure and data flow. The project includes unit,
-database, HTTP integration, and complete billing workflow tests, operational
-guides, and an OpenAPI reference.
-
-Given the limited time, I prioritized design quality and clear descriptions of
-the critical processes. The documentation primarily supports a guided
-presentation and technical review of the solution. The documentation portal
-groups startup, operations, API, billing, simulation, testing, development, and
-architecture, with direct links to common tasks. Production deployment still requires further
-operational specification, validation, and hardening beyond the documented local
-setup.
-
----
+This is a proof of concept for the E2B assignment, intended for local demonstration
+and technical review. Production deployment requires further operational
+specification, validation, and hardening; production capacity has not been established.
 
 ## Overview
 
-Billing service for the E2B assignment, built with Go and PostgreSQL. It implements
-durable usage receipt, transactional accounting, historical prices, usage-only
-credit, recurring add-ons, gross spend limits, and immutable monthly invoices.
-A separate, restartable Go simulator exercises the public interfaces.
+A billing service built with Go and PostgreSQL. It implements durable usage
+receipt and asynchronous transactional accounting, historical default and
+customer prices, exact usage-only credit, recurring add-ons, gross monthly spend
+limits, and numbered, immutable monthly invoices. A separate, restartable Go
+simulator exercises delivery failures, retries, and the public billing workflows.
+Unit, SQL integrity, HTTP integration, and complete workflow tests cover the solution.
 
-## Architecture and implementation status
+The scope is monthly billing in UTC. Each receipt must fit one UTC month and one
+applicable price version; invoices are issued explicitly through the API.
+Authentication, automatic invoice scheduling, and invoice delivery remain outside
+the implementation. The [implementation overview](docs/architecture/submission-overview.md)
+describes assignment coverage, responsibility boundaries, and remaining limitations.
 
-The selected [option C architecture](docs/brainstorming/architecture-options.md#why-option-c-was-selected)
-uses an HTTP API, PostgreSQL inbox, and an independent accounting worker.
+### Architecture
+
+The selected [option C](docs/brainstorming/architecture-options.md#why-option-c-was-selected)
+uses an HTTP API, a PostgreSQL inbox, and an independent accounting worker.
+The API acknowledges committed input; the worker commits each receipt's financial
+effects and completion together. Invoice issuance snapshots already processed usage.
 
 ![Option C: building blocks and interfaces](docs/diagrams/option-c-components/option-c-components.png)
 
-[Editable Mermaid source](docs/diagrams/option-c-components/option-c-components.mmd) ·
-[Architecture and assignment coverage](docs/architecture/submission-overview.md) ·
-[Diagram explanation](docs/diagrams/option-c-components/README.md).
-
-The API commits usage before returning `202`; the worker commits each receipt's
-financial effects and completion together. Invoice closing snapshots already
-processed usage. See the [usage-to-invoice walkthrough](docs/architecture/usage-to-invoice.md)
-and [implemented schema](docs/architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001012).
-
-Current limits: no authentication, automatic invoice scheduling or delivery;
-receipts must fit one UTC month and applicable price version. Retained local
-volumes cover restarts, not disk loss. Production capacity has not been established.
+[Architecture guide](docs/architecture/submission-overview.md) ·
+[Diagram explanation and Mermaid source](docs/diagrams/option-c-components/README.md).
 
 ## Quick start
 
 Requirements: Docker with Docker Compose and Make. Go and PostgreSQL clients run
-inside containers. Run commands from the repository root.
+inside containers. Run commands from the repository root; optionally copy
+[.env.example](.env.example) to `.env` to change local ports or settings.
 
 ```sh
 git clone https://github.com/pupitooo/e2b-billing-api.git
 cd e2b-billing-api
-# Optional: copy .env.example to .env to change local ports or settings.
 make up SERVICE=postgres
 make migrate
 make up
+make links
 ```
 
-Migration is explicit, including on existing volumes; startup never applies it.
-The simulator container waits for `make simulate` before producing usage.
+Migrations are explicit, including on existing volumes; startup never applies them.
+The simulator waits for an explicit command before producing usage. Use the same
+Compose project and configuration throughout; see [local setup](docs/guides/local-development.md)
+for isolated environments and service operations.
 
-These commands use the Compose project `e2b-local` unless you select another
-project. A project groups containers, its network, and its own database and
-simulator volumes. Keep the same selection for startup, migrations, and
-simulation; port settings only change host access. See
-[Compose projects and ports](docs/guides/local-development.md#compose-projects-and-ports)
-and the [complete isolated assignment setup](docs/simulator/billing-scenarios.md#start-an-isolated-assignment-environment).
+## Documentation and tools
 
-| Service | Default browser address |
-| --- | --- |
-| API health | [http://127.0.0.1:8081/healthz](http://127.0.0.1:8081/healthz) |
-| Documentation portal | [http://127.0.0.1:8082/](http://127.0.0.1:8082/) |
-| Scalar API reference and request client | [http://127.0.0.1:8082/reference/](http://127.0.0.1:8082/reference/) |
-| Billing demo GUI | [http://127.0.0.1:8082/demo/](http://127.0.0.1:8082/demo/) |
-| Adminer database browser | [http://127.0.0.1:8082/database/](http://127.0.0.1:8082/database/) |
+Open the **Documentation portal** link printed by `make links`, by default
+[http://127.0.0.1:8082/](http://127.0.0.1:8082/). The searchable portal contains
+setup, operations, API contracts and examples, financial rules, simulator scenarios,
+testing, development conventions, and architecture.
 
-Use [.env.example](.env.example) for configuration and `make links` for actual
-addresses. The `docs` container serves the guides and proxies the reference;
-`api-docs` serves Scalar internally. `make docs` starts the portal and API.
-`make api-docs` starts the same services and prints the reference link.
-
-The [demo console](docs/guides/demo-console.md) is a separate static HTML/CSS/JavaScript
-client in `demo/`, served by the existing documentation gateway. It covers billing
-commands, exact retries, request inspection, and the assignment walkthrough without
-adding handlers to the Go application. Standard Adminer is the only additional
-runtime service; database links prefill SQL for manual execution in a new tab.
-
-See [local development](docs/guides/local-development.md) for service operations,
-[runtime configuration](docs/guides/runtime-configuration.md) for API and worker
-budgets, and [documentation maintenance](docs/guides/documentation.md) for live
-preview and the upgrade from the former Scalar-only `docs` service.
-
-## Try the API and simulator
-
-Send a measurement to the seeded Acme account:
+To start the portal and browser tools separately:
 
 ```sh
-curl -i http://127.0.0.1:8081/usage/batches \
-  -H 'Content-Type: application/json' \
-  --data '{
-    "events": [{
-      "schema_version": 1,
-      "source": "readme-example",
-      "event_id": "acme-cpu-000001",
-      "customer_id": "acme",
-      "sandbox_id": "acme-sandbox-001",
-      "metric": "cpu_seconds",
-      "period_start": "2026-10-10T12:00:00Z",
-      "period_end": "2026-10-10T13:00:00Z",
-      "units": 100000000
-    }]
-  }'
+make docs
 ```
 
-A valid request returns `202` with `{"status":"accepted"}`. Keep `(source,
-event_id)` and content unchanged on retries; changed content returns `409`.
-Acceptance confirms durable receipt; financial processing is asynchronous.
-See the [OpenAPI specification](docs/api/openapi.yaml) for all financial endpoints,
-validation, error responses, and safe retries after a lost response or `503`.
-The [API endpoint diagram](docs/diagrams/api-endpoints/api-endpoints.png) maps
-methods and paths to their callers; it also appears in Scalar's introduction
-and the [API guide](docs/guides/api-reference.md#api-endpoints-and-callers).
+This also starts the API, PostgreSQL, and Adminer; migrations and worker startup
+remain explicit. Follow [local setup](docs/guides/local-development.md) when you
+also want usage to be accounted. Printed addresses follow your configured ports.
 
-Run the transport scenario one step at a time:
-
-```sh
-make simulate SCENARIO=assignment MODE=step
-make simulate ACTION=status
-```
-
-This creates additional usage. Use an isolated environment for independent
-experiments. The [transport simulator guide](docs/simulator/transport-scenarios.md)
-covers generation, delivery, replay, barriers, and failures.
-
-The [billing scenario step tables](docs/simulator/billing-scenarios.md#scenarios-and-review-entry-points)
-document each action and expected result, including the
-[24-step assignment](docs/simulator/billing-scenarios.md#billing-assignment).
-Run them against fresh seeded accounts with the API and worker running; observe
-the [calendar and receipt-time prerequisites](docs/simulator/billing-scenarios.md#run-the-complete-assignment).
-Private-schema integration tests declare their own invoice clocks for earlier verification.
-
-The command below uses the currently selected Compose project. `make simulate`
-does not start its API or worker. For clean accounts, follow the
-[isolated setup](docs/simulator/billing-scenarios.md#start-an-isolated-assignment-environment)
-first and retain its project and port exports. For `lookup api ... no such host`,
-check [simulator connectivity](docs/guides/troubleshooting.md#troubleshoot-simulator-connectivity).
-
-```sh
-make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json
-```
-
-## Database and service operations
-
-Default PostgreSQL settings: host `127.0.0.1`, port `5432`, database `e2b_billing`,
-user `e2b`, development password `e2b_local_dev`, session time zone UTC. Inside
-Compose, use host `postgres`. The role password is initialized only on an empty
-volume; changing `.env` does not update an existing role.
-
-```sh
-make psql
-make migrate
-make migration-status
-```
-
-[Database](docs/guides/database-operations.md) covers connection strings and
-inspection queries. [Migrations](docs/guides/migrations.md) covers schema changes,
-upgrade prerequisites, and migration guarantees. For missing API names, occupied
-ports, or pending receipts, follow [troubleshooting](docs/guides/troubleshooting.md).
-
-| Command | Purpose |
-| --- | --- |
-| `make ps` / `make links` | Inspect services and browser addresses. |
-| `make logs SERVICE=worker` | Inspect accounting and quarantine errors. |
-| `make restart SERVICE=worker` | Restart accounting independently of the API. |
-| `make stop` | Stop services while retaining containers and data. |
-| `make down` | Remove containers and the network while retaining volumes. |
-| `make services` / `make help` | List services or all supported commands. |
-
-Investigate unsupported receipts before releasing them. Missing valid prices are
-P0 catalog incidents; see the complete [accounting recovery procedure](docs/guides/accounting-recovery.md).
-Adding a price or replaying usage does not clear a processing error.
-
-## Tests and development
-
-```sh
-make install-hooks
-make fmt
-make check
-make up SERVICE=postgres
-make test
-make docs-check
-make demo-check
-```
-
-`make check` verifies Go formatting, whitespace, and static
-analysis. `make test` runs SQL integrity in UTC and `Asia/Shanghai`, Go package,
-repository, HTTP, and worker lifecycle tests. `make docs-check` validates the
-published documentation, links, and assets with a strict MkDocs build.
-
-Use named constants for domain rules, schema/checkpoint versions, protocol
-limits, retry policy, operational defaults, and parsing boundaries. Equal values
-with different meanings need separate names; use standard-library constants where
-available. Keep ordinary zero values, indexing, counters, and literal test inputs
-and expectations readable. Review constant names manually; formatting does not
-enforce this rule. Group decimal Go literals and Markdown numbers with five or
-more digits in threes (`10_000`); calendar years and copyable language examples
-retain their required syntax. Review numeric grouping manually; formatting and
-automated checks do not enforce it.
-
-See [development conventions](docs/guides/development.md),
-[test suites and filters](docs/guides/testing.md), and the
-[final acceptance procedure](docs/guides/final-acceptance-testing.md).
-The [documentation index](docs/index.md) links all published guides.
-The [test-quality and mutation audit](docs/guides/test-mutation-audit.md) records
-selected deliberate defects, missing assertions and the added regression scenarios.
-
-## System contracts
-
-Changes to financial, transport, or lifecycle requirements must update this
-register and the linked detailed contract together. Keep proposals separate;
-resolve conflicts with the assignment before adopting or implementing them.
-
-| Contract | Required behavior and detail | Basis |
+| Tool | Purpose | Default access |
 | --- | --- | --- |
-| Durable usage and retries | The batch envelope contains only `events`, with no batch identity. Preserve increments under source-wide `(source, event_id)` identities across customers, sandboxes, processes, and restarts. Acknowledge committed input; unchanged retries preserve receipt time, changed content conflicts, and the sender retains unacknowledged input. [Event contract](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed). | Assignment delivery; system identity and inbox policies. |
-| API and worker lifecycle | Separate processes and containers, independent restarts, shared PostgreSQL capacity. Each process constructs one PostgreSQL store with shared connection, clock, and rollback settings. The API requires the complete store at startup and always registers all implemented endpoints. [Runtime boundaries](docs/architecture/submission-overview.md#runtime-boundaries), [option C](docs/brainstorming/architecture-options.md#why-option-c-was-selected). | System architecture. |
-| Historical pricing | Apply consumption-time overrides or defaults with finite, explicit starts. Preserve seed prices and dates; receipts fit one price version and UTC month. [Pricing](docs/architecture/accounting-rules.md#historical-prices-and-groups). | Assignment prices; system segmentation policy. |
-| Generated resource IDs and command retries | Billing generates price IDs and derives readable new subscription IDs as `subscription/<customer_id>/<addon_name>` with each component percent-encoded. Prices, add-ons, credit grants, and spend-limit changes require JSON `idempotency_key`; all four commands store their keys and results in `api_idempotency_operations` in the same transaction as their financial effects. Caller keys never become internal resource IDs. Missing or invalid keys return `422`; duplicate fields or wrong types return `400`; changed content conflicts. Existing IDs and financial history remain unchanged. [Command retries](docs/guides/api-reference.md#command-retries). | System API identity policy. |
-| Accounting resource IDs | New rated groups use `grp_1`, `grp_2`, etc.; new credit ledger entries use `crd_1`, `crd_2`, etc. Each namespace has a persistent, noncycling PostgreSQL sequence starting at one. Allocation is safe across API and worker instances without a collision lookup. Rollback can leave gaps; existing IDs, references and invoices are preserved. [Identity rules](docs/architecture/accounting-rules.md#accounting-resource-identities). | System storage identity policy. |
-| Price insertion | `effective_from` is a required `YYYY-MM-DD` date, stored at midnight UTC. New dates must be today or later according to the server clock after the catalog lock. Today is allowed only when rated history is preserved. Past dates return `422`; history conflicts return `409`; unchanged retries retain the original price. [Insertion contract](docs/architecture/accounting-rules.md#price-insertion-contract). | System activation policy. |
-| Credit audit time | Grant requests and responses contain no `recorded_at`. The backend writes its UTC clock to the ledger and command history once; retries preserve that audit instant. [Credit contract](docs/architecture/accounting-rules.md#credit-audit-time-and-add-on-purchase-dates). | System audit policy. |
-| Add-on purchase date | `purchased_at` is a required `YYYY-MM-DD` date, stored at midnight UTC and returned as a date. Open historical months and future dates are allowed; new purchases in or before a closing or closed month conflict. [Purchase contract](docs/architecture/accounting-rules.md#credit-audit-time-and-add-on-purchase-dates). | System purchase policy. |
-| Catalog recovery | Provision dated prices before metering. Missing prices quarantine without financial effects and report P0; repair through controlled SQL, then explicitly release. [Recovery contract](docs/architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery). | System provisioning policy. |
-| Exact money and credit | Allocate exact ticks before rounding; credit pays usage only and later grants do not rewrite allocations. [Money and credit](docs/architecture/accounting-rules.md#exact-money-and-credit). | Assignment credit; system precision/order. |
-| Invoice presentation | Round cumulative groups half-up; displayed credit is rounded gross minus net. Preserve exact audit values and assignment totals. [Presentation](docs/architecture/accounting-rules.md#rounding-and-invoice-presentation). | Assignment cents/examples; system rounding. |
-| Fixed monthly periods | Whole UTC calendar months, one immutable invoice per customer/month after month end; retries retain number and snapshot. [Months](docs/architecture/accounting-rules.md#fixed-calendar-month-contract). | Assignment periods; system closing guarantees. |
-| Spend limits and add-ons | Compare original-month gross usage before credit, excluding add-ons; account beyond the limit. Charge the full add-on price from its purchase month. [Rules](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). | Assignment rules. |
-| Late usage | Preserve consumption-month prices, limits, and audit; route closed/skipped-month usage to an eligible month after the latest closure and at or after receipt. Issued invoices never reopen. [Late usage](docs/architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage). | Assignment example; system routing policy. |
-| Atomic accounting and closing | Serialize customer financial writes; commit each receipt with its financial effects. Close already processed groups under the account lock without draining or blocking on pending/errors. First closing cannot skip earlier usage; later new invoices require the previous month closed. Publish closure, frozen groups, snapshot, and number atomically. [Closing contract](docs/architecture/accounting-rules.md#transaction-and-closing-contract). | System transaction policy. |
-| Supported timestamps | After UTC conversion, years 1000 through 9999 with at most microsecond precision. [Event validation](docs/architecture/usage-to-invoice.md#3-usage-events-what-was-consumed). | System parsing boundaries. |
+| Documentation portal | Search and browse all published guides and diagrams. | [Guides](http://127.0.0.1:8082/) |
+| Scalar | Browse the OpenAPI reference and send API requests. | [API reference and request client](http://127.0.0.1:8082/reference/) |
+| Billing demo GUI | Inspect accounts, run billing commands, retry requests, and walk through the assignment. | [Demo console](http://127.0.0.1:8082/demo/) |
+| Adminer | Inspect PostgreSQL data and run SQL manually. | [Database browser](http://127.0.0.1:8082/database/) |
+| Go simulator | Run repeatable transport and billing scenarios with durable checkpoints. | `make simulate-help`; [scenario guide](docs/simulator/billing-scenarios.md) |
 
-Automatic invoice scheduling/delivery, external invoice references, configurable
-price denominators, and alternative catalog locking remain proposals.
+Use an [isolated assignment environment](docs/simulator/billing-scenarios.md#start-an-isolated-assignment-environment)
+for experiments that change billing data. The assignment walkthrough has calendar
+and receipt-time prerequisites, explained in that guide.
+
+### Repository entry points
+
+Before the portal is running, the same guides are readable directly in the repository:
+
+| Topic | Start here |
+| --- | --- |
+| All documentation | [Documentation index](docs/index.md) |
+| Setup and operations | [Local setup](docs/guides/local-development.md), [troubleshooting](docs/guides/troubleshooting.md) |
+| API requests | [API guide](docs/guides/api-reference.md), [OpenAPI specification](docs/api/openapi.yaml) |
+| Billing and architecture | [Implementation overview](docs/architecture/submission-overview.md), [system contracts](docs/architecture/system-contracts.md), [usage to invoice](docs/architecture/usage-to-invoice.md) |
+| Scenarios and verification | [Billing scenarios](docs/simulator/billing-scenarios.md), [tests](docs/guides/testing.md), [acceptance procedure](docs/guides/final-acceptance-testing.md) |
+| Development | [Conventions](docs/guides/development.md), [documentation maintenance](docs/guides/documentation.md) |

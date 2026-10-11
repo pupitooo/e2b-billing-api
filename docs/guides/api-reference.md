@@ -74,6 +74,35 @@ See the [event contract](../architecture/usage-to-invoice.md#3-usage-events-what
 [runtime budgets](runtime-configuration.md#api-runtime-budgets), and
 [accounting recovery](accounting-recovery.md) for details.
 
+### Send a measurement
+
+With the [local services running](local-development.md), send a measurement to the
+seeded Acme account. This writes usage to the selected project's database; use an
+[isolated environment](../simulator/billing-scenarios.md#start-an-isolated-assignment-environment)
+for independent experiments.
+
+```sh
+curl -i http://127.0.0.1:8081/usage/batches \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "events": [{
+      "schema_version": 1,
+      "source": "api-guide-example",
+      "event_id": "acme-cpu-000001",
+      "customer_id": "acme",
+      "sandbox_id": "acme-sandbox-001",
+      "metric": "cpu_seconds",
+      "period_start": "2026-10-10T12:00:00Z",
+      "period_end": "2026-10-10T13:00:00Z",
+      "units": 100000000
+    }]
+  }'
+```
+
+A valid request returns `202` with `{"status":"accepted"}`. Keep the identity and
+content unchanged when retrying; changed content returns `409`. Acceptance
+confirms durable receipt; the worker processes its financial effects asynchronously.
+
 ## Price activation
 
 `POST /prices` requires `idempotency_key` and `effective_from` as a calendar date
