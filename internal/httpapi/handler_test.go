@@ -114,6 +114,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 			{name: "current limit status route", description: "The required store keeps this endpoint registered.", method: http.MethodPost, path: "/customers/acme/limit-status", wantStatus: http.StatusMethodNotAllowed, wantAllow: "GET, HEAD", body: ""},
 			{name: "monthly limit status route", description: "The required store keeps this endpoint registered.", method: http.MethodPost, path: "/customers/acme/months/2026-10/limit-status", wantStatus: http.StatusMethodNotAllowed, wantAllow: "GET, HEAD", body: ""},
 			{name: "invoice issuance route", description: "The required store keeps this endpoint registered.", method: http.MethodGet, path: "/customers/acme/invoices", wantStatus: http.StatusMethodNotAllowed, wantAllow: "POST", body: ""},
+			{name: "invoice catch-up route", description: "Catch-up validates its required key before storage.", method: http.MethodPost, path: "/customers/acme/invoices/catch-up", wantStatus: http.StatusUnprocessableEntity, body: `{"through_month":"2026-12"}`},
 			{name: "invoice retrieval route", description: "The required store keeps this endpoint registered.", method: http.MethodPost, path: "/customers/acme/invoices/2026-10", wantStatus: http.StatusMethodNotAllowed, wantAllow: "GET, HEAD", body: ""},
 		}
 		handler := newTestHandler(t, acceptingStore(), 10*time.Second, 32)
@@ -1411,6 +1412,11 @@ func (store storeFunc) MonthlyLimitStatus(ctx context.Context, customer, month s
 // CloseMonth rejects unexpected financial calls in usage transport scenarios.
 func (store storeFunc) CloseMonth(ctx context.Context, customer, month string) (billing.Invoice, error) {
 	return billing.Invoice{}, errors.New("unexpected CloseMonth call")
+}
+
+// CatchUpInvoices rejects unexpected batch issuance in usage transport scenarios.
+func (store storeFunc) CatchUpInvoices(ctx context.Context, customer, key, through string) (billing.InvoiceRun, error) {
+	return billing.InvoiceRun{}, errors.New("unexpected CatchUpInvoices call")
 }
 
 // Invoice rejects unexpected financial calls in usage transport scenarios.

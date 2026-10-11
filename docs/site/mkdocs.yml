@@ -108,6 +108,7 @@ extra:
     - diagrams/usage-to-invoice/usage-to-invoice.png
     - diagrams/usage-worker-accounting/usage-worker-accounting.mmd
     - diagrams/usage-worker-accounting/usage-worker-accounting.png
+    - simulator/billing-missed-invoice.json
     - simulator/billing-delayed-platform.json
     - simulator/billing-demo-invoice.json
     - simulator/billing-assignment.json

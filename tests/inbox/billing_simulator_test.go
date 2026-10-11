@@ -28,6 +28,7 @@ import (
 // insertion times when a scenario schedules versions before historical usage.
 func TestBillingSimulatorExecutable(t *testing.T) {
 	t.Run("multi-month platform delay with real receipt clocks", testBillingTimeline)
+	t.Run("missed manual invoice with real receipt clocks", testMissedInvoiceTimeline)
 	t.Run("committed usage survives response loss and producer death", testCommittedUsageRecovery)
 	cases := []struct {
 		name                string

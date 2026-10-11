@@ -41,4 +41,4 @@ Design proposals and public-product context do not expand assignment requirement
 Only explicitly selected public files appear in this portal; ignored assignment
 materials and local working documents remain outside it.
 
-[Delayed billing scenarios](simulator/delayed-billing.md) combine physical platform lag, immutable invoices, credit and add-on lifecycle changes.
+[Delayed billing scenarios](simulator/delayed-billing.md) combine physical platform lag, missed manual invoices, immutable snapshots, credit and add-on lifecycle changes.

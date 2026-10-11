@@ -26,5 +26,6 @@ type Store interface {
 	SetSpendLimit(context.Context, string, billing.SpendLimitChange) error
 	MonthlyLimitStatus(context.Context, string, string) (billing.LimitStatus, error)
 	CloseMonth(context.Context, string, string) (billing.Invoice, error)
+	CatchUpInvoices(context.Context, string, string, string) (billing.InvoiceRun, error)
 	Invoice(context.Context, string, string) (billing.Invoice, error)
 }

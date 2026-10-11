@@ -57,7 +57,7 @@ The flow diagram follows the required `Credits → Rounding` order. Credit balan
 
 ## Implemented PostgreSQL schema (ERD)
 
-This ERD shows all **16 current tables**, including the migration runner's `schema_migrations` table. It uses the SQL table and column names, types, primary keys, foreign keys, and database cardinalities.
+This ERD shows all **17 current tables**, including the migration runner's `schema_migrations` table. It uses the SQL table and column names, types, primary keys, foreign keys, and database cardinalities.
 
 ![Current implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
 
@@ -478,6 +478,12 @@ The [editable workflow](../diagrams/closing-workflow/closing-workflow.mmd),
 [detailed issuance view](../diagrams/invoice-issuance/invoice-issuance.png), and
 [receipt accounting view](../diagrams/usage-worker-accounting/usage-worker-accounting.png)
 show the same transaction and error-handling contracts.
+
+The [manual recovery command](../simulator/delayed-billing.md#missed-manual-invoice)
+repeats build and publication for every missing completed month in one account
+transaction, preserving one invoice per month and a stable response range per key.
+It includes empty months and active add-on fees without allocating credit again;
+a failure in any month rolls back the complete range.
 
 ### Example: complete assignment invoices
 

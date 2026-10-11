@@ -48,7 +48,7 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 | `customers` | Customer identity, name, country, and current billing address. |
 | `customer_billing_state` | One account row per customer with exact credit balance, optional spend limit, state version, and next invoice number. Financial writers serialize on this row. |
 | `metrics` | Supported metering identifiers. |
-| `api_idempotency_operations` | Append-only scoped request keys, normalized original inputs, successful resource results, and creation times. Written atomically with prices, subscriptions, credit grants, and spend-limit changes; keys are retained indefinitely. |
+| `api_idempotency_operations` | Append-only scoped request keys, normalized original inputs, successful resource results, and creation times. Written atomically with prices, purchases/cancellations, credit grants, invoice catch-up, and spend-limit changes; keys are retained indefinitely. |
 | `price_versions` | Historical prices for a metric, either a default (`customer_id IS NULL`) or a customer override. Each version stores an explicit effective instant; new API versions use midnight UTC on the supplied calendar date. |
 | `rated_usage_groups` | Totals grouped by customer, price version, original usage month, and billing month; stores exact units/gross microcents, booked gross cents, and allocated credit microcents. |
 | `usage_ratings` | Links one `(source, event_id)` from `usage_inbox` to exactly one group. Many events can share a group. |
@@ -93,7 +93,7 @@ Migration `013_addon_cancellations.sql` preserves existing purchases and invoice
 ## Durable API operation keys
 
 Migration `010_api_idempotency.sql` creates append-only
-`api_idempotency_operations` for prices, add-ons, credit grants, and spend-limit
+`api_idempotency_operations` for prices, add-ons, invoice catch-up, credit grants, and spend-limit
 changes. All caller keys use the column name `idempotency_key`. Credit entries
 contain only server-generated ledger IDs and financial data; there is no separate
 spend-limit history table. The shared history stores the original input and result,
@@ -110,3 +110,7 @@ the updated API and worker. Existing group IDs, ledger entries, references and
 issued invoices retain their original values. Each sequence starts at one unless
 earlier canonical decimal IDs reserve numbers. Allocation may leave gaps after
 rollback; do not reset or cycle these sequences.
+
+Invoice catch-up uses the existing account lock and `api_idempotency_operations`
+to freeze a chronological response range with every invoice publication in one
+transaction. It adds no tables or migration. See [manual recovery](../simulator/delayed-billing.md#missed-manual-invoice).

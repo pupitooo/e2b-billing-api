@@ -102,3 +102,10 @@ type Invoice struct {
 	CreditUsedMicrocents string        `json:"credit_used_microcents"`
 	IssuedAt             time.Time     `json:"issued_at"`
 }
+
+// InvoiceRun freezes the chronological invoices returned by one catch-up command.
+type InvoiceRun struct {
+	CustomerID   string    `json:"customer_id"`
+	ThroughMonth string    `json:"through_month"`
+	Invoices     []Invoice `json:"invoices"`
+}

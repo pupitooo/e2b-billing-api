@@ -169,10 +169,10 @@ percent-encoded as a URL path segment, preserving separators, case, percent sign
 and UTF-8 bytes without ambiguity. The two existing 256-byte input limits yield a
 maximum of 1550 ASCII bytes for the first-purchase ID; reactivation appends `/YYYY-MM-DD` and permits up to 1561 bytes. Existing IDs and persisted
 results retain their original values. The caller supplies an independent
-JSON `idempotency_key` for prices, add-on purchases and cancellations, credit grants, and spend-limit changes. The
+JSON `idempotency_key` for prices, add-on purchases and cancellations, invoice catch-up, credit grants, and spend-limit changes. The
 append-only `api_idempotency_operations` table records the scope, key, normalized
 original request, successful result, and creation time. The price scope is global
-for `/prices`; the add-on purchase/cancellation, credit, and spend-limit scopes include the customer. Keys are case-sensitive
+for `/prices`; the add-on purchase/cancellation, invoice catch-up, credit, and spend-limit scopes include the customer. Keys are case-sensitive
 visible ASCII tokens of at most 256 bytes and are retained indefinitely.
 
 A transaction-scoped advisory lock serializes the scope/key before reading
@@ -180,7 +180,7 @@ history; hash collisions only serialize unrelated commands. The composite primar
 key determines identity. Financial writes and result recording commit together.
 A failed command reserves no key; unchanged retries return the stored result after
 process restarts, activation, catalog changes, or closing. Changed values conflict.
-All financial command types, including cancellation, use this one history table. Credit grants additionally
+Every command requiring a key, including cancellation and invoice catch-up, uses this one history table. Ordinary single-month issuance uses its natural customer/month identity. Credit grants additionally
 snapshot their internal ledger ID in the stored result; caller keys never become
 accounting or resource IDs. A retry of an older limit command preserves any newer
 configuration.
@@ -432,6 +432,17 @@ On pre-commit failure, the complete closing transaction rolls back; a retry can
 include additional groups committed since the failed attempt. After a successful
 commit, every retry returns the original invoice and number. Earlier unclosed
 rated groups still block later closing; an empty month is supported.
+
+The explicit catch-up endpoint closes a chronological range in the same account
+transaction. It begins after the latest closure or at the earliest known receipt,
+rated group or purchase month on the first run, then includes every empty month
+through the completed target. At most 12 missing months are allowed per command;
+longer histories use earlier targets followed by new keys. Successful command
+keys freeze the full returned range; changed targets conflict. A new key for an
+existing target returns only that immutable snapshot. Any month failure rolls
+back the entire publication range and operation result. Credit is never debited
+again, and pending usage routes after the complete committed range. See
+[manual recovery](../simulator/delayed-billing.md#missed-manual-invoice).
 
 Usage processed on opposite sides of this cutoff belongs to different billing
 months and therefore different groups and rounding boundaries. Exact gross microcents
