@@ -118,3 +118,29 @@ has an explicit offset to distinguish the local calendar from the UTC month.
 ```sh
 make inbox-test RUN='^(TestSpendLimitAPI|TestPriceAPI|TestCreditAPI|TestAddonAPI|TestCloseMonth|TestPostgresInsertBatch)$'
 ```
+
+## Generated accounting sequences
+
+`TestProcessBatch/generated_accounting_sequences` executes three stable seeds,
+each with 24 generated commands per month plus October/November closes and
+closing retries. Inputs combine grants, measured increments, repeated identities,
+nullable spend limits and late original-October usage after its publication.
+Expected states are prepared before execution by a small independent reference
+model using integer microcents and exact rational half-up rounding. It never calls
+production rating, allocation, routing or presentation functions.
+
+After every command the test checks balance and ledger conservation, nonnegative
+credit bounded by gross, exactly one rating per completed receipt, group units and
+debits, original-month gross, limit responses, immutable invoice snapshots and
+all financial line fields and sums. Stable seeds and named steps reproduce a
+failure without relying on a random CI environment.
+
+`TestProcessBatch/partitioned_usage_preserves_one_financial_group` uses literal
+expectations for split and unsplit measurements at rounding and partial-credit
+boundaries. Every fragment has the same price and invoice conditions. Its only
+grant precedes every fragment; no grant or closure interleaves them. This property
+does not promise general independence from arrival order or invoice timing.
+
+```sh
+make inbox-test RUN='^TestProcessBatch$/(generated_accounting_sequences|partitioned_usage_preserves_one_financial_group)$'
+```
