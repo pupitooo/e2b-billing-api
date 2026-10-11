@@ -32,8 +32,16 @@ jobs:
         run: make adminer-check
       - name: Start PostgreSQL
         run: make up SERVICE=postgres
-      - name: Run SQL, Go package, HTTP, and worker lifecycle tests
-        run: make test
+      - name: Check SQL integrity in UTC and Asia/Shanghai
+        run: make db-test
+      - name: Run Go unit tests without external services
+        run: make go-test
+      - name: Run PostgreSQL repository and billing workflow tests
+        run: make inbox-test
+      - name: Run HTTP tests against the separately started API
+        run: make api-test
+      - name: Run worker executable lifecycle tests
+        run: make _test-worker
       - name: Show service logs on failure
         if: failure()
         run: make logs

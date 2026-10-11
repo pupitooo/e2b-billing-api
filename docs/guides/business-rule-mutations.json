@@ -1,0 +1,238 @@
+{
+  "scope": "Five selected behavior-changing financial mutations; compiler, timeout and environment failures are not successful detections.",
+  "productionBaseCommit": "1c3e2612744112e5c84c559813712ce74eaa0a30",
+  "goVersion": "go1.27.2 linux/arm64",
+  "database": "PostgreSQL 18.6; private seeded schema per scenario in isolated e2b-business-tests project",
+  "mutations": [
+    {
+      "id": "B001",
+      "rule": "First closing cannot skip an older active add-on month",
+      "file": "internal/postgres/closing.go",
+      "package": "./tests/inbox",
+      "filter": "^TestCloseMonth$/add-on_months_cannot_be_skipped",
+      "edits": [
+        {
+          "original": "                OR EXISTS (SELECT 1 FROM addon_subscriptions WHERE customer_id=$1\n                    AND start_month<$2)",
+          "replacement": ""
+        }
+      ],
+      "sourceSha256": "f8c22ef1460b678b2e2a65d1739e30001779a640b5a0ebae119f241288016f59",
+      "testCommand": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-count=1",
+        "-failfast",
+        "-timeout=45s",
+        "-v",
+        "-run",
+        "^TestCloseMonth$/add-on_months_cannot_be_skipped",
+        "./tests/inbox"
+      ],
+      "baseline": {
+        "exitCode": 0,
+        "output": "=== RUN   TestCloseMonth\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/reject_skipped_October\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/repeated_rejection_remains_harmless\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/close_October_with_the_first_number\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/close_November_with_the_second_fee\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai/reject_skipped_October_and_November\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai/last_purchase_day_still_owes_full_October\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai/later_closing_also_cannot_skip_November\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai/recover_November\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai/recover_December_without_consuming_credit\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/first_day_of_target_month_is_valid\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/first_day_of_target_month_is_valid/November_is_the_first_active_month\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/future_subscription_does_not_block_earlier_invoice\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/future_subscription_does_not_block_earlier_invoice/November_has_no_fee_before_activation\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/future_subscription_does_not_block_earlier_invoice/December_starts_charging\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/another_customer's_older_subscription_is_isolated\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/another_customer's_older_subscription_is_isolated/Acme_may_close_its_empty_November\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/free_active_add-on_also_preserves_monthly_history\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/free_active_add-on_also_preserves_monthly_history/October_is_still_required\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/free_active_add-on_also_preserves_monthly_history/October_contains_the_free_add-on_line\n--- PASS: TestCloseMonth (0.54s)\n    --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped (0.53s)\n        --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November (0.11s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/reject_skipped_October (0.00s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/repeated_rejection_remains_harmless (0.00s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/close_October_with_the_first_number (0.00s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/close_November_with_the_second_fee (0.00s)\n        --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai (0.10s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai/reject_skipped_October_and_November (0.00s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai/last_purchase_day_still_owes_full_October (0.00s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai/later_closing_also_cannot_skip_November (0.00s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai/recover_November (0.00s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/multiple_skipped_months_preserve_credit_in_Shanghai/recover_December_without_consuming_credit (0.00s)\n        --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/first_day_of_target_month_is_valid (0.08s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/first_day_of_target_month_is_valid/November_is_the_first_active_month (0.01s)\n        --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/future_subscription_does_not_block_earlier_invoice (0.08s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/future_subscription_does_not_block_earlier_invoice/November_has_no_fee_before_activation (0.01s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/future_subscription_does_not_block_earlier_invoice/December_starts_charging (0.00s)\n        --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/another_customer's_older_subscription_is_isolated (0.08s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/another_customer's_older_subscription_is_isolated/Acme_may_close_its_empty_November (0.01s)\n        --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/free_active_add-on_also_preserves_monthly_history (0.08s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/free_active_add-on_also_preserves_monthly_history/October_is_still_required (0.00s)\n            --- PASS: TestCloseMonth/add-on_months_cannot_be_skipped/free_active_add-on_also_preserves_monthly_history/October_contains_the_free_add-on_line (0.00s)\nPASS\nok  \te2b/billing-api/tests/inbox\t0.537s\n"
+      },
+      "mutated": {
+        "exitCode": 1,
+        "output": "=== RUN   TestCloseMonth\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/reject_skipped_October\n    addon_closing_test.go:131: CloseMonth(2026-11): HTTP=200 body={\"customer_id\":\"acme\",\"number\":\"ACME-0001\",\"month\":\"2026-11\",\"customer_name\":\"Acme Inc.\",\"country\":\"US\",\"billing_address\":\"1 Market St, San Francisco, CA 94105\",\"currency\":\"USD\",\"lines\":[{\"kind\":\"addon\",\"description\":\"concurrency_pack\",\"amount_cents\":2000,\"subscription_id\":\"subscription/acme/concurrency_pack\"},{\"kind\":\"credit\",\"description\":\"Used credit\",\"amount_cents\":0}],\"total_cents\":2000,\"gross_usage_microcents\":\"0\",\"credit_used_microcents\":\"0\",\"issued_at\":\"2026-12-01T00:00:00Z\"}\n        ; want 409\n--- FAIL: TestCloseMonth (0.10s)\n    --- FAIL: TestCloseMonth/add-on_months_cannot_be_skipped (0.10s)\n        --- FAIL: TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November (0.10s)\n            --- FAIL: TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/reject_skipped_October (0.01s)\nFAIL\nFAIL\te2b/billing-api/tests/inbox\t0.106s\nFAIL\n"
+      },
+      "outcome": "killed_by_assertion",
+      "failedTests": [
+        "TestCloseMonth (0.10s)",
+        "TestCloseMonth/add-on_months_cannot_be_skipped (0.10s)",
+        "TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November (0.10s)",
+        "TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/reject_skipped_October (0.01s)"
+      ]
+    },
+    {
+      "id": "B002",
+      "rule": "An exact gross spend limit is reached",
+      "file": "internal/accounting/money.go",
+      "package": "./internal/accounting",
+      "filter": "^TestLimitReached$/exactly_the_limit_is_reached$",
+      "edits": [
+        {
+          "original": "return gross.Compare(limit) >= 0, nil",
+          "replacement": "return gross.Compare(limit) > 0, nil"
+        }
+      ],
+      "sourceSha256": "c42694a826a9fd2cb70e2995e30f945f963d554a5175f328e4cf0768da8065e1",
+      "testCommand": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-count=1",
+        "-failfast",
+        "-timeout=45s",
+        "-v",
+        "-run",
+        "^TestLimitReached$/exactly_the_limit_is_reached$",
+        "./internal/accounting"
+      ],
+      "baseline": {
+        "exitCode": 0,
+        "output": "=== RUN   TestLimitReached\n=== RUN   TestLimitReached/exactly_the_limit_is_reached\n--- PASS: TestLimitReached (0.00s)\n    --- PASS: TestLimitReached/exactly_the_limit_is_reached (0.00s)\nPASS\nok  \te2b/billing-api/internal/accounting\t0.001s\n"
+      },
+      "mutated": {
+        "exitCode": 1,
+        "output": "=== RUN   TestLimitReached\n=== RUN   TestLimitReached/exactly_the_limit_is_reached\n    money_test.go:852: LimitReached(1000000 microcents) = false; want true\n--- FAIL: TestLimitReached (0.00s)\n    --- FAIL: TestLimitReached/exactly_the_limit_is_reached (0.00s)\nFAIL\nFAIL\te2b/billing-api/internal/accounting\t0.001s\nFAIL\n"
+      },
+      "outcome": "killed_by_assertion",
+      "failedTests": [
+        "TestLimitReached (0.00s)",
+        "TestLimitReached/exactly_the_limit_is_reached (0.00s)"
+      ]
+    },
+    {
+      "id": "B003",
+      "rule": "An eligible customer override precedes a default",
+      "file": "internal/accounting/pricing.go",
+      "package": "./internal/accounting",
+      "filter": "^TestRate$/Acme_October_usage_selects_its_customer_override$",
+      "edits": [
+        {
+          "original": "return candidate.CustomerID != \"\"",
+          "replacement": "return candidate.CustomerID == \"\""
+        }
+      ],
+      "sourceSha256": "99dc91310945a7a4801e918e3202b135f5b1e43810a18d5d30922be82ae592d7",
+      "testCommand": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-count=1",
+        "-failfast",
+        "-timeout=45s",
+        "-v",
+        "-run",
+        "^TestRate$/Acme_October_usage_selects_its_customer_override$",
+        "./internal/accounting"
+      ],
+      "baseline": {
+        "exitCode": 0,
+        "output": "=== RUN   TestRate\n=== RUN   TestRate/Acme_October_usage_selects_its_customer_override\n--- PASS: TestRate (0.00s)\n    --- PASS: TestRate/Acme_October_usage_selects_its_customer_override (0.00s)\nPASS\nok  \te2b/billing-api/internal/accounting\t0.001s\n"
+      },
+      "mutated": {
+        "exitCode": 1,
+        "output": "=== RUN   TestRate\n=== RUN   TestRate/Acme_October_usage_selects_its_customer_override\n    pricing_test.go:476: Rate price ID = \"default-oct\"; want \"acme-oct\"\n    pricing_test.go:480: Rate price = 5 cents per million; want 4\n    pricing_test.go:488: Rate charge = 500000000 microcents; want 400000000 microcents\n--- FAIL: TestRate (0.00s)\n    --- FAIL: TestRate/Acme_October_usage_selects_its_customer_override (0.00s)\nFAIL\nFAIL\te2b/billing-api/internal/accounting\t0.001s\nFAIL\n"
+      },
+      "outcome": "killed_by_assertion",
+      "failedTests": [
+        "TestRate (0.00s)",
+        "TestRate/Acme_October_usage_selects_its_customer_override (0.00s)"
+      ]
+    },
+    {
+      "id": "B004",
+      "rule": "Round accumulated price groups rather than individual receipts",
+      "file": "internal/postgres/processor.go",
+      "package": "./tests/inbox",
+      "filter": "^TestProcessBatch$/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments$",
+      "edits": [
+        {
+          "original": "group, gross, err := cumulativeGross",
+          "replacement": "group, _, err := cumulativeGross"
+        },
+        {
+          "original": "cents, err := gross.RoundCents()",
+          "replacement": "cents, err := rating.Charge.RoundCents()"
+        },
+        {
+          "original": "booked_charge_cents=$9,",
+          "replacement": "booked_charge_cents=rated_usage_groups.booked_charge_cents+EXCLUDED.booked_charge_cents,"
+        }
+      ],
+      "sourceSha256": "bc0c1f5f8577582e77cae34cdf0de71ddbd847b7739d76796c804c17fc592410",
+      "testCommand": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-count=1",
+        "-failfast",
+        "-timeout=45s",
+        "-v",
+        "-run",
+        "^TestProcessBatch$/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments$",
+        "./tests/inbox"
+      ],
+      "baseline": {
+        "exitCode": 0,
+        "output": "=== RUN   TestProcessBatch\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments\n--- PASS: TestProcessBatch (0.10s)\n    --- PASS: TestProcessBatch/partitioned_usage_preserves_one_financial_group (0.10s)\n        --- PASS: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group (0.10s)\n            --- PASS: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments (0.10s)\nPASS\nok  \te2b/billing-api/tests/inbox\t0.100s\n"
+      },
+      "mutated": {
+        "exitCode": 1,
+        "output": "=== RUN   TestProcessBatch\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments\n    partitioned_usage_test.go:68: Partition={name:two exact half-cent fragments units:[125000 125000]} group units=250000 gross=1000000 credit=0 booked=2 balance=0; want 250000 1000000 0 1 0\n--- FAIL: TestProcessBatch (0.09s)\n    --- FAIL: TestProcessBatch/partitioned_usage_preserves_one_financial_group (0.09s)\n        --- FAIL: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group (0.09s)\n            --- FAIL: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments (0.09s)\nFAIL\nFAIL\te2b/billing-api/tests/inbox\t0.096s\nFAIL\n"
+      },
+      "outcome": "killed_by_assertion",
+      "failedTests": [
+        "TestProcessBatch (0.09s)",
+        "TestProcessBatch/partitioned_usage_preserves_one_financial_group (0.09s)",
+        "TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group (0.09s)",
+        "TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments (0.09s)"
+      ]
+    },
+    {
+      "id": "B005",
+      "rule": "A repeated grant cannot credit the balance again",
+      "file": "internal/postgres/credit.go",
+      "package": "./tests/inbox",
+      "filter": "^TestCreditAPI$/rejection_preserves_complete_financial_state$",
+      "edits": [
+        {
+          "original": "if previous.Grant.AmountCents == grant.AmountCents {\n\t\t\t\treturn nil\n\t\t\t}",
+          "replacement": "if previous.Grant.AmountCents == grant.AmountCents {\n                _, err := tx.Exec(ctx, `UPDATE customer_billing_state SET credit_balance_microcents=credit_balance_microcents+$2::numeric WHERE customer_id=$1`, customer, grantAmount.Microcents().String())\n                return err\n            }"
+        }
+      ],
+      "sourceSha256": "ce5196b4296d4a138f053a274364ac23816af9e5a7b65cfa36e76f67169aaa40",
+      "testCommand": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-count=1",
+        "-failfast",
+        "-timeout=45s",
+        "-v",
+        "-run",
+        "^TestCreditAPI$/rejection_preserves_complete_financial_state$",
+        "./tests/inbox"
+      ],
+      "baseline": {
+        "exitCode": 0,
+        "output": "=== RUN   TestCreditAPI\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state/zero_cannot_grant\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state/one_cent_uses_rejected_key\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state/changed_amount_conflicts\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state/original_retry_still_grants_once\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state/distinct_valid_grant_still_works\n--- PASS: TestCreditAPI (0.11s)\n    --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state (0.11s)\n        --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state/zero_cannot_grant (0.00s)\n        --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state/one_cent_uses_rejected_key (0.00s)\n        --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state/changed_amount_conflicts (0.00s)\n        --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state/original_retry_still_grants_once (0.00s)\n        --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state/distinct_valid_grant_still_works (0.00s)\nPASS\nok  \te2b/billing-api/tests/inbox\t0.107s\n"
+      },
+      "mutated": {
+        "exitCode": 1,
+        "output": "=== RUN   TestCreditAPI\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state/zero_cannot_grant\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state/one_cent_uses_rejected_key\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state/changed_amount_conflicts\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state/original_retry_still_grants_once\n    financial_rejection_test.go:87: committed resource/account state(customer=\"acme\")={prices:3 subscriptions:0 operations:1 stateVersion:1 creditMicrocents:2000000 ratings:0}; want {prices:3 subscriptions:0 operations:1 stateVersion:1 creditMicrocents:1000000 ratings:0}\n--- FAIL: TestCreditAPI (0.10s)\n    --- FAIL: TestCreditAPI/rejection_preserves_complete_financial_state (0.10s)\n        --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state/zero_cannot_grant (0.00s)\n        --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state/one_cent_uses_rejected_key (0.00s)\n        --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state/changed_amount_conflicts (0.00s)\n        --- FAIL: TestCreditAPI/rejection_preserves_complete_financial_state/original_retry_still_grants_once (0.00s)\nFAIL\nFAIL\te2b/billing-api/tests/inbox\t0.098s\nFAIL\n"
+      },
+      "outcome": "killed_by_assertion",
+      "failedTests": [
+        "TestCreditAPI (0.10s)",
+        "TestCreditAPI/rejection_preserves_complete_financial_state (0.10s)",
+        "TestCreditAPI/rejection_preserves_complete_financial_state/original_retry_still_grants_once (0.00s)"
+      ],
+      "selectionTrial": {
+        "filter": "^TestCreditAPI$/rejection_preserves_complete_financial_state/original_retry_still_grants_once$",
+        "outcome": "uncovered_replay_branch",
+        "output": "=== RUN   TestCreditAPI\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state\n=== RUN   TestCreditAPI/rejection_preserves_complete_financial_state/original_retry_still_grants_once\n--- PASS: TestCreditAPI (0.30s)\n    --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state (0.29s)\n        --- PASS: TestCreditAPI/rejection_preserves_complete_financial_state/original_retry_still_grants_once (0.01s)\nPASS\nok  \te2b/billing-api/tests/inbox\t0.298s\n",
+        "resolution": "Select the owning rejection/recovery workflow so the earlier successful grant runs before replay."
+      }
+    }
+  ],
+  "originalRegression": {
+    "productionCommit": "4691636efa2626a8a99cd8720ec93d432fe62bda",
+    "addedTest": "tests/inbox/addon_closing_test.go",
+    "testSha256": "72fb8d4336b51e56a91759cd751e33e73ac7dcbb507c73d2c73ba1e199b0c53b",
+    "filter": "^TestCloseMonth$/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/reject_skipped_October$",
+    "outcome": "expected_assertion_failure",
+    "output": "=== RUN   TestCloseMonth\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November\n=== RUN   TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/reject_skipped_October\n    addon_closing_test.go:131: CloseMonth(2026-11): HTTP=200 body={\"customer_id\":\"acme\",\"number\":\"ACME-0001\",\"month\":\"2026-11\",\"customer_name\":\"Acme Inc.\",\"country\":\"US\",\"billing_address\":\"1 Market St, San Francisco, CA 94105\",\"currency\":\"USD\",\"lines\":[{\"kind\":\"addon\",\"description\":\"concurrency_pack\",\"amount_cents\":2000,\"subscription_id\":\"subscription/acme/concurrency_pack\"},{\"kind\":\"credit\",\"description\":\"Used credit\",\"amount_cents\":0}],\"total_cents\":2000,\"gross_usage_microcents\":\"0\",\"credit_used_microcents\":\"0\",\"issued_at\":\"2026-12-01T00:00:00Z\"}\n        ; want 409\n--- FAIL: TestCloseMonth (0.12s)\n    --- FAIL: TestCloseMonth/add-on_months_cannot_be_skipped (0.12s)\n        --- FAIL: TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November (0.12s)\n            --- FAIL: TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/reject_skipped_October (0.01s)\nFAIL\nFAIL\te2b/billing-api/tests/inbox\t0.121s\nFAIL\n",
+    "passingFixedBaseline": "B001.baseline"
+  },
+  "testHashes": {
+    "tests/inbox/addon_closing_test.go": "72fb8d4336b51e56a91759cd751e33e73ac7dcbb507c73d2c73ba1e199b0c53b",
+    "tests/inbox/financial_rejection_test.go": "ca4f27b5cc4f22ae3a1383dc455c567af8c4972b65f1a9b979e7eb8b2b5d29f3",
+    "tests/inbox/partitioned_usage_test.go": "6ced78e59cbf7f9fcebd447e97238adbc0bea433e9bb0344aff151761f9a441b",
+    "internal/accounting/pricing_test.go": "7398281d4f56018637c9ada6fc2ac3000a7f93587a6673a838970c1529d36b64",
+    "internal/accounting/money_test.go": "122e04ad7b691bb009ee577ec48becda7863e2864716b5a13d7b940b83ecc726"
+  }
+}

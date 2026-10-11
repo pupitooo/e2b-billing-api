@@ -29,7 +29,7 @@ func testPartitionedUsage(t *testing.T) {
 		wantBookedCents, wantTotalCents               int64
 		wantLines                                     []billing.InvoiceLine
 	}{
-		{name: "half-cent fragments round as one group", initialGrantCents: 0, partitions: []partition{{name: "one receipt", units: []int64{250_000}}, {name: "three fragments", units: []int64{124_999, 1, 125_000}}}, wantUnits: "250000", wantGross: "1000000", wantCredit: "0", wantBalance: "0", wantBookedCents: 1, wantTotalCents: 1, wantLines: []billing.InvoiceLine{
+		{name: "half-cent fragments round as one group", initialGrantCents: 0, partitions: []partition{{name: "one receipt", units: []int64{250_000}}, {name: "two exact half-cent fragments", units: []int64{125_000, 125_000}}, {name: "three fragments", units: []int64{124_999, 1, 125_000}}}, wantUnits: "250000", wantGross: "1000000", wantCredit: "0", wantBalance: "0", wantBookedCents: 1, wantTotalCents: 1, wantLines: []billing.InvoiceLine{
 			{Kind: "usage", Description: "Usage", PriceVersionID: "cpu-acme-2026-10-01", Metric: "cpu_seconds", UsageMonth: "2026-10", Units: "250000", GrossMicrocents: "1000000", CreditMicrocents: "0", AmountCents: 1}, {Kind: "credit", Description: "Used credit", AmountCents: 0},
 		}},
 		{name: "upfront partial credit preserves net half-cent", initialGrantCents: 1, partitions: []partition{{name: "one receipt", units: []int64{375_000}}, {name: "four fragments", units: []int64{124_999, 1, 125_000, 125_000}}}, wantUnits: "375000", wantGross: "1500000", wantCredit: "1000000", wantBalance: "0", wantBookedCents: 2, wantTotalCents: 1, wantLines: []billing.InvoiceLine{

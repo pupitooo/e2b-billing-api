@@ -81,6 +81,7 @@ extra:
       link: https://github.com/pupitooo/e2b-billing-api
   published_assets:
     - guides/test-mutation-audit.json
+    - guides/business-rule-mutations.json
     - guides/gui-test-regressions.patch
     - diagrams/api-endpoints/api-endpoints.mmd
     - diagrams/api-endpoints/api-endpoints.png

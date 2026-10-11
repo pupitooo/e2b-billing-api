@@ -120,6 +120,7 @@ node_modules/
 # Reviewed test-quality evidence; local audit tooling stays ignored.
 !/docs/guides/test-mutation-audit.md
 !/docs/guides/test-mutation-audit.json
+!/docs/guides/business-rule-mutations.json
 !/docs/guides/gui-test-regressions.patch
 !/docs/guides/demo-console.md
 

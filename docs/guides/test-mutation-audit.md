@@ -5,60 +5,62 @@ This focused audit deliberately changed one production rule at a time, ran the
 relevant tests, restored the rule, and added regression scenarios for meaningful
 survivors. Production behavior and migrations remain unchanged.
 
-## Evidence and scope
+## Financial rule sensitivity
 
-Go and SQL baseline:
-`8f5d601fff8f90ce800dd584eab5bcd7ec656327` (merged PR #65).
-The completed local GUI was inspected separately while it remained uncommitted
-for review. Its source and test hashes are recorded in the
-[mutation evidence](test-mutation-audit.json), together with every exact edit,
-before/after result, killing test name, SQL error and equivalent-mutant rationale.
+The focused [business-rule evidence](business-rule-mutations.json) records five
+compiling, behavior-changing mutations. For each edit, the selected unmodified
+test passed and the mutated implementation failed a concrete assertion. The
+record contains exact edits, commands, source hashes and output. Compiler errors,
+setup failures and timeouts do not count as detection. Production files were
+restored after each experiment; deliberate faults are absent from the deliverable.
 
-Recorded mutation edits and process output remain verbatim in the JSON evidence.
-The financial identifiers `ticks`, `Ticks` and `TICKS` in that evidence correspond
-to `microcents`, `Microcents` and `MICROCENTS` in the application; the monetary
-unit and numerical expectations are identical. Current test filters use the
-microcent names. Renaming does not constitute a new mutation audit.
+| Mutation | Deliberate fault | Concrete detecting scenario |
+| --- | --- | --- |
+| B001 | Remove the older active add-on check from first closing | `TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/reject_skipped_October` |
+| B002 | Change exact limit reach from `>=` to `>` | `TestLimitReached/exactly_the_limit_is_reached` |
+| B003 | Prefer a default to an eligible customer override | `TestRate/Acme_October_usage_selects_its_customer_override` |
+| B004 | Round each receipt and sum its booked cents instead of rounding the group | `TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments` |
+| B005 | Credit an identical grant replay again | `TestCreditAPI/rejection_preserves_complete_financial_state/original_retry_still_grants_once` |
 
-The idempotency refactor replaces the old credit operation
-uniqueness and separate limit history with shared API command history. This audit
-remains evidence for its stated baseline; the retired ledger constraint mutation
-is historical, and a new mutation audit has not been run for the revised schema.
+All five selected mutations were killed by assertions. This sample establishes
+sensitivity for those specific faults; it is not a repository-wide mutation score
+and does not prove absence of all defects. Two exact half-cent fragments make the
+rounding distinction explicit: their group totals one cent while receipt rounding
+would incorrectly book two. Neighboring fragments and upfront partial credit
+retain their separate literal scenarios.
 
-The batch envelope accepts only `events`. Mutation M024 targets the removed
-batch metadata validator and is retired; its recorded result is retained as audit
-evidence, not coverage of an implemented rule. Current HTTP regressions verify
-rejection of the removed property before storage and zero persisted events, while
-event identifier byte limits and duplicate `events` members remain covered.
+The add-on regression also fails against the original reviewed commit
+`4691636` (resolved full identity is in the evidence) and passes with the adopted
+fix. That check uses the original production checkout and only adds the regression
+scenario. The failed assertion observes HTTP `200` where the skipped-month
+operation requires `409`; baseline success after the fix is recorded separately.
 
-| Layer | Distinct mutations | Before regression additions | After regression additions |
-| --- | --- | --- | --- |
-| Go | 114 | 69 assertion failures, 6 suite timeouts, 39 survivors | 108 assertion failures; 6 equivalent survivors |
-| SQL constraints | 24 | 20 detected; 4 survived every SQL file | All 24 detected in both UTC and Asia/Shanghai |
-| GUI modules | 22 | 12 detected; 10 survived | All 22 detected |
+The grant's initial trial selected only the nested replay step and skipped the
+preceding grant. That trial passed because it exercised a first grant, not the
+history branch. Selecting the complete owning workflow exercises the retry and
+kills the mutation. The evidence retains this uncovered-filter diagnosis; it is
+not treated as an equivalent mutation or as detection. Stateful workflow filters
+must include their preparation steps.
 
-These are 160 distinct mutations, not 160 tests. Each SQL mutation ran in both
-time zones, giving 48 SQL mutation executions per pass. Three initial Go
-timeouts already had failed assertions before the suite deadline; three worker
-validation defects depended on the suite deadline alone. The final Go pass
-produced direct assertion failures for all 108 behavior-changing mutations.
-Uncompilable or ill-typed trial variants were repaired with
-semantically equivalent edits before their results were included. Compiler
-failures are not counted as successful defect detection.
+## Broader experiment evidence
 
-The Go pass used owning package tests, plus real PostgreSQL repository scenarios
-for persistence changes. Initial integration mutations ran the full inbox suite;
-final integration reruns selected the owning workflow and stopped at the first
-failure. A survivor of an owning unit suite can still be detected by an outer
-integration suite; this audit strengthens the responsible layer without claiming
-all original survivors escaped every possible test command.
+The [broader mutation record](test-mutation-audit.json) preserves 114 Go, 24 SQL
+and 22 GUI experiments, including exact edits, results and equivalent-mutant
+rationale. SQL experiments ran in both UTC and Asia/Shanghai. Their raw input
+names and hashes are audit data; implemented requirements and executable filters
+are described by [test suites](testing.md#business-rule-traceability).
 
-This is a selected sample, concentrated on money, calendar boundaries, input
-validation, transport acknowledgements, checkpoints, usage retries, and database
-invariants. It does not measure a repository-wide mutation score. It does not
-prove the absence of bugs, disk-loss durability, production performance, or full
-browser correctness. `demo/app.mjs`, executables' configuration, all possible SQL
-constraints and every concurrency interleaving were not exhaustively mutated.
+Some recorded targets are retired: the batch envelope accepts only `events`, and
+financial operation identity is held in `api_idempotency_operations`. Retired
+metadata and ledger-identity experiments are not counted as active coverage of
+those interfaces. The focused experiments above exercise the shared command
+history, microcent names and add-on closing rule used by the application.
+
+The broader record's six equivalent Go survivors require no redundant assertion;
+the explanations below describe why their behavior does not change. The focused
+five-rule sample contains no survivor. Reevaluate a future survivor through
+reachability, input selection, actual assertions and equivalent behavior before
+adding tests to pursue a percentage.
 
 ## What needed improvement
 
@@ -79,23 +81,17 @@ money-storage mutation survived. Reaching a statement and asserting its contract
 are separate properties. No production bug is claimed here: the deliberate
 faults demonstrate weaknesses in test inputs or assertions.
 
-## GUI review boundary
+## GUI verification
 
-The GUI itself is absent from the committed baseline and remains editable on
-local `main`. Its 18 additional test cases (including named operation groups)
-have been applied to the local tests and verified there. The
-[GUI regression patch](gui-test-regressions.patch) records those changes without
-publishing the unrelated GUI implementation in this audit PR. Carry these test
-changes into the GUI's own commit when that implementation is approved.
+The GUI regression cases are included in `tests/demo/` and run through
+`make demo-check`. The [GUI regression patch](gui-test-regressions.patch) is an
+audit artifact and must not be reapplied over those cases. Calendar-date commands,
+credit without a caller timestamp, complete invoice lines and retained retry
+identities are part of the current executable checks.
 
-The regression cases are included in `tests/demo/`; the patch is a review artifact
-and must not be applied over those existing cases. Its credit fixture uses the
-current command format without a caller audit timestamp. Calendar-date regressions
-for prices and add-ons extend the suite beyond the mutation cases listed here.
-Run the current GUI checks with `make demo-check`.
-
-GUI mutation results concern the recorded snapshot, not an independently
-reproducible GUI build from this PR's base alone.
+Module and transport assertions do not establish full browser rendering or every
+form-to-handler interaction. The mutation sample does not cover all `app.mjs`
+behavior; browser interaction remains a separate verification responsibility.
 
 ## How to check tests in practice
 
@@ -162,22 +158,14 @@ rollback. Browser tests remain necessary for wiring forms to their handlers.
 
 ## Validation
 
-The following checks passed after restoring every production edit:
+The financial-rule audit requires a passing baseline, five assertion failures for
+valid mutations, and a clean restored production diff. Its associated regression
+checks include repository formatting/static checks, the full PostgreSQL inbox
+suite, the complete `make test` gate with SQL integrity in both time zones, and
+strict documentation/publication checks.
 
-- `make fmt`, `make check` and `git diff --check`.
-- The full `make test` suite in a fresh isolated Compose project, including all
-  SQL files in UTC and Asia/Shanghai, all Go packages, real database/HTTP
-  acceptance and executable worker/simulator workflows.
-- `make docs-check`, including the strict build and publication scenarios.
-- Unit race checks for accounting, billing, HTTP, simulator, usage and worker;
-  integration race checks for ProcessBatch, PostgresInsertBatch and GrantCredit.
-- All 114 final Go mutations, 48 SQL mutation executions and 22 GUI mutations;
-  the frontend regression suite, including calendar-date command tests.
-
-The standard API image lacks a C compiler, so its initial race attempt could not
-build. The successful race runs used the existing compiler-equipped verification
-image with the same Go 1.27.2 toolchain. No runtime image or dependency changed.
-
-The test changes preserve existing assertions, isolated schemas, rollback, retries, cleanup and
-concurrency scenarios. Standard project commands remain the operational entry
-point; no custom Go checker or persistent mutation service was added.
+Selected recovery and purchase/worker closing workflows passed ten repetitions
+under the race detector with the pinned Go 1.27.2 toolchain and a C compiler.
+Race detection covers executed schedules; it does not prove every interleaving.
+The regression changes retain existing scenarios, cleanup, rollback and private
+schema isolation. No custom Go checker or persistent mutation service is added.
