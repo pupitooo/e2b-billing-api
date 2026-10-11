@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>E2B · Billing console</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./app.mjs"></script>
+  </head>
+  <body>
+    <aside class="sidebar" aria-label="Main navigation">
+      <a class="brand" href="#overview"
+        ><span class="brand-mark" aria-hidden="true">✳</span> E2B
+        <span class="brand-note">LOCAL</span></a
+      >
+      <div class="workspace">
+        <span class="workspace-icon">B</span>
+        <div>
+          <span class="eyebrow">WORKSPACE</span
+          ><strong>Billing demonstration</strong>
+        </div>
+      </div>
+      <div class="nav-group">BILLING</div>
+      <nav id="navigation"></nav>
+      <div class="sidebar-bottom">
+        <a href="/reference/" target="_blank" rel="noopener"
+          >↗ API reference</a
+        >
+        <a href="/guides/demo-console/" target="_blank" rel="noopener"
+          >↗ Demo guide</a
+        >
+        <a href="/" target="_blank" rel="noopener">↗ Documentation</a>
+        <span class="sidebar-caption"
+          >Go API · PostgreSQL<br />Static browser client</span
+        >
+      </div>
+    </aside>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <span class="eyebrow" id="section-role">BILLING OPERATIONS</span>
+          <h1 id="page-title">Overview</h1>
+        </div>
+        <div class="context-controls">
+          <label
+            >Customer<select id="customer">
+              <option value="acme">Acme Inc.</option>
+              <option value="cyberdyne">Cyberdyne Systems</option>
+            </select></label
+          >
+          <label
+            >Month · UTC<input
+              id="month"
+              type="month"
+              min="1000-01"
+              max="9999-12"
+              value="2026-10"
+          /></label>
+          <span id="api-health" class="badge muted">CHECKING API</span>
+        </div>
+      </header>
+      <main id="content" tabindex="-1"></main>
+      <section class="inspector" aria-label="Request inspector">
+        <button
+          id="toggle-inspector"
+          class="inspector-toggle"
+          aria-expanded="false"
+        >
+          <span>⌘ REQUEST INSPECTOR</span
+          ><span id="last-request">No requests yet</span><span>⌄</span>
+        </button>
+        <div id="inspector-content" hidden><div id="request-detail"></div></div>
+      </section>
+      <footer class="statusbar">
+        <span>LOCAL BILLING CONSOLE</span
+        ><span id="footer-state">Ready for demonstration</span
+        ><span>UTC <time id="utc-clock"></time></span>
+      </footer>
+    </div>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+    <noscript
+      ><p>
+        JavaScript is required for the billing demonstration. Use the API
+        reference or Adminer directly.
+      </p></noscript
+    >
+  </body>
+</html>

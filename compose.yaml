@@ -85,13 +85,33 @@ services:
     depends_on:
       api-docs:
         condition: service_healthy
+      adminer:
+        condition: service_healthy
     ports:
       - "127.0.0.1:${E2B_DOCS_PORT:-8082}:8080"
     volumes:
       # Publication hooks select public files; private local Markdown is excluded.
       - ./docs:/source:ro
+      - ./demo:/demo:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ && wget -q -O /dev/null http://127.0.0.1:8080/reference/"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ && wget -q -O /dev/null http://127.0.0.1:8080/reference/ && wget -q -O /dev/null http://127.0.0.1:8080/demo/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  adminer:
+    image: adminer:6.1.1-standalone@sha256:74f29c416e148b98305e84446a18db7cd2c1038264dec464359d36774ef080ce
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: nette
+    # Adminer is reached through the loopback-bound documentation gateway.
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(file_get_contents('http://127.0.0.1:8080/') === false ? 1 : 0);"]
       interval: 5s
       timeout: 3s
       retries: 12

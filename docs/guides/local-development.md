@@ -36,7 +36,7 @@ Start all implemented services:
 make up
 ```
 
-`make up` starts PostgreSQL, the API, worker, the documentation portal, Scalar API reference, and the simulator container and waits for readiness. The simulator waits for an explicit `make simulate` command before creating usage. Startup does not apply database migrations. The API verifies its database connection on startup; ingestion returns `503` until the inbox migration has been applied. The worker connects to PostgreSQL independently of the API; migrate explicitly before accounting can proceed.
+`make up` starts PostgreSQL, the API, worker, the documentation portal, Scalar API reference, Adminer, and the simulator container and waits for readiness. The simulator waits for an explicit `make simulate` command before creating usage. Startup does not apply database migrations. The API verifies its database connection on startup; ingestion returns `503` until the inbox migration has been applied. The worker connects to PostgreSQL independently of the API; migrate explicitly before accounting can proceed.
 
 `make up`, `make docs`, `make restart`, and `make ps` print the actual browser addresses of running HTTP services. Use `make links` to show them again.
 
@@ -57,7 +57,7 @@ make up
 | `make restart SERVICE=postgres` | Restart PostgreSQL and wait for readiness. |
 | `make stop` | Stop services while retaining containers and data. |
 | `make down` | Remove containers and the network while retaining database and sender data. |
-| `make services` | List available service names: `api`, `api-docs`, `docs`, `postgres`, `simulator`, and `worker`. |
+| `make services` | List available service names: `adminer`, `api`, `api-docs`, `docs`, `postgres`, `simulator`, and `worker`. |
 | `make help` | Show all available commands. |
 
 PostgreSQL uses the pinned `public.ecr.aws/docker/library/postgres:18.6-alpine` image, UTC timestamps, and a named volume. Its port is published on `127.0.0.1`. Database data survives `make stop`, `make restart`, and `make down`.

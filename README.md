@@ -68,11 +68,19 @@ The simulator container waits for `make simulate` before producing usage.
 | API health | [http://127.0.0.1:8081/healthz](http://127.0.0.1:8081/healthz) |
 | Documentation portal | [http://127.0.0.1:8082/](http://127.0.0.1:8082/) |
 | Scalar API reference and request client | [http://127.0.0.1:8082/reference/](http://127.0.0.1:8082/reference/) |
+| Billing demo GUI | [http://127.0.0.1:8082/demo/](http://127.0.0.1:8082/demo/) |
+| Adminer database browser | [http://127.0.0.1:8082/database/](http://127.0.0.1:8082/database/) |
 
 Use [.env.example](.env.example) for configuration and `make links` for actual
 addresses. The `docs` container serves the guides and proxies the reference;
 `api-docs` serves Scalar internally. `make docs` starts the portal and API.
 `make api-docs` starts the same services and prints the reference link.
+
+The [demo console](docs/guides/demo-console.md) is a separate static HTML/CSS/JavaScript
+client in `demo/`, served by the existing documentation gateway. It covers billing
+commands, exact retries, request inspection, and the assignment walkthrough without
+adding handlers to the Go application. Standard Adminer is the only additional
+runtime service; database links prefill SQL for manual execution in a new tab.
 
 See [local development](docs/guides/local-development.md) for service operations,
 [runtime configuration](docs/guides/runtime-configuration.md) for API and worker
@@ -169,6 +177,7 @@ make check
 make up SERVICE=postgres
 make test
 make docs-check
+make demo-check
 ```
 
 `make check` verifies Go formatting, whitespace, and static

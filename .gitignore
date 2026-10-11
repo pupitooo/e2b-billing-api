@@ -118,3 +118,4 @@ node_modules/
 !/docs/guides/test-mutation-audit.md
 !/docs/guides/test-mutation-audit.json
 !/docs/guides/gui-test-regressions.patch
+!/docs/guides/demo-console.md

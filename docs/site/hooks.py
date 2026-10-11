@@ -9,7 +9,7 @@ from mkdocs.exceptions import PluginError
 from pathspec import PathSpec
 
 REPOSITORY_ROOT = "https://github.com/pupitooo/e2b-billing-api/blob/main/"
-PROXY_ROUTE_PREFIXES = ("api/", "reference/")
+PROXY_ROUTE_PREFIXES = ("api/", "reference/", "demo/", "database/")
 REFERENCE_SPEC_ROUTE = "/reference/openapi.yaml"
 MARKDOWN_LINK = re.compile(r"(?<=\]\()([^\s)]+)(?=\))")
 

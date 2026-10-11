@@ -34,6 +34,9 @@ nav:
       - Local development: guides/local-development.md
       - Runtime configuration: guides/runtime-configuration.md
       - Database operations: guides/database-operations.md
+      - Demo console guide: guides/demo-console.md
+      - Billing demo GUI: /demo/
+      - Adminer: /database/
   - API:
       - Reference guide: guides/api-reference.md
       - API reference: /reference/

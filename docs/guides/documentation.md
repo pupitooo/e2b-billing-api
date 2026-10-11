@@ -21,7 +21,11 @@ Scalar's introduction embeds the [API endpoint diagram](api-reference.md#api-end
 The `api-docs` service mounts only that diagram's directory and serves its PNG
 and Mermaid source through explicit routes under `/reference/diagrams/api-endpoints/`.
 
-Both Make targets start the same portal and its API/PostgreSQL dependencies.
+The same portal serves the [static billing console](demo-console.md) at `/demo/`
+and proxies standard Adminer at `/database/`. Refresh the browser after editing
+the separate `demo/` files; they do not require a build.
+
+Both Make targets start the same portal and its API/PostgreSQL/Adminer dependencies.
 They do not migrate the database or start the worker. Guides are still readable
 while the API is stopped after initial startup; Scalar requests need a working
 API. Use [local development](local-development.md) to initialize the database
@@ -69,7 +73,8 @@ Keep every public guide in English. Use ordinary relative Markdown links within
 repository files outside `docs/` are rewritten to the corresponding GitHub file
 only while rendering, so the portal does not expose source code or local files.
 OpenAPI source links resolve to `/reference/openapi.yaml` in the portal. Keep
-guide routes outside `/api/` and `/reference/`, which are reserved for proxies;
+guide routes outside `/api/`, `/reference/`, `/demo/`, and `/database/`, which are
+reserved for the API, reference, static console, and database browser;
 the build rejects colliding navigation pages. The root README remains the
 operational entry point and contract register.
 
@@ -104,4 +109,5 @@ The documentation image uses pinned Material and Scalar images. The Material
 image supplies MkDocs, its extensions and theme; Caddy is copied from the same
 Scalar image used by `api-docs`. The runtime supervises the preview and gateway
 processes together: either exiting stops the container, and termination stops
-both. Compose readiness checks both the guides and proxied Scalar reference.
+both. Compose readiness checks the guides, proxied Scalar reference, and static console.
+The portal waits for Adminer health before startup.
