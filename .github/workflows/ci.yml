@@ -28,6 +28,8 @@ jobs:
         run: make docs-check
       - name: Check static demo behavior, exact retries, and SQL links
         run: make demo-check
+      - name: Check exact Adminer integer display
+        run: make adminer-check
       - name: Start PostgreSQL
         run: make up SERVICE=postgres
       - name: Run SQL, Go package, HTTP, and worker lifecycle tests

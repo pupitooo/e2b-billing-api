@@ -37,7 +37,7 @@ export REVERSE SIM_API_URL SCENARIO_FILE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs api-docs docs-check demo-check simulate simulate-help fmt fmt-check vet check install-hooks
+.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs api-docs docs-check demo-check adminer-check simulate simulate-help fmt fmt-check vet check install-hooks
 
 help:
 	@printf '%s\n' \
@@ -64,6 +64,7 @@ help:
 	  'api-docs Start the portal and print the Scalar reference link' \
 	  'docs-check Validate published guides, links, and assets without services' \
 	  'demo-check Run the static GUI tests in an ephemeral Node container' \
+	  'adminer-check Check exact integer display with the pinned Adminer runtime' \
 	  'simulate Run or resume platform usage; MODE=step releases one step' \
 	  'simulate-help Show all simulator options' \
 	  'fmt      Format Go source and whitespace' \
@@ -108,6 +109,12 @@ docs-check:
 demo-check:
 	@docker run --rm --volume "$(CURDIR):/workspace:ro" --workdir /workspace \
 	  node:24-alpine node --test tests/demo/*.test.mjs
+
+adminer-check:
+	@$(COMPOSE) run --rm --no-deps --volume "$(CURDIR):/workspace:ro" --entrypoint php adminer \
+	  -l /workspace/adminer/plugins-enabled/integer-format.php
+	@$(COMPOSE) run --rm --no-deps --volume "$(CURDIR):/workspace:ro" --entrypoint php adminer \
+	  /workspace/tests/adminer/integer-format.php
 
 simulate-help:
 	@$(COMPOSE) build simulator
