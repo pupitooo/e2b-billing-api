@@ -30,6 +30,8 @@ test("invoice workflow", async (t) => {
       wantLoadingButtonText: "Loading…",
       wantLoadingMessage: "Loading invoice for cyberdyne · 2026-09…",
       wantLoadMessage: "Invoice CYBERDYNE-0001 for 2026-09 loaded.",
+      wantFinalDisabled: false,
+      wantFinalButtonText: "Load invoice",
     },
     {
       scenario: "load an existing invoice without issuing it again",
@@ -54,6 +56,8 @@ test("invoice workflow", async (t) => {
       wantLoadingButtonText: "Loading…",
       wantLoadingMessage: "Loading invoice for acme · 2026-09…",
       wantLoadMessage: "Invoice ACME-0001 for 2026-09 loaded.",
+      wantFinalDisabled: false,
+      wantFinalButtonText: "Load invoice",
     },
     {
       scenario: "a missing invoice remains a visible 404 for the entered month",
@@ -75,6 +79,8 @@ test("invoice workflow", async (t) => {
       wantLoadingButtonText: "Loading…",
       wantLoadingMessage: "Loading invoice for cyberdyne · 2026-10…",
       wantLoadMessage: "The billing resource does not exist.",
+      wantFinalDisabled: false,
+      wantFinalButtonText: "Load invoice",
     },
     {
       scenario: "an empty form month is rejected before any request",
@@ -94,6 +100,8 @@ test("invoice workflow", async (t) => {
       wantLoadingButtonText: "Load invoice",
       wantLoadingMessage: "",
       wantLoadMessage: "",
+      wantFinalDisabled: false,
+      wantFinalButtonText: "Load invoice",
     },
     {
       scenario: "network failure reports a visible error and allows another load",
@@ -116,6 +124,8 @@ test("invoice workflow", async (t) => {
       wantLoadingButtonText: "Loading…",
       wantLoadingMessage: "Loading invoice for cyberdyne · 2026-09…",
       wantLoadMessage: "Invoice could not be loaded. See the response below.",
+      wantFinalDisabled: false,
+      wantFinalButtonText: "Load invoice",
     },
     {
       scenario: "storage failure restores the button and reports the unsent request",
@@ -136,6 +146,8 @@ test("invoice workflow", async (t) => {
       wantLoadingButtonText: "Loading…",
       wantLoadingMessage: "Loading invoice for cyberdyne · 2026-09…",
       wantLoadMessage: "Request was not sent: browser storage is unavailable (storage full). Export or clear the local journal and try again.",
+      wantFinalDisabled: false,
+      wantFinalButtonText: "Load invoice",
     },
   ];
 
@@ -175,8 +187,8 @@ test("invoice workflow", async (t) => {
 
       assert.equal(browser.toast.textContent, c.wantToastMessage, `${detail}: message=${browser.toast.textContent}; want=${c.wantToastMessage}`);
       assert.deepEqual(requests, c.wantRequests, `${detail}: requests=${JSON.stringify(requests)}; want=${JSON.stringify(c.wantRequests)}`);
-      assert.equal(browser.load.disabled, false, `${detail}: Load must remain enabled`);
-      assert.equal(browser.load.textContent, "Load invoice", `${detail}: Load must restore its label`);
+      assert.equal(browser.load.disabled, c.wantFinalDisabled, `${detail}: Load must remain enabled`);
+      assert.equal(browser.load.textContent, c.wantFinalButtonText, `${detail}: Load must restore its label`);
       assert.equal(browser.loadStatus.textContent, c.wantLoadMessage, `${detail}: load message=${browser.loadStatus.textContent}; want=${c.wantLoadMessage}`);
       if (c.wantStatus === null) return;
 
