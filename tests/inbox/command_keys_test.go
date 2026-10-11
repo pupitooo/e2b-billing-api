@@ -92,7 +92,7 @@ func testCommandBodyKeys(t *testing.T, endpoint commandKeyEndpoint) {
 
 			var state commandKeyState
 			err := pool.QueryRow(context.Background(), `SELECT
-                (SELECT count(*) FROM credit_entries), (SELECT count(*) FROM spend_limit_operations),
+                (SELECT count(*) FROM credit_entries), (SELECT count(*) FROM api_idempotency_operations WHERE operation_scope='spend-limit/acme'),
                 credit_balance_ticks::text,state_version,spend_limit_cents
                 FROM customer_billing_state WHERE customer_id='acme'`).
 				Scan(&state.creditEntries, &state.limitOperations, &state.creditTicks, &state.version, &state.limit)

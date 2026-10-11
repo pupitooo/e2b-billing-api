@@ -104,19 +104,20 @@ example a UUID. Values are case-sensitive. Missing, null, or invalid strings ret
 `422`; duplicate fields, unknown aliases, and wrong JSON types return `400`.
 The former `Idempotency-Key` header does not supply or override the body key.
 Credit and spend-limit requests no longer accept `operation_id` in JSON.
-Prices and add-ons store normalized inputs and successful results in
-`api_idempotency_operations` in the same transaction as the resource. Credit
-grants retain their keys in the ledger as internal `grant/<key>` operation IDs;
-spend-limit changes retain them in `spend_limit_operations.idempotency_key`. Keys remain
-stored indefinitely; retries survive API restarts. Failed commands reserve no key.
+Prices, add-ons, credit grants, and spend-limit changes all store normalized
+inputs and successful results in `api_idempotency_operations` in the same
+transaction as their financial effects. Scopes are `prices`, `addons/<customer_id>`,
+`credits/<customer_id>`, and `spend-limit/<customer_id>`. Keys remain stored
+indefinitely; retries survive API restarts. Failed commands reserve no key.
+Credit ledger IDs come from the server's `crd_` sequence and never derive from the
+caller key. Credit results also retain their internal ledger ID in command history;
+the public grant response remains the original command fields.
 Retain the key and input before sending, including across browser reloads. A new
 key denotes a new operation and still must satisfy catalog or subscription uniqueness.
-Previously created resources retain their IDs; migration 010 cannot infer retry
-keys for earlier resource commands. Migration 011 renames the spend-limit
-history column without changing keys or financial state. Existing credit and
-limit commands can be replayed by supplying their former `operation_id` value as
-`idempotency_key`. Use updated scenario files and a new simulator state file
-when switching from a checkpoint containing the former request format.
+The revised migration foundation requires a clean database schema; it does not
+upgrade the previous split key storage or infer keys for earlier resource commands.
+Use updated scenario files and a new simulator state file when switching from a
+checkpoint containing the former request format.
 
 Credit grants apply immediately; `recorded_at` is audit metadata. Each customer
 can hold one subscription per add-on. A purchase with a different key for the same customer/add-on conflicts,

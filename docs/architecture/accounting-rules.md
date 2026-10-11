@@ -125,10 +125,12 @@ copies do not share allocation. Do not reset or cycle an active sequence.
 The worker finds an existing group by
 `(customer_id, price_version_id, usage_month, billing_month)` under the customer
 lock. It reuses that group's stored ID, including earlier hash IDs, and allocates
-a number only for a new group. Credit grants check the customer and operation
-identity before allocating a ledger entry. Identical retries allocate no new
-entry. Usage debits retain their existing internal `operation_id` derivation from
-`(source, event_id)`; the separate `credit_entry_id` identifies the ledger row.
+a number only for a new group. Credit grants check the scoped API
+`idempotency_key` in command history before allocating a ledger entry. Identical
+retries allocate no new entry. Grants and usage debits both use independent
+server-generated `credit_entry_id` values. Usage replay is prevented by the
+unique `(source, event_id)` rating link and the locked receipt checkpoint, committed
+atomically with ledger and balance writes.
 
 Migration `012_accounting_id_sequences.sql` adds the owned sequences without
 rewriting any IDs, financial amounts, references, or frozen invoices. If earlier
@@ -148,7 +150,7 @@ results retain their original values. The caller supplies an independent
 JSON `idempotency_key` for prices, add-ons, credit grants, and spend-limit changes. The
 append-only `api_idempotency_operations` table records the scope, key, normalized
 original request, successful result, and creation time. The price scope is global
-for `/prices`; the add-on scope includes the customer. Keys are case-sensitive
+for `/prices`; the add-on, credit, and spend-limit scopes include the customer. Keys are case-sensitive
 visible ASCII tokens of at most 256 bytes and are retained indefinitely.
 
 A transaction-scoped advisory lock serializes the scope/key before reading
@@ -156,12 +158,13 @@ history; hash collisions only serialize unrelated commands. The composite primar
 key determines identity. Financial writes and result recording commit together.
 A failed command reserves no key; unchanged retries return the stored result after
 process restarts, activation, catalog changes, or closing. Changed values conflict.
-Credit grants retain their keys in the ledger under `grant/<key>`, while limit
-changes retain them in `spend_limit_operations.idempotency_key`. A retry of an
-older limit command preserves any newer configuration.
+All four command types use this one history table. Credit grants additionally
+snapshot their internal ledger ID in the stored result; caller keys never become
+accounting or resource IDs. A retry of an older limit command preserves any newer
+configuration.
 
-Existing seed and persisted resource IDs are preserved; the migration does not
-invent keys for commands previously accepted through the old interface.
+The revised migration foundation requires a clean schema; it does not backfill
+keys or upgrade the previous split command histories.
 
 New ordinary price versions must have `effective_from` at or after the server's
 insertion instant, sampled after the exclusive catalog lock is acquired and the

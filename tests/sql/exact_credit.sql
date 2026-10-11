@@ -20,16 +20,16 @@ INSERT INTO rated_usage_groups (
     total_units, exact_charge_ticks, booked_charge_cents, allocated_credit_cents
 ) VALUES ('credit-migration-group', 'acme', 'cpu-acme-2026-10-01', 'cpu_seconds',
     '2026-10-01', '2026-10-01', 300000000, 1200000000, 1200, 1200);
-INSERT INTO credit_entries (credit_entry_id, customer_id, operation_id, group_id, amount_cents, recorded_at)
+INSERT INTO credit_entries (credit_entry_id, customer_id, group_id, amount_cents, recorded_at)
 VALUES
-    ('credit-migration-grant', 'acme', 'grant', NULL, 2500, '2026-10-01T00:00:00Z'),
-    ('credit-migration-debit', 'acme', 'debit', 'credit-migration-group', -1200, '2026-10-10T12:00:00Z');
+    ('credit-migration-grant', 'acme', NULL, 2500, '2026-10-01T00:00:00Z'),
+    ('credit-migration-debit', 'acme', 'credit-migration-group', -1200, '2026-10-10T12:00:00Z');
 UPDATE customer_billing_state SET credit_balance_cents = 1300, state_version = 2 WHERE customer_id = 'acme';
 
 -- The previous maximum bigint balance must convert without bigint multiplication.
 INSERT INTO customers VALUES ('credit-large-customer', 'Large credit', 'US', 'Test address');
 INSERT INTO customer_billing_state VALUES ('credit-large-customer', 9223372036854775807, NULL, 0);
-INSERT INTO credit_entries VALUES ('credit-large-grant', 'credit-large-customer', 'large-grant', NULL,
+INSERT INTO credit_entries VALUES ('credit-large-grant', 'credit-large-customer', NULL,
     9223372036854775807, '2026-10-01T00:00:00Z');
 
 \ir /migrations/004_exact_credit.sql
@@ -94,13 +94,13 @@ SELECT pg_temp.assert_result(
 SELECT pg_temp.assert_result(
     scenario => 'legacy debit retains identity, sign, timestamp, and amount',
     input_sql => $input$
-        SELECT operation_id, group_id, amount_ticks,
+        SELECT credit_entry_id, group_id, amount_ticks,
             to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS recorded_at
         FROM credit_entries WHERE credit_entry_id = 'credit-migration-debit'
     $input$,
     want_result => $want$
     {
-        "operation_id": "debit",
+        "credit_entry_id": "credit-migration-debit",
         "group_id": "credit-migration-group",
         "amount_ticks": -1200000000,
         "recorded_at": "2026-10-10T12:00:00Z"
@@ -114,8 +114,8 @@ INSERT INTO rated_usage_groups VALUES (
     '2026-10-01', '2026-10-01', 1000, 5000, 0, 5000
 );
 INSERT INTO credit_entries VALUES
-    ('credit-small-grant', 'cyberdyne', 'small-grant', NULL, 1000000, '2026-10-01T00:00:00Z'),
-    ('credit-small-debit', 'cyberdyne', 'small-debit', 'credit-small-group', -5000, '2026-10-10T12:00:00Z');
+    ('credit-small-grant', 'cyberdyne', NULL, 1000000, '2026-10-01T00:00:00Z'),
+    ('credit-small-debit', 'cyberdyne', 'credit-small-group', -5000, '2026-10-10T12:00:00Z');
 UPDATE customer_billing_state SET credit_balance_ticks = 995000 WHERE customer_id = 'cyberdyne';
 
 SELECT pg_temp.assert_result(
@@ -150,8 +150,8 @@ BEGIN
     FOREACH invalid_number IN ARRAY ARRAY['0', '-1', '0.5', 'NaN', 'Infinity', '-Infinity'] LOOP
         PERFORM pg_temp.assert_rejection(
             scenario => 'Invalid grant ticks: ' || invalid_number,
-            input_sql => format('INSERT INTO credit_entries VALUES (%L, %L, %L, NULL, %L::numeric, %L)',
-                'invalid-credit', 'cyberdyne', 'invalid-credit', invalid_number, '2026-10-01T00:00:00Z'),
+            input_sql => format('INSERT INTO credit_entries VALUES (%L, %L, NULL, %L::numeric, %L)',
+                'invalid-credit', 'cyberdyne', invalid_number, '2026-10-01T00:00:00Z'),
             want_sqlstate => '23514');
     END LOOP;
     PERFORM pg_temp.assert_rejection(
@@ -160,7 +160,7 @@ BEGIN
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Debit has a positive amount',
-            input_sql => $$INSERT INTO credit_entries VALUES ('invalid-debit', 'cyberdyne', 'invalid-debit', 'credit-small-group', 1, '2026-10-01T00:00:00Z')$$,
+            input_sql => $$INSERT INTO credit_entries VALUES ('invalid-debit', 'cyberdyne', 'credit-small-group', 1, '2026-10-01T00:00:00Z')$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Credit history update',

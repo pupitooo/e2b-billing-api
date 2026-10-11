@@ -87,10 +87,10 @@ func TestSetSpendLimit(t *testing.T) {
 		var recorded time.Time
 		var limit, version int64
 		var operations int
-		err = pool.QueryRow(ctx, `SELECT o.recorded_at, s.spend_limit_cents, s.state_version,
-   (SELECT count(*) FROM spend_limit_operations WHERE customer_id=$1)
-   FROM spend_limit_operations o JOIN customer_billing_state s USING(customer_id)
-   WHERE o.customer_id=$1 AND o.idempotency_key=$2`, scenario.customer, scenario.change.IdempotencyKey).Scan(&recorded, &limit, &version, &operations)
+		err = pool.QueryRow(ctx, `SELECT o.created_at, s.spend_limit_cents, s.state_version,
+   (SELECT count(*) FROM api_idempotency_operations WHERE operation_scope='spend-limit/' || $1)
+   FROM api_idempotency_operations o JOIN customer_billing_state s ON o.operation_scope='spend-limit/' || s.customer_id
+   WHERE o.operation_scope='spend-limit/' || $1 AND o.idempotency_key=$2`, scenario.customer, scenario.change.IdempotencyKey).Scan(&recorded, &limit, &version, &operations)
 		if err != nil {
 			t.Fatalf("Read limit operation(customer=%s, key=%s): %v", scenario.customer, scenario.change.IdempotencyKey, err)
 		}
@@ -181,7 +181,7 @@ func TestSetSpendLimit(t *testing.T) {
 			}
 
 			var operations int
-			if err := pool.QueryRow(ctx, "SELECT count(*) FROM spend_limit_operations WHERE customer_id=$1", tc.customer).Scan(&operations); err != nil {
+			if err := pool.QueryRow(ctx, "SELECT count(*) FROM api_idempotency_operations WHERE operation_scope='spend-limit/' || $1", tc.customer).Scan(&operations); err != nil {
 				t.Fatalf("Count spend-limit operations(customer=%s) error=%v; want nil", tc.customer, err)
 			}
 

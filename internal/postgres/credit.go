@@ -3,15 +3,21 @@ package postgres
 import (
 	"context"
 	"errors"
-	"time"
 
 	"e2b/billing-api/internal/accounting"
 	"e2b/billing-api/internal/billing"
 	"github.com/jackc/pgx/v5"
 )
 
-// GrantCredit uses a stable caller operation identity. Replay returns the grant
-// result without increasing the balance or changing earlier usage allocations.
+const creditOperationScopePrefix = "credits/"
+
+type creditGrantResult struct {
+	CreditEntryID string              `json:"credit_entry_id"`
+	Grant         billing.CreditGrant `json:"grant"`
+}
+
+// GrantCredit records the API key separately from the server-generated ledger
+// identity. Replay leaves both balance and earlier usage allocations unchanged.
 func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.CreditGrant) error {
 	if err := billing.ValidateIdentifier("customer_id", customer); err != nil {
 		return err
@@ -30,26 +36,25 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.
 	}
 
 	ticks, _ := accounting.FromCents(grant.AmountCents)
+	grant.RecordedAt = grant.RecordedAt.UTC()
+	scope := creditOperationScopePrefix + customer
 
 	return s.transact(ctx, func(tx pgx.Tx) error {
-		if _, err := lockAccount(ctx, tx, customer); err != nil {
+		var previous creditGrantResult
+		found, err := operationResponse(ctx, tx, scope, grant.IdempotencyKey, &previous)
+		if err != nil {
 			return err
 		}
 
-		var previous string
-		var recorded time.Time
-		operation := "grant/" + grant.IdempotencyKey
-		err := tx.QueryRow(ctx, `SELECT amount_ticks::text,recorded_at FROM credit_entries
-            WHERE customer_id=$1 AND operation_id=$2`, customer, operation).Scan(&previous, &recorded)
-		if err == nil {
-			if previous == ticks.Ticks().String() && recorded.Equal(grant.RecordedAt) {
+		if found {
+			if previous.Grant.AmountCents == grant.AmountCents && previous.Grant.RecordedAt.Equal(grant.RecordedAt) {
 				return nil
 			}
 
 			return billing.ErrConflict
 		}
 
-		if !errors.Is(err, pgx.ErrNoRows) {
+		if _, err := lockAccount(ctx, tx, customer); err != nil {
 			return err
 		}
 
@@ -59,17 +64,22 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.
 		}
 
 		_, err = tx.Exec(ctx, `INSERT INTO credit_entries
-            (credit_entry_id,customer_id,operation_id,group_id,amount_ticks,recorded_at)
-            VALUES ($1,$2,$3,NULL,$4::numeric,$5)`, entryID,
-			customer, operation, ticks.Ticks().String(), grant.RecordedAt.UTC())
+            (credit_entry_id,customer_id,group_id,amount_ticks,recorded_at)
+            VALUES ($1,$2,NULL,$3::numeric,$4)`, entryID,
+			customer, ticks.Ticks().String(), grant.RecordedAt)
 		if err != nil {
 			return err
 		}
 
 		_, err = tx.Exec(ctx, `UPDATE customer_billing_state SET credit_balance_ticks=credit_balance_ticks+$2::numeric,
             state_version=state_version+1 WHERE customer_id=$1`, customer, ticks.Ticks().String())
+		if err != nil {
+			return err
+		}
 
-		return err
+		result := creditGrantResult{CreditEntryID: entryID, Grant: grant}
+
+		return recordOperation(ctx, tx, scope, grant.IdempotencyKey, grant, result, s.now())
 	})
 }
 

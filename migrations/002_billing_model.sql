@@ -80,7 +80,6 @@ CREATE TABLE monthly_usage (
 CREATE TABLE credit_entries (
     credit_entry_id text PRIMARY KEY,
     customer_id text NOT NULL REFERENCES customers (customer_id),
-    operation_id text NOT NULL,
     group_id text,
     amount_cents bigint NOT NULL,
     recorded_at timestamptz NOT NULL CHECK (isfinite(recorded_at)),
@@ -88,8 +87,7 @@ CREATE TABLE credit_entries (
         (group_id IS NULL AND amount_cents > 0)
         OR (group_id IS NOT NULL AND amount_cents < 0)
     ),
-    FOREIGN KEY (group_id, customer_id) REFERENCES rated_usage_groups (group_id, customer_id),
-    UNIQUE (customer_id, operation_id)
+    FOREIGN KEY (group_id, customer_id) REFERENCES rated_usage_groups (group_id, customer_id)
 );
 
 CREATE INDEX credit_entries_group_idx ON credit_entries (group_id) WHERE group_id IS NOT NULL;

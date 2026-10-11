@@ -1,5 +1,7 @@
 -- Successful API commands retain their input and result indefinitely. Their
 -- insertion shares the financial transaction, so retries survive process restarts.
+-- Prices, add-ons, credit grants, and spend-limit changes share this history;
+-- caller keys never become internal resource or accounting identities.
 CREATE TABLE api_idempotency_operations (
     operation_scope text NOT NULL CHECK (length(operation_scope) > 0),
     idempotency_key text NOT NULL CHECK (

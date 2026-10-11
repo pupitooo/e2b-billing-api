@@ -2,8 +2,6 @@ package postgres
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -45,12 +43,6 @@ func amount(ticks string) (accounting.Amount, error) {
 	}
 
 	return accounting.FromTicks(value)
-}
-
-// identity hashes a structured key so caller separators cannot cause collisions.
-func identity(prefix string, parts ...string) string {
-	encoded, _ := json.Marshal(parts)
-	return fmt.Sprintf("%s%x", prefix, sha256.Sum256(encoded))
 }
 
 // catalogLock serializes price insertion against rating and historical checks.

@@ -27,9 +27,9 @@ func TestProcessedUsageClosingMigration(t *testing.T) {
 		(group_id,customer_id,price_version_id,metric,usage_month,billing_month,total_units,exact_charge_ticks,booked_charge_cents,allocated_credit_ticks)
 		VALUES ('group/earlier','acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',1000000,4000000,4,4000000);
 		INSERT INTO usage_ratings (source,event_id,group_id) VALUES ('upgrade-history','accounted','group/earlier');
-		INSERT INTO credit_entries (credit_entry_id,customer_id,operation_id,group_id,amount_ticks,recorded_at) VALUES
-		('grant/earlier','acme','grant/migration-credit',NULL,6000000,'2026-10-01T00:00:00Z'),
-		('usage/earlier','acme','usage/earlier','group/earlier',-4000000,'2026-10-11T00:00:00Z');
+		INSERT INTO credit_entries (credit_entry_id,customer_id,group_id,amount_ticks,recorded_at) VALUES
+		('grant/earlier','acme',NULL,6000000,'2026-10-01T00:00:00Z'),
+		('usage/earlier','acme','group/earlier',-4000000,'2026-10-11T00:00:00Z');
 		INSERT INTO monthly_usage (customer_id,usage_month,gross_charge_ticks) VALUES ('acme','2026-10-01',4000000);
 		UPDATE customer_billing_state SET credit_balance_ticks=2000000,state_version=2 WHERE customer_id='acme'`
 	cases := []struct {

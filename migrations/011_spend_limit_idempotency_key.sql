@@ -1,3 +1,3 @@
--- Keep existing request identities and append-only history while matching the
--- JSON API name. Credit ledger operation_id remains an internal grant/debit key.
-ALTER TABLE spend_limit_operations RENAME COLUMN operation_id TO idempotency_key;
+-- Reserved migration version. All API command keys and successful results
+-- are stored in api_idempotency_operations by migration 010.
+-- This revised foundation creates no separate spend-limit history table.

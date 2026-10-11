@@ -78,10 +78,10 @@ func TestAccountingIDSequencesMigration(t *testing.T) {
 				($1,'acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',250000,1000000,1,1000000)`, tc.oldGroupID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := pool.Exec(ctx, "INSERT INTO credit_entries VALUES ($1,'acme','grant/earlier',NULL,2000000,'2026-10-01T00:00:00Z')", tc.oldGrantID); err != nil {
+			if _, err := pool.Exec(ctx, "INSERT INTO credit_entries VALUES ($1,'acme',NULL,2000000,'2026-10-01T00:00:00Z')", tc.oldGrantID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := pool.Exec(ctx, "INSERT INTO credit_entries VALUES ('usage/earlier','acme','usage/earlier',$1,-1000000,'2026-10-10T13:00:00Z')", tc.oldGroupID); err != nil {
+			if _, err := pool.Exec(ctx, "INSERT INTO credit_entries VALUES ('usage/earlier','acme',$1,-1000000,'2026-10-10T13:00:00Z')", tc.oldGroupID); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := pool.Exec(ctx, `INSERT INTO usage_inbox VALUES
