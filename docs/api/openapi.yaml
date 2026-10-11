@@ -720,7 +720,8 @@ paths:
       summary: Get current month limit status
       description: |
         Check processed usage against the limit for the current UTC month, before credit and excluding add-ons.
-        Pending/error counts indicate accounting freshness; the caller enforces the limit.
+        Pending/error counts cover all of the customer's received usage, across all months.
+        They indicate accounting incompleteness, not delivery lag from the platform; the caller enforces the limit.
         See [limit rules](/architecture/accounting-rules/#utc-months-limits-add-ons-and-late-usage).
       x-implementation-status: implemented
       parameters:
@@ -792,7 +793,8 @@ paths:
       summary: Get monthly limit status
       description: |
         Check a specified UTC month's processed usage against the currently configured limit.
-        Credit and add-ons are excluded; pending/error counts indicate accounting freshness.
+        Credit and add-ons are excluded. Pending/error counts cover all of the customer's
+        received usage, not just the requested month, and do not measure platform delivery lag.
         See [limit rules](/architecture/accounting-rules/#utc-months-limits-add-ons-and-late-usage).
       x-implementation-status: implemented
       parameters:
@@ -1150,6 +1152,7 @@ components:
           description: Producer metadata; not stored or used for deduplication.
         events:
           type: array
+          description: Measurements committed together; any invalid event or content conflict rejects the whole batch.
           minItems: 1
           maxItems: 1000
           items:
@@ -1158,7 +1161,9 @@ components:
       type: string
       format: date-time
       pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$'
-      description: UTC year must be 1000–9999 after offset conversion.
+      description: |
+        RFC 3339 instant with at most microsecond precision. Offsets are normalized to
+        UTC; equivalent instants compare equal on retries. The UTC year must be 1000–9999.
     UsageEvent:
       type: object
       additionalProperties: false
@@ -1167,32 +1172,43 @@ components:
       properties:
         source:
           $ref: '#/components/schemas/Identifier'
-          description: Producer namespace.
+          description: Producer namespace; together with event_id identifies a measurement across batches and retries.
         event_id:
           $ref: '#/components/schemas/Identifier'
-          description: Deduplication key within source.
+          description: Stable measurement ID within source; reuse with identical content on retries, never for a new measurement.
         schema_version:
           type: integer
           format: int32
           minimum: 1
           maximum: 2147483647
+          description: |
+            Measurement contract version. Receipt accepts any positive version, but
+            accounting supports only version 1; other versions become processing errors.
         customer_id:
           $ref: '#/components/schemas/Identifier'
         sandbox_id:
           $ref: '#/components/schemas/Identifier'
+          description: Originating sandbox; retained for audit, but does not create a separate invoice rounding group.
         metric:
           $ref: '#/components/schemas/Identifier'
+          description: Resource unit and price lookup key, such as cpu_seconds; provision its price before sending usage.
         period_start:
           $ref: '#/components/schemas/ConsumptionTime'
           description: Inclusive start of consumption.
         period_end:
           $ref: '#/components/schemas/ConsumptionTime'
-          description: Exclusive end; must be later than period_start.
+          description: |
+            Exclusive end, later than period_start. Accounting requires the interval
+            to fit one UTC month and one applicable price version; split measurements
+            at those boundaries before sending them.
         units:
           type: integer
           format: int64
           minimum: 0
           maximum: 9223372036854775807
+          description: |
+            Resource increment for this interval in the metric's units, not money or a
+            cumulative counter. Zero is valid; cpu_seconds uses one unit per CPU second.
     AcceptedResponse:
       type: object
       additionalProperties: false
@@ -1201,6 +1217,7 @@ components:
         status:
           type: string
           enum: [accepted]
+          description: Confirms durable receipt of the entire batch, including identical retries; accounting may still be pending.
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -1214,6 +1231,7 @@ components:
             code:
               type: string
               enum: [invalid_json, invalid_batch, request_too_large, unsupported_media_type, event_conflict, inbox_unavailable]
+              description: Machine-readable error category; use this rather than message text to choose client error handling.
             message:
               type: string
               description: Diagnostic text; use code for error handling.
@@ -1251,6 +1269,7 @@ components:
           properties:
             code:
               type: string
+              description: Machine-readable error category; use this rather than message text to choose client error handling.
               enum:
               - invalid_json
               - invalid_command
@@ -1260,8 +1279,10 @@ components:
               - unsupported_media_type
             message:
               type: string
+              description: Diagnostic text for people; use code for error handling.
             field:
               type: string
+              description: Invalid request field, when the failure can be attributed to one, such as effective_from.
 
     PriceVersionRequest:
       type: object
@@ -1276,20 +1297,25 @@ components:
         idempotency_key:
           $ref: '#/components/schemas/IdempotencyKey'
         customer_id:
-          description: Use null for the default price.
+          description: Use null for the default price; an eligible customer-specific version takes precedence over the default.
           oneOf:
           - $ref: '#/components/schemas/Identifier'
           - type: 'null'
         metric:
           $ref: '#/components/schemas/Identifier'
+          description: Must match the usage event's metric to participate in historical price lookup.
         price_per_million_cents:
           type: integer
           format: int64
           minimum: 0
           maximum: 9223372036854775807
+          description: USD cents charged per 1_000_000 resource units; 5 means USD 0.05 per million, and 0 permits free usage.
         effective_from:
           $ref: '#/components/schemas/BillingDate'
-          description: UTC calendar date; must not precede the current UTC date at catalog insertion.
+          description: |
+            Activation at midnight UTC on this date, used to price consumption rather
+            than receipt. Must not precede the current UTC date at catalog insertion;
+            today's date is allowed only if already rated history is preserved.
 
     PriceVersion:
       type: object
@@ -1306,20 +1332,22 @@ components:
           description: Opaque identity generated internally by billing.
           $ref: '#/components/schemas/Identifier'
         customer_id:
-          description: Use null for the default price.
+          description: Null denotes the default price; an eligible customer-specific version takes precedence over the default.
           oneOf:
           - $ref: '#/components/schemas/Identifier'
           - type: 'null'
         metric:
           $ref: '#/components/schemas/Identifier'
+          description: Must match the usage event's metric to participate in historical price lookup.
         price_per_million_cents:
           type: integer
           format: int64
           minimum: 0
           maximum: 9223372036854775807
+          description: USD cents charged per 1_000_000 resource units; 5 means USD 0.05 per million, and 0 permits free usage.
         effective_from:
           $ref: '#/components/schemas/BillingDate'
-          description: Stored UTC activation date; the internal instant is midnight UTC.
+          description: Stored activation date at midnight UTC; historical pricing uses consumption time, even for late delivery.
 
     BillingDate:
       type: string
@@ -1343,6 +1371,7 @@ components:
           format: int64
           minimum: 1
           maximum: 9223372036854775807
+          description: USD cents added to the available usage credit; does not pay add-ons or retroactively cover already processed usage.
 
     CreditSnapshot:
       type: object
@@ -1359,20 +1388,35 @@ components:
         credit_balance_ticks:
           type: string
           pattern: ^[0-9]+$
-          description: One cent is 1_000_000 ticks.
+          description: |
+            Credit remaining after grants and processed usage debits, available only
+            for usage. One USD cent is 1_000_000 ticks; the decimal string preserves
+            exact integers beyond JSON clients' safe numeric range.
         state_version:
           type: integer
           format: int64
           minimum: 0
+          description: |
+            Customer-wide revision counter advanced by usage accounting, credit grants,
+            limit changes, add-on purchases, and invoice issuance. Use it to observe
+            account changes; it is not a version of this response, and receipt or
+            processing errors can change the counts without advancing it.
         pending_events:
           type: integer
           format: int64
           minimum: 0
+          description: |
+            Received usage events awaiting accounting, excluding processing errors,
+            across all of this customer's months. They may still consume credit;
+            zero does not rule out measurements the platform has not yet delivered.
         processing_errors:
           type: integer
           format: int64
           minimum: 0
-          description: Receipts requiring investigation.
+          description: |
+            Received usage events whose accounting failed, across all of this
+            customer's months. Their charges and credit debits have not been applied;
+            investigate and recover them before treating the balance as complete.
 
     AddonPurchase:
       type: object
@@ -1386,8 +1430,13 @@ components:
           $ref: '#/components/schemas/IdempotencyKey'
         addon_name:
           $ref: '#/components/schemas/Identifier'
+          description: Existing add-on catalog entry; a customer can purchase each add-on only once.
         purchased_at:
           $ref: '#/components/schemas/BillingDate'
+          description: |
+            Purchase date selecting the first charged UTC month. The full monthly
+            price applies even for a mid-month purchase; future dates and historical
+            dates after all closed months are allowed.
 
     Subscription:
       type: object
@@ -1412,12 +1461,14 @@ components:
           type: integer
           format: int64
           minimum: 0
+          description: USD cents copied from the catalog at purchase and charged in full each month; later catalog changes do not alter it.
         purchased_at:
           $ref: '#/components/schemas/BillingDate'
+          description: Stored purchase date selecting the first charged UTC month; the first month's price is not prorated.
         start_month:
           type: string
           format: date
-          description: First date of the UTC purchase month.
+          description: First charged month, encoded as its first calendar date (YYYY-MM-01); recurring charges include this month.
 
     BillingMonth:
       type: string
@@ -1441,6 +1492,10 @@ components:
           format: int64
           minimum: 0
           maximum: 9223372036854775807
+          description: |
+            Monthly gross usage threshold in USD cents, before credit and excluding
+            add-ons. Null removes the limit; 0 is reached even without usage.
+            Changes apply immediately; billing continues accounting beyond the limit.
 
     LimitStatus:
       type: object
@@ -1459,30 +1514,52 @@ components:
           $ref: '#/components/schemas/Identifier'
         month:
           $ref: '#/components/schemas/BillingMonth'
+          description: Original UTC consumption month whose gross usage is compared with the currently configured limit.
         limit_cents:
           type:
           - integer
           - 'null'
           format: int64
           minimum: 0
+          description: Current gross usage threshold in USD cents, including for historical month queries; null means unlimited, and 0 is immediately reached.
         gross_charge_ticks:
           type: string
           pattern: ^[0-9]+$
+          description: |
+            Exact processed usage cost in the original consumption month, before
+            credit and excluding add-ons, including usage invoiced later. One USD
+            cent is 1_000_000 ticks; the string preserves arbitrarily large integers.
         limit_reached:
           type: boolean
+          description: |
+            True when processed gross ticks reach or exceed the limit, without cent
+            rounding; false when unlimited. Pending or failed usage may still cross
+            the threshold. The caller enforces the limit; accounting continues.
         state_version:
           type: integer
           format: int64
           minimum: 0
+          description: |
+            Customer-wide revision counter advanced by usage accounting, credit grants,
+            limit changes, add-on purchases, and invoice issuance. Use it to observe
+            account changes; it is not a version of this response, and receipt or
+            processing errors can change the counts without advancing it.
         pending_events:
           type: integer
           format: int64
           minimum: 0
+          description: |
+            Received usage events awaiting accounting, excluding processing errors,
+            across all of this customer's months, not just the returned month. Their
+            charges are not included yet; zero does not rule out undelivered measurements.
         processing_errors:
           type: integer
           format: int64
           minimum: 0
-          description: Receipts requiring investigation.
+          description: |
+            Received usage events whose accounting failed, across all of this customer's
+            months, not just the returned month. Their charges have not been applied;
+            an error in another month need not affect this month's limit status.
 
     InvoiceLine:
       type: object
@@ -1494,35 +1571,49 @@ components:
       properties:
         kind:
           type: string
+          description: Usage is gross before credit, addon is a recurring charge, and credit is the invoice's balancing usage deduction.
           enum:
           - usage
           - addon
           - credit
         description:
           type: string
+          description: Human-readable line label, including the original month for late usage; use kind to interpret the line.
         amount_cents:
           type: integer
           format: int64
+          description: |
+            Signed USD cents included in total_cents. Usage is rounded half-up per
+            price group; add-ons use the full monthly price. The credit line is a
+            nonpositive balancing deduction, not independently rounded credit ticks.
         price_version_id:
           $ref: '#/components/schemas/Identifier'
+          description: Historical price used for this usage group; present only on usage lines.
         metric:
           $ref: '#/components/schemas/Identifier'
+          description: Resource unit for the group's units; present only on usage lines.
         usage_month:
           $ref: '#/components/schemas/BillingMonth'
+          description: Original consumption month; may precede the invoice month for late usage. Present only on usage lines.
         units:
           type: string
           pattern: ^[0-9]+$
+          description: Total resource units in the usage group; a decimal string because sums may exceed a single event's integer range. Present only on usage lines.
         gross_ticks:
           type: string
           pattern: ^[0-9]+$
+          description: Exact group charge before credit and rounding; one USD cent is 1_000_000 ticks. Present only on usage lines, as a string to preserve integer precision.
         credit_ticks:
           type: string
           pattern: ^[0-9]+$
+          description: Exact credit already allocated to this group before rounding, as a decimal string; one USD cent is 1_000_000 ticks. Present only on usage lines.
         subscription_id:
           $ref: '#/components/schemas/SubscriptionIdentifier'
+          description: Purchased subscription whose fixed monthly price is charged; present only on add-on lines.
 
     Invoice:
       type: object
+      description: Immutable snapshot; buyer details, lines, totals, and issuance time are preserved on reads and retries.
       additionalProperties: false
       required:
       - customer_id
@@ -1542,8 +1633,10 @@ components:
           $ref: '#/components/schemas/Identifier'
         number:
           type: string
+          description: Uppercase customer ID followed by a per-customer sequence starting at 0001; an issuance retry retains the original number.
         month:
           $ref: '#/components/schemas/BillingMonth'
+          description: Billing month being closed; late usage lines can retain an earlier usage_month.
         customer_name:
           type: string
         country:
@@ -1555,20 +1648,25 @@ components:
           const: USD
         lines:
           type: array
+          description: Gross usage grouped by original month, metric, and price version, recurring add-on charges, and one balancing credit deduction.
           items:
             $ref: '#/components/schemas/InvoiceLine'
         total_cents:
           type: integer
           format: int64
           minimum: 0
+          description: USD cents payable; the sum of every signed line amount_cents, with no further rounding.
         gross_usage_ticks:
           type: string
           pattern: ^[0-9]+$
+          description: Exact gross usage summed over the invoice's usage lines before credit, excluding add-ons; one USD cent is 1_000_000 ticks. The string preserves integer precision.
         credit_used_ticks:
           type: string
           pattern: ^[0-9]+$
+          description: Exact usage credit summed over the invoice's usage lines before rounding, as a decimal string; one USD cent is 1_000_000 ticks. Issuance does not debit it again.
         issued_at:
           $ref: '#/components/schemas/ConsumptionTime'
+          description: Server-assigned UTC instant of the original invoice issuance, preserved on retries; not the end of the billed month.
 
     InvoiceMonth:
       type: object
@@ -1578,3 +1676,4 @@ components:
       properties:
         month:
           $ref: '#/components/schemas/BillingMonth'
+          description: Ended UTC month to close; customer and month identify an issuance retry, which returns the original invoice.

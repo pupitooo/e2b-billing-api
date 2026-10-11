@@ -27,6 +27,30 @@ processed gross usage and pending/error counts. The platform decides what to
 do when the limit is reached. The health endpoint checks HTTP availability
 without querying storage.
 
+## Reading accounting status
+
+Credit and limit responses describe committed accounting state. `pending_events`
+counts received usage awaiting accounting without a processing error;
+`processing_errors` counts received usage whose accounting failed without applying
+its financial effects. Both counts cover **all of the customer's months**, including
+on the explicit-month limit endpoint. They are read in the same database statement
+snapshot as the financial values. Zero counts do not establish that the platform
+has delivered every measurement; an error in another month need not affect the
+queried month's gross usage.
+
+`state_version` counts customer account changes from usage accounting, credit
+grants, limit changes, add-on purchases, and invoice issuance. It can help observe
+account changes, but it is not a version of the complete response: receipt and
+processing errors can change the counts without advancing it.
+
+`limit_reached` compares exact processed gross usage with the current limit,
+before credit and excluding add-ons. Equality reaches the limit; `null` is
+unlimited, while zero is reached even without usage. A false result can change
+after pending or failed usage is accounted. Billing keeps accounting beyond the
+limit; the platform owns enforcement. Amounts in ticks use 1_000_000 ticks per
+USD cent and are decimal strings to preserve exact large integers in JSON clients.
+See [limit rules](../architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage).
+
 ## Usage requests
 
 Send one uncompressed UTF-8 JSON document with at most 1_048_576 bytes and
