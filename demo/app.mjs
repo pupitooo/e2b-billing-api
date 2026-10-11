@@ -240,7 +240,9 @@ function metricsHTML(snapshot) {
     {
       label: "Gross usage · " + state.month,
       value: limit ? formatTicks(limit.gross_charge_ticks) : "—",
-      note: "Before credit · add-ons excluded",
+      note: limit
+        ? `${formatTicks(limit.gross_charge_ticks, true)} exact\nBefore credit · add-ons excluded`
+        : "Before credit · add-ons excluded",
     },
     {
       label: "Monthly limit",

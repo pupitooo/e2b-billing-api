@@ -327,6 +327,7 @@ main {
   font: 10px/1.6 monospace;
   color: var(--muted);
   margin-top: 10px;
+  white-space: pre-line;
   overflow-wrap: anywhere;
 }
 .good {
