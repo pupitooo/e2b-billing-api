@@ -37,7 +37,7 @@ export REVERSE SIM_API_URL SCENARIO_FILE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs api-docs docs-check simulate simulate-help fmt fmt-check vet check install-hooks
+.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs api-docs docs-check demo-check simulate simulate-help fmt fmt-check vet check install-hooks
 
 help:
 	@printf '%s\n' \
@@ -63,6 +63,7 @@ help:
 	  'docs     Start the Markdown guides, Scalar reference, and API' \
 	  'api-docs Start the portal and print the Scalar reference link' \
 	  'docs-check Validate published guides, links, and assets without services' \
+	  'demo-check Run the static GUI tests in an ephemeral Node container' \
 	  'simulate Run or resume platform usage; MODE=step releases one step' \
 	  'simulate-help Show all simulator options' \
 	  'fmt      Format Go source and whitespace' \
@@ -103,6 +104,10 @@ docs-check:
 	@$(COMPOSE) build docs
 	@$(COMPOSE) run --rm --no-deps --entrypoint mkdocs docs build --strict --config-file /source/site/mkdocs.yml
 	@$(COMPOSE) run --rm --no-deps --entrypoint python docs /source/site/test_publication.py
+
+demo-check:
+	@docker run --rm --volume "$(CURDIR):/workspace:ro" --workdir /workspace \
+	  node:24-alpine node --test tests/demo/*.test.mjs
 
 simulate-help:
 	@$(COMPOSE) build simulator
@@ -170,7 +175,9 @@ links:
 	    docs) \
 	      address="$$($(COMPOSE) port docs 8080)"; \
 	      printf 'Documentation portal: http://%s/\n' "$$address"; \
-	      printf 'API reference: http://%s/reference/\n' "$$address" ;; \
+	      printf 'API reference: http://%s/reference/\n' "$$address"; \
+	      printf 'Billing demo GUI: http://%s/demo/\n' "$$address"; \
+	      printf 'Adminer database UI: http://%s/database/\n' "$$address" ;; \
 	  esac; \
 	done
 

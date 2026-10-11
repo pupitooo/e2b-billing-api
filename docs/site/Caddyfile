@@ -7,6 +7,27 @@
 	header -Server
 	header Cache-Control "no-cache"
 
+	# The demonstration is a separate static browser client, with no Go handlers.
+	handle /demo {
+		redir /demo/ 308
+	}
+
+	handle_path /demo/* {
+		root * /demo
+		file_server
+	}
+
+	# Keep Adminer links on the portal origin, regardless of local port settings.
+	handle /database {
+		redir /database/ 308
+	}
+
+	handle_path /database/* {
+		reverse_proxy adminer:8080 {
+			header_up X-Forwarded-Prefix /database
+		}
+	}
+
 	# Scalar's relative assets resolve beneath this trailing slash.
 	handle /reference {
 		redir /reference/ 308
