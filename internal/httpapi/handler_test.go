@@ -181,11 +181,6 @@ func TestHandlerServeHTTP(t *testing.T) {
 				wantStatus: http.StatusAccepted,
 			},
 			{
-				name:       "optional batch identifier",
-				body:       changeBatch(t, func(b map[string]any) { delete(b, "batch_id") }),
-				wantStatus: http.StatusAccepted,
-			},
-			{
 				name:       "zero units",
 				body:       changeEvent(t, func(e map[string]any) { e["units"] = 0 }),
 				wantStatus: http.StatusAccepted,
@@ -246,14 +241,9 @@ func TestHandlerServeHTTP(t *testing.T) {
 				wantStatus: http.StatusAccepted,
 			},
 			{
-				name:       "batch identifier at the exact ASCII byte limit",
-				body:       changeBatch(t, func(b map[string]any) { b["batch_id"] = strings.Repeat("x", 256) }),
-				wantStatus: 202,
-			},
-			{
-				name:       "batch identifier at the exact Unicode byte limit",
-				body:       changeBatch(t, func(b map[string]any) { b["batch_id"] = strings.Repeat("ž", 128) }),
-				wantStatus: 202,
+				name:       "ASCII identifier byte boundary",
+				body:       changeEvent(t, func(e map[string]any) { e["source"] = strings.Repeat("x", 256) }),
+				wantStatus: http.StatusAccepted,
 			},
 			{
 				name:       "valid surrogate pair",
@@ -414,7 +404,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 			},
 			{
 				name:           "duplicate envelope member",
-				body:           strings.Replace(validUsageBatch, `"batch_id":"test"`, `"batch_id":"test","batch_id":"other"`, 1),
+				body:           strings.Replace(validUsageBatch, `"events":`, `"events":[],"events":`, 1),
 				wantErrorField: "",
 				wantStatus:     400,
 				wantErrorCode:  "invalid_json",
@@ -567,34 +557,6 @@ func TestHandlerServeHTTP(t *testing.T) {
 				name:           "empty events",
 				body:           `{"events":[]}`,
 				wantErrorField: "events",
-				wantStatus:     422,
-				wantErrorCode:  "invalid_batch",
-			},
-			{
-				name:           "null batch identifier",
-				body:           changeBatch(t, func(b map[string]any) { b["batch_id"] = nil }),
-				wantErrorField: "batch_id",
-				wantStatus:     422,
-				wantErrorCode:  "invalid_batch",
-			},
-			{
-				name:           "blank batch identifier",
-				body:           changeBatch(t, func(b map[string]any) { b["batch_id"] = "\t\n" }),
-				wantErrorField: "batch_id",
-				wantStatus:     422,
-				wantErrorCode:  "invalid_batch",
-			},
-			{
-				name:           "long batch identifier",
-				body:           changeBatch(t, func(b map[string]any) { b["batch_id"] = strings.Repeat("x", 257) }),
-				wantErrorField: "batch_id",
-				wantStatus:     422,
-				wantErrorCode:  "invalid_batch",
-			},
-			{
-				name:           "NUL batch identifier",
-				body:           changeBatch(t, func(b map[string]any) { b["batch_id"] = "a\x00b" }),
-				wantErrorField: "batch_id",
 				wantStatus:     422,
 				wantErrorCode:  "invalid_batch",
 			},
@@ -1050,6 +1012,57 @@ func TestHandlerServeHTTP(t *testing.T) {
 			t.Errorf("Invalid batch invoked storage %d times", calls)
 		}
 	})
+	t.Run("usage batch removed metadata", func(t *testing.T) {
+		tests := []struct {
+			name           string
+			metadata       any
+			wantStatus     int
+			wantErrorCode  string
+			wantErrorField string
+			wantCalls      int
+		}{
+			{
+				name: "string", metadata: "producer-batch",
+				wantStatus: 400, wantErrorCode: "invalid_json", wantErrorField: "", wantCalls: 0,
+			},
+			{
+				name: "null", metadata: nil,
+				wantStatus: 400, wantErrorCode: "invalid_json", wantErrorField: "", wantCalls: 0,
+			},
+			{
+				name: "blank string", metadata: "\t\n",
+				wantStatus: 400, wantErrorCode: "invalid_json", wantErrorField: "", wantCalls: 0,
+			},
+			{
+				name: "oversized string", metadata: strings.Repeat("x", 257),
+				wantStatus: 400, wantErrorCode: "invalid_json", wantErrorField: "", wantCalls: 0,
+			},
+			{
+				name: "NUL string", metadata: "a\x00b",
+				wantStatus: 400, wantErrorCode: "invalid_json", wantErrorField: "", wantCalls: 0,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				body := changeBatch(t, func(batch map[string]any) { batch["batch_id"] = tt.metadata })
+				calls := 0
+				store := storeFunc(func(context.Context, []usage.Event, time.Time) error {
+					calls++
+					return nil
+				})
+				response := httptest.NewRecorder()
+				request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(body))
+				request.Header.Set("Content-Type", "application/json")
+
+				newTestHandler(t, store, 10*time.Second, 32).ServeHTTP(response, request)
+
+				assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, tt.wantErrorField)
+				if calls != tt.wantCalls {
+					t.Errorf("Batch with removed metadata %q invoked storage %d times, want %d", tt.metadata, calls, tt.wantCalls)
+				}
+			})
+		}
+	})
 	t.Run("usage batch waits for commit", func(t *testing.T) {
 		tt := struct {
 			body                  string
@@ -1239,7 +1252,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 	})
 }
 
-const validUsageBatch = `{"batch_id":"test","events":[{"source":"platform-test","event_id":"test-event","schema_version":1,"customer_id":"acme","sandbox_id":"sandbox-001","metric":"cpu_seconds","period_start":"2026-10-10T12:00:00Z","period_end":"2026-10-10T13:00:00Z","units":100000000}]}`
+const validUsageBatch = `{"events":[{"source":"platform-test","event_id":"test-event","schema_version":1,"customer_id":"acme","sandbox_id":"sandbox-001","metric":"cpu_seconds","period_start":"2026-10-10T12:00:00Z","period_end":"2026-10-10T13:00:00Z","units":100000000}]}`
 
 type failingReader struct{}
 

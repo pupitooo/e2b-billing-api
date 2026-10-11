@@ -46,7 +46,6 @@ paths:
               acmeUsage:
                 summary: First Acme measurement from the assignment
                 value:
-                  batch_id: acme-batch-000001
                   events:
                     - source: platform-simulator
                       event_id: acme-cpu-000001
@@ -1144,12 +1143,10 @@ components:
         - pattern: '[^\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]'
     UsageBatch:
       type: object
+      description: The request envelope contains only events; additional fields are rejected with 400.
       additionalProperties: false
       required: [events]
       properties:
-        batch_id:
-          $ref: '#/components/schemas/Identifier'
-          description: Producer metadata; not stored or used for deduplication.
         events:
           type: array
           description: Measurements committed together; any invalid event or content conflict rejects the whole batch.
