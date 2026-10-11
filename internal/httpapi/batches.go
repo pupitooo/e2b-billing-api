@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -50,8 +49,7 @@ type requestError struct {
 }
 
 type usageBatch struct {
-	BatchID string
-	Events  []usage.Event
+	Events []usage.Event
 }
 
 type eventInput struct {
@@ -71,23 +69,17 @@ func parseUsageBatch(body []byte) (usageBatch, *requestError) {
 		return usageBatch{}, invalidJSON("The body must contain one valid UTF-8 JSON document.", "")
 	}
 
-	fields, err := decodeObject(body, []string{"batch_id", "events"})
+	fields, err := decodeObject(body, []string{"events"})
 	if err != nil {
 		return usageBatch{}, invalidJSON(err.Error(), "")
 	}
 
-	var batch usageBatch
-	var validationError *requestError
-	batch.BatchID, validationError = parseBatchID(fields)
-	if validationError != nil {
-		return batch, validationError
-	}
-
 	events, validationError := decodeBatchEvents(fields)
 	if validationError != nil {
-		return batch, validationError
+		return usageBatch{}, validationError
 	}
 
+	var batch usageBatch
 	batch.Events, validationError = parseBatchEvents(events)
 	if validationError != nil {
 		return usageBatch{}, validationError
@@ -98,28 +90,6 @@ func parseUsageBatch(body []byte) (usageBatch, *requestError) {
 
 func validUnicodeJSON(body []byte) bool {
 	return utf8.Valid(body) && json.Valid(body) && !hasUnpairedSurrogate(body)
-}
-
-func parseBatchID(fields map[string]json.RawMessage) (string, *requestError) {
-	raw, present := fields["batch_id"]
-	if !present {
-		return "", nil
-	}
-
-	if isNull(raw) {
-		return "", invalidBatch("batch_id must be a nonblank string when supplied.", "batch_id")
-	}
-
-	var id string
-	if err := json.Unmarshal(raw, &id); err != nil {
-		return id, invalidJSON("batch_id must be a JSON string.", "batch_id")
-	}
-
-	if strings.TrimSpace(id) == "" || strings.ContainsRune(id, '\x00') || len(id) > maxIdentifierBytes {
-		return id, invalidBatch("batch_id must contain non-whitespace text, no NUL, and at most 256 UTF-8 bytes.", "batch_id")
-	}
-
-	return id, nil
 }
 
 func decodeBatchEvents(fields map[string]json.RawMessage) ([]json.RawMessage, *requestError) {

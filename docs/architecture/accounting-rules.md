@@ -116,7 +116,7 @@ not assumed. Supporting multiple segments would require extending the current
 one-receipt-to-one-group relationship.
 
 The stable group key is `(customer_id, price_version_id, usage_month, billing_month)`.
-Sandbox and batch IDs do not create rounding boundaries. Preserve gross ticks
+Sandbox identities and HTTP batch boundaries do not create rounding boundaries. Preserve gross ticks
 separately from credit. `booked_charge_cents` remains a rounded gross projection,
 not a credit debit or a net invoice amount.
 

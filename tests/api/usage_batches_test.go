@@ -31,7 +31,6 @@ func TestPostUsageBatches(t *testing.T) {
 			wantBodyStatus  string
 		}{
 			body: `{
-			"batch_id": "happy-path-acme-october",
 			"events": [{
 				"schema_version": 1,
 				"source": "api-contract-test",
@@ -89,6 +88,31 @@ func TestPostUsageBatches(t *testing.T) {
 			t.Errorf("Response status = %q, want accepted", body.Status)
 		}
 	})
+	t.Run("usage batches removed metadata rejects all events", func(t *testing.T) {
+		tt := struct {
+			extraProperty  string
+			wantStatus     int
+			wantErrorCode  string
+			wantErrorField string
+			wantCount      int
+		}{
+			extraProperty:  `"batch_id":"producer-batch",`,
+			wantStatus:     400,
+			wantErrorCode:  "invalid_json",
+			wantErrorField: "",
+			wantCount:      0,
+		}
+
+		pool, source := apiFixture(t)
+		body := strings.Replace(batchJSON(t, apiEvents(source)), "{", "{"+tt.extraProperty, 1)
+
+		response := postUsage(t, body)
+
+		requireHTTPError(t, response, tt.wantStatus, tt.wantErrorCode, tt.wantErrorField, "", "")
+		if count := apiEventCount(t, pool, source); count != tt.wantCount {
+			t.Errorf("Batch with removed metadata %s stored %d events for source %q, want %d", tt.extraProperty, count, source, tt.wantCount)
+		}
+	})
 	t.Run("usage batches durable acceptance", func(t *testing.T) {
 		tt := struct {
 			units                  int64
@@ -114,7 +138,7 @@ func TestPostUsageBatches(t *testing.T) {
 		events := apiEvents(source)
 		events[0].Units, events[0].SchemaVersion = tt.units, tt.schemaVersion
 		before := time.Now().UTC().Truncate(time.Microsecond)
-		requireAccepted(t, postUsage(t, batchJSON(t, "first-batch", events)), tt.wantAcceptedStatus, tt.wantContentType, tt.wantAcceptedBodyStatus)
+		requireAccepted(t, postUsage(t, batchJSON(t, events)), tt.wantAcceptedStatus, tt.wantContentType, tt.wantAcceptedBodyStatus)
 		after := time.Now().UTC()
 		var firstReceipt time.Time
 		for _, event := range events {
@@ -183,7 +207,7 @@ func TestPostUsageBatches(t *testing.T) {
 		events[0].PeriodEnd = events[0].PeriodStart.Add(time.Hour)
 		events[1].PeriodStart = tt.secondStart
 		events[1].PeriodEnd = events[1].PeriodStart.Add(time.Hour)
-		requireAccepted(t, postUsage(t, batchJSON(t, "minimum-year", events)), tt.wantAcceptedStatus, tt.wantContentType, tt.wantAcceptedBodyStatus)
+		requireAccepted(t, postUsage(t, batchJSON(t, events)), tt.wantAcceptedStatus, tt.wantContentType, tt.wantAcceptedBodyStatus)
 		for _, event := range events {
 			var start, end time.Time
 			if err := pool.QueryRow(context.Background(), "SELECT period_start, period_end FROM usage_inbox WHERE source = $1 AND event_id = $2", source, event.EventID).Scan(&start, &end); err != nil {
@@ -199,7 +223,7 @@ func TestPostUsageBatches(t *testing.T) {
 		invalid := events[1]
 		invalid.EventID = "invalid-year"
 		invalid.PeriodStart = tt.invalidStart
-		requireHTTPError(t, postUsage(t, batchJSON(t, "invalid-year", []usage.Event{newEvent, invalid})), tt.wantRejectedStatus, tt.wantErrorCode, tt.wantErrorField, "", "")
+		requireHTTPError(t, postUsage(t, batchJSON(t, []usage.Event{newEvent, invalid})), tt.wantRejectedStatus, tt.wantErrorCode, tt.wantErrorField, "", "")
 		if after := apiSnapshot(t, pool, source); (after == before) != tt.wantSnapshotUnchanged {
 			t.Errorf("Invalid-year batch changed stored rows: before %s, after %s", before, after)
 		}
@@ -239,7 +263,7 @@ func TestPostUsageBatches(t *testing.T) {
 
 		pool, source := apiFixture(t)
 		events := apiEvents(source)
-		requireAccepted(t, postUsage(t, batchJSON(t, "original", events)), tt.wantAcceptedStatus, tt.wantContentType, tt.wantAcceptedBodyStatus)
+		requireAccepted(t, postUsage(t, batchJSON(t, events)), tt.wantAcceptedStatus, tt.wantContentType, tt.wantAcceptedBodyStatus)
 		if _, err := pool.Exec(context.Background(), `
 			UPDATE usage_inbox SET processed_at = received_at + interval '1 second'
 			WHERE source = $1 AND event_id = 'first'`, source); err != nil {
@@ -254,7 +278,7 @@ func TestPostUsageBatches(t *testing.T) {
 		events[0].PeriodStart = events[0].PeriodStart.In(time.FixedZone("retry start", tt.retryStartOffset))
 		events[0].PeriodEnd = events[0].PeriodEnd.In(time.FixedZone("retry end", tt.retryEndOffset))
 		retry := []usage.Event{events[1], events[0], events[0]}
-		requireAccepted(t, postUsage(t, batchJSON(t, "regrouped-retry", retry)), tt.wantAcceptedStatus, tt.wantContentType, tt.wantAcceptedBodyStatus)
+		requireAccepted(t, postUsage(t, batchJSON(t, retry)), tt.wantAcceptedStatus, tt.wantContentType, tt.wantAcceptedBodyStatus)
 		if after := apiSnapshot(t, pool, source); (after == before) != tt.wantSnapshotUnchanged {
 			t.Errorf("Retry changed stored rows: before %s, after %s", before, after)
 		}
@@ -262,13 +286,13 @@ func TestPostUsageBatches(t *testing.T) {
 		newEvent.EventID = "000-new-before-conflict"
 		changed := events[0]
 		changed.Units = tt.changedUnits
-		requireHTTPError(t, postUsage(t, batchJSON(t, "conflict", []usage.Event{newEvent, changed})), tt.wantConflictStatus, tt.wantConflictCode, "", source, changed.EventID)
+		requireHTTPError(t, postUsage(t, batchJSON(t, []usage.Event{newEvent, changed})), tt.wantConflictStatus, tt.wantConflictCode, "", source, changed.EventID)
 		if after := apiSnapshot(t, pool, source); (after == before) != tt.wantSnapshotUnchanged {
 			t.Errorf("Conflicting batch changed original rows: %s", after)
 		}
 		invalid := events[1]
 		invalid.Units = tt.invalidUnits
-		requireHTTPError(t, postUsage(t, batchJSON(t, "invalid", []usage.Event{newEvent, invalid})), tt.wantInvalidStatus, tt.wantInvalidCode, tt.wantInvalidField, "", "")
+		requireHTTPError(t, postUsage(t, batchJSON(t, []usage.Event{newEvent, invalid})), tt.wantInvalidStatus, tt.wantInvalidCode, tt.wantInvalidField, "", "")
 		if count := apiEventCount(t, pool, source); count != tt.wantCount {
 			t.Errorf("Rejected batch left %d events, want 2 original rows", count)
 		}
@@ -290,7 +314,7 @@ func TestPostUsageBatches(t *testing.T) {
 		events := apiEvents(source)
 		changed := events[0]
 		changed.Units = tt.changedUnits
-		requireHTTPError(t, postUsage(t, batchJSON(t, "incoming-conflict", append(events, changed))), tt.wantStatus, tt.wantErrorCode, "", source, changed.EventID)
+		requireHTTPError(t, postUsage(t, batchJSON(t, append(events, changed))), tt.wantStatus, tt.wantErrorCode, "", source, changed.EventID)
 		if count := apiEventCount(t, pool, source); count != tt.wantCount {
 			t.Errorf("Incoming conflict persisted %d events", count)
 		}
@@ -309,7 +333,7 @@ func TestPostUsageBatches(t *testing.T) {
 		}
 
 		pool, source := apiFixture(t)
-		body := batchJSON(t, "concurrent", apiEvents(source))
+		body := batchJSON(t, apiEvents(source))
 		clients := tt.clients
 		start := make(chan struct{})
 		results := make(chan error, clients)
@@ -371,7 +395,7 @@ func TestPostUsageBatches(t *testing.T) {
 			events[index].EventID = fmt.Sprintf("event-%04d", index)
 			events[index].Units = int64(index)
 		}
-		requireAccepted(t, postUsage(t, batchJSON(t, "maximum-batch", events)), tt.wantAcceptedStatus, tt.wantContentType, tt.wantAcceptedBodyStatus)
+		requireAccepted(t, postUsage(t, batchJSON(t, events)), tt.wantAcceptedStatus, tt.wantContentType, tt.wantAcceptedBodyStatus)
 		var count, receipts int
 		var units int64
 		if err := pool.QueryRow(context.Background(), `
@@ -466,9 +490,9 @@ func apiEvents(source string) []usage.Event {
 	return []usage.Event{first, second}
 }
 
-// batchJSON serializes domain fixtures as explicit transport fields while
+// batchJSON serializes domain fixtures in an events-only envelope while
 // retaining integer precision and each timestamp's selected offset.
-func batchJSON(t *testing.T, batchID string, events []usage.Event) string {
+func batchJSON(t *testing.T, events []usage.Event) string {
 	t.Helper()
 	items := make([]map[string]any, 0, len(events))
 	for _, event := range events {
@@ -479,7 +503,7 @@ func batchJSON(t *testing.T, batchID string, events []usage.Event) string {
 			"period_end":   event.PeriodEnd.Format(time.RFC3339Nano), "units": event.Units,
 		})
 	}
-	body, err := json.Marshal(map[string]any{"batch_id": batchID, "events": items})
+	body, err := json.Marshal(map[string]any{"events": items})
 	if err != nil {
 		t.Fatalf("Encode explicit HTTP fixture: %v", err)
 	}
