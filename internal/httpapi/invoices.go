@@ -5,30 +5,41 @@ import (
 	"time"
 )
 
+type invoiceHandler struct {
+	store   Store
+	timeout time.Duration
+}
+
 func registerInvoiceRoutes(mux *http.ServeMux, store Store, timeout time.Duration) {
-	mux.HandleFunc("POST /customers/{customer_id}/invoices", func(w http.ResponseWriter, r *http.Request) {
-		requiredFields := []string{
-			"month",
-		}
+	handler := invoiceHandler{store: store, timeout: timeout}
 
-		var input struct {
-			Month string `json:"month"`
-		}
-		if !commandJSON(w, r, &input, requiredFields) {
-			return
-		}
+	mux.HandleFunc("POST /customers/{customer_id}/invoices", handler.closeMonth)
+	mux.HandleFunc("GET /customers/{customer_id}/invoices/{month}", handler.getInvoice)
+}
 
-		ctx, cancel := financialContext(r, timeout)
-		defer cancel()
+func (handler invoiceHandler) closeMonth(w http.ResponseWriter, r *http.Request) {
+	requiredFields := []string{
+		"month",
+	}
 
-		invoice, err := store.CloseMonth(ctx, r.PathValue("customer_id"), input.Month)
-		financialResult(w, invoice, err)
-	})
-	mux.HandleFunc("GET /customers/{customer_id}/invoices/{month}", func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := financialContext(r, timeout)
-		defer cancel()
+	var input struct {
+		Month string `json:"month"`
+	}
+	if !commandJSON(w, r, &input, requiredFields) {
+		return
+	}
 
-		invoice, err := store.Invoice(ctx, r.PathValue("customer_id"), r.PathValue("month"))
-		financialResult(w, invoice, err)
-	})
+	ctx, cancel := financialContext(r, handler.timeout)
+	defer cancel()
+
+	invoice, err := handler.store.CloseMonth(ctx, r.PathValue("customer_id"), input.Month)
+	financialResult(w, invoice, err)
+}
+
+func (handler invoiceHandler) getInvoice(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := financialContext(r, handler.timeout)
+	defer cancel()
+
+	invoice, err := handler.store.Invoice(ctx, r.PathValue("customer_id"), r.PathValue("month"))
+	financialResult(w, invoice, err)
 }

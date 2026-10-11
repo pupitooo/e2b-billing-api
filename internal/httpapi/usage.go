@@ -12,21 +12,35 @@ import (
 	"e2b/billing-api/internal/usage"
 )
 
-// registerUsageRoutes shares one admission budget across all usage requests.
-// Excess batches receive retryable 503 before their request bodies are parsed.
-func registerUsageRoutes(mux *http.ServeMux, store BatchStore, timeout time.Duration, maxInFlight int) {
-	inFlight := make(chan struct{}, maxInFlight)
-	mux.HandleFunc("POST /usage/batches", func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case inFlight <- struct{}{}:
-			defer func() { <-inFlight }()
-		default:
-			writeInboxUnavailable(w)
-			return
-		}
+type usageHandler struct {
+	store    BatchStore
+	timeout  time.Duration
+	inFlight chan struct{}
+}
 
-		postUsageBatches(w, r, store, timeout)
-	})
+// registerUsageRoutes shares one admission budget across all usage requests.
+func registerUsageRoutes(mux *http.ServeMux, store BatchStore, timeout time.Duration, maxInFlight int) {
+	handler := usageHandler{
+		store:    store,
+		timeout:  timeout,
+		inFlight: make(chan struct{}, maxInFlight),
+	}
+
+	mux.HandleFunc("POST /usage/batches", handler.postUsageBatches)
+}
+
+// postUsageBatches rejects excess batches with retryable 503 before parsing
+// their bodies and keeps admitted requests within the shared budget until completion.
+func (handler usageHandler) postUsageBatches(w http.ResponseWriter, r *http.Request) {
+	select {
+	case handler.inFlight <- struct{}{}:
+		defer func() { <-handler.inFlight }()
+	default:
+		writeInboxUnavailable(w)
+		return
+	}
+
+	postUsageBatches(w, r, handler.store, handler.timeout)
 }
 
 func postUsageBatches(w http.ResponseWriter, r *http.Request, store BatchStore, ingestionTimeout time.Duration) {
