@@ -440,7 +440,7 @@ function invoicesHTML() {
           `The browser clock suggests ${state.month} has not ended. The server remains authoritative and may return 422. October/November 2026 assignment invoices require the server to reach 2026-12-01T00:00:00Z.`,
         )
       : "") +
-    `<div class="columns">${operationForm("invoices", "Issue or retry monthly invoice", fields, "Issue invoice")}${panel("Read an issued invoice", '<p class="section-note">Retrieve the selected customer/month snapshot. GET has no financial effects.</p><div class="actions"><button class="primary" id="read-invoice">Load invoice</button><button id="print-invoice">Print loaded invoice</button></div>')}</div>` +
+    `<div class="columns">${operationForm("invoices", "Issue or retry monthly invoice", fields, "Issue invoice")}${panel("Read an issued invoice", '<p class="section-note">Retrieve the selected customer\'s snapshot for the Billing month entered in the invoice form. Issue and Load use the same month. GET has no financial effects.</p><div class="actions"><button class="primary" id="read-invoice">Load invoice</button><button id="print-invoice">Print loaded invoice</button></div>')}</div>` +
     `<div id="invoice-output">${empty("No invoice loaded", "Load an issued invoice or issue a completed month to display its stored lines.")}</div>`
   );
 }
@@ -879,12 +879,15 @@ $("#content").addEventListener("click", async (event) => {
       return;
     }
     if (button.id === "read-invoice") {
+      const month = validMonth(
+        $('#content form[data-operation="invoices"] [name="month"]').value,
+      );
       button.disabled = true;
       try {
         const result = await client.send(
           {
             method: "GET",
-            path: customerPath(state.customer, `invoices/${state.month}`),
+            path: customerPath(state.customer, `invoices/${month}`),
           },
           "Read issued invoice",
         );
