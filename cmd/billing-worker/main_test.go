@@ -4,13 +4,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
 
 // loadConfig requires every worker setting, preserves valid overrides, and
-// rejects invalid durations, empty heartbeat paths, and unsafe health windows.
+// rejects invalid durations, business clocks, empty heartbeat paths, and unsafe health windows.
 func TestLoadConfig(t *testing.T) {
 	filename := filepath.Join(t.TempDir(), "custom heartbeat")
 	tests := []struct {
@@ -20,7 +21,22 @@ func TestLoadConfig(t *testing.T) {
 		want              config
 		wantError         bool
 		wantErrorContains string
+		wantClockTime     string
 	}{
+		{
+			name:      "fixed business time is configured at startup",
+			overrides: map[string]string{"E2B_DEMO_NOW": "2026-11-01T08:00:00+08:00"},
+			want: config{pollInterval: time.Second, batchTimeout: 5 * time.Second,
+				shutdownTimeout: 5 * time.Second, heartbeatMaxAge: 15 * time.Second,
+				heartbeatFile: "/tmp/billing-worker-heartbeat"},
+			wantError: false, wantClockTime: "2026-11-01T00:00:00Z",
+		},
+		{
+			name:      "invalid demo clock prevents startup",
+			overrides: map[string]string{"E2B_DEMO_NOW": "2026-11-01"},
+			wantError: true, wantErrorContains: "E2B_DEMO_NOW",
+		},
+
 		{
 			name: "all explicit overrides are retained",
 			overrides: map[string]string{
@@ -218,7 +234,17 @@ func TestLoadConfig(t *testing.T) {
 				t.Fatalf("loadConfig(%v) error = %v; want nil", tt.overrides, err)
 			}
 
-			if got != tt.want {
+			if got.now == nil {
+				t.Fatal("loadConfig clock provider = nil; want a configured business clock")
+			}
+
+			if tt.wantClockTime != "" && got.now().Format(time.RFC3339Nano) != tt.wantClockTime {
+				t.Errorf("loadConfig(%v) time=%s; want %s", tt.overrides, got.now(), tt.wantClockTime)
+			}
+
+			got.now = nil
+
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("loadConfig(%v) = %+v; want %+v", tt.overrides, got, tt.want)
 			}
 		})

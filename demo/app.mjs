@@ -1,3 +1,4 @@
+import { businessTime, loadRuntime } from "./runtime.mjs";
 import { APIClient } from "./transport.mjs";
 import { AssignmentRunner, workflowRequest } from "./workflow.mjs";
 import {
@@ -85,7 +86,8 @@ const x = (value) =>
   );
 const pretty = (value) => JSON.stringify(value, null, 2);
 const newKey = () => `demo-${crypto.randomUUID()}`;
-const now = () => new Date().toISOString();
+let runtime = null;
+const now = () => businessTime(runtime).toISOString();
 let storageFailure = "";
 let saved = {};
 try {
@@ -99,6 +101,8 @@ let state = {
   source: saved.source || `demo-ui/${crypto.randomUUID()}`,
   history: saved.history || [],
   assignment: saved.assignment || null,
+  walkthroughScenario: saved.walkthroughScenario || "billing-assignment",
+  walkthroughs: saved.walkthroughs || {},
 };
 let caches = new Map();
 let plan = null;
@@ -223,8 +227,8 @@ async function refreshCustomer(customer = state.customer, month = state.month) {
       `${customer} ${month} limit status`,
     ),
   ]);
-  caches.set(`${customer}/${month}`, { credit, limit, fetched: now() });
-  return { credit, limit, fetched: now() };
+  caches.set(`${customer}/${month}`, { credit, limit, fetched: new Date().toISOString() });
+  return { credit, limit, fetched: new Date().toISOString() };
 }
 function metricsHTML(snapshot) {
   const credit = snapshot?.credit;
@@ -424,7 +428,7 @@ function limitsHTML() {
   );
 }
 function invoicesHTML() {
-  const eligible = invoiceEligible(state.month);
+  const eligible = invoiceEligible(state.month, businessTime(runtime));
   const fields = field("month", "Billing month · UTC", state.month, {
     type: "month",
     full: true,
@@ -437,7 +441,7 @@ function invoicesHTML() {
     ) +
     (!eligible
       ? notice(
-          `The browser clock suggests ${state.month} has not ended. The server remains authoritative and may return 422. October/November 2026 assignment invoices require the server to reach 2026-12-01T00:00:00Z.`,
+          `The displayed clock suggests ${state.month} has not ended. The API decides eligibility and may return 422. The fixed-clock invoice demo uses 2026-11-01T00:00:00Z; see the walkthrough guide for the two-phase assignment.`,
         )
       : "") +
     `<div class="columns">${operationForm("invoices", "Issue or retry monthly invoice", fields, "Issue invoice")}${panel("Read an issued invoice", '<p class="section-note">Retrieve the selected customer\'s snapshot for the Billing month entered in the invoice form. Issue and Load use the same month. GET has no financial effects.</p><div class="actions"><button class="primary" id="read-invoice">Load invoice</button><button id="print-invoice">Print loaded invoice</button></div><p id="invoice-load-status" class="section-note" role="status" aria-live="polite"></p>')}</div>` +
@@ -509,7 +513,7 @@ function assignmentHTML() {
     return (
       intro(
         "Assignment walkthrough",
-        "Loading the published billing-assignment scenario…",
+        `Loading the published ${state.walkthroughScenario} scenario…`,
       ) +
       empty(
         "Loading scenario",
@@ -523,8 +527,9 @@ function assignmentHTML() {
   const last = state.assignment.last;
   return (
     intro(
-      "The complete billing assignment",
+      plan.name === "billing-demo-invoice" ? "October invoice walkthrough" : "The complete billing assignment",
       "Advance one reviewed step at a time. Expected results are loaded from the published simulator fixture, not calculated by this GUI.",
+      `<label>Scenario <select id="walkthrough-scenario" ${runner.running ? "disabled" : ""}><option value="billing-assignment" ${state.walkthroughScenario === "billing-assignment" ? "selected" : ""}>Complete assignment</option><option value="billing-demo-invoice" ${state.walkthroughScenario === "billing-demo-invoice" ? "selected" : ""}>October invoice with add-on</option></select></label>` +
       '<button class="primary" id="next-step" ' +
         (runner.running || progress >= plan.steps.length ? "disabled" : "") +
         ">▷ " +
@@ -534,7 +539,9 @@ function assignmentHTML() {
         ">Stop polling</button>",
     ) +
     notice(
-      "Use fresh seeded accounts and the original seed prices. Steps before invoice closing can be demonstrated now; the full October/November 2026 workflow requires a server clock of at least 2026-12-01T00:00:00Z. Late usage after closing follows its actual receipt month, so fixed November expectations also require compatible receipt times. No browser control changes server time.",
+      plan.name === "billing-demo-invoice"
+        ? "Use fresh Cyberdyne seed data and E2B_DEMO_NOW=2026-11-01T00:00:00Z for both API and worker. Expected invoice: usage $6.17 + $12.00, add-on $20.00, total $38.17. Closing includes processed usage only."
+        : "Use fresh seeded accounts and the original seed prices. With fixed clocks, run through step 18 at 2026-11-01T00:00:00Z, then restart API, worker and portal at 2026-12-01T00:00:00Z for step 19. Keep the database and this cursor. Late usage after closing follows its receipt month.",
     ) +
     `<p class="section-note">${progress} / ${plan.steps.length} verified steps · Source <code>${x(state.assignment.source)}</code> · Cursor survives reload. Lost-response steps send once, discard the observed success for demonstration, then repeat the same request.</p><div class="progress"><div style="width:${(progress / plan.steps.length) * 100}%"></div></div>` +
     `<div class="workflow-grid"><section class="panel"><ol class="workflow-list">${plan.steps.map((item, i) => `<li class="workflow-step ${i < progress ? "done" : i === progress ? "current" : ""}"><span class="step-number">${i < progress ? "✓" : i + 1}</span><div class="step-title"><button data-step="${i}">${x(item.name)}</button><div class="step-path">${x(item.request.method)} ${x(item.request.path)}</div></div></li>`).join("")}</ol></section><div>${panel(`Step ${index + 1} · ${step.name}`, `<p class="section-note">${x(request.method)} ${x(request.path)}${step.await ? " · polls for committed accounting" : ""}</p><h4 class="eyebrow">REQUEST</h4><pre>${x(request.body || "(no request body)")}</pre><h4 class="eyebrow" style="margin-top:22px">LITERAL EXPECTED RESULT</h4><pre>${x(pretty(step.want))}</pre>`)}${last ? panel("Last executed step", `<p class="section-note">${x(last.name)}</p>${notice(last.differences.length ? last.differences.join("\n") : "The declared expected result matched.", last.differences.length ? "error" : "success")}<pre>${x(pretty(last.actual))}</pre>`) : ""}</div></div>`
@@ -649,7 +656,7 @@ async function sendForm(form, request) {
   }
 }
 async function loadPlan() {
-  const response = await fetch("/simulator/billing-assignment.json", {
+  const response = await fetch(`/simulator/${state.walkthroughScenario}.json`, {
     cache: "no-store",
   });
   if (!response.ok)
@@ -671,6 +678,7 @@ async function loadPlan() {
     client,
     save: (assignment) => {
       state.assignment = assignment;
+      state.walkthroughs[state.walkthroughScenario] = assignment;
       saveState();
     },
     changed: () => {
@@ -697,6 +705,27 @@ function showQuery(title, sql, target) {
   );
   target.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
+
+$("#content").addEventListener("change", async (event) => {
+  if (event.target.name === "unlimited")
+    event.target.form.querySelector('[name="limit"]').disabled = event.target.checked;
+  if (event.target.id !== "walkthrough-scenario") return;
+  try {
+    if (runner?.running) throw new Error("Wait for the running scenario step to finish.");
+    const scenario = event.target.value;
+    if (!["billing-assignment", "billing-demo-invoice"].includes(scenario))
+      throw new Error("Unknown walkthrough scenario.");
+    state.walkthroughs[state.walkthroughScenario] = state.assignment;
+    state.walkthroughScenario = scenario;
+    state.assignment = state.walkthroughs[scenario] || null;
+    plan = null;
+    runner = null;
+    selectedStep = null;
+    render();
+    saveState();
+    await loadPlan();
+  } catch (error) { describeError(error); }
+});
 
 $("#content").addEventListener("submit", async (event) => {
   const form = event.target;
@@ -741,11 +770,6 @@ $("#content").addEventListener("submit", async (event) => {
   } catch (error) {
     describeError(error);
   }
-});
-$("#content").addEventListener("change", (event) => {
-  if (event.target.name === "unlimited")
-    event.target.form.querySelector('[name="limit"]').disabled =
-      event.target.checked;
 });
 $("#content").addEventListener("click", async (event) => {
   const button = event.target.closest("button");
@@ -1031,11 +1055,23 @@ async function health() {
     $("#api-health").className = "badge red";
   }
 }
+async function refreshRuntime() {
+  try {
+    const next = await loadRuntime();
+    const changed = JSON.stringify(runtime) !== JSON.stringify(next);
+    runtime = next;
+    tick();
+    if (changed) render();
+  } catch {
+    runtime = null;
+    tick();
+  }
+}
 function tick() {
-  $("#utc-clock").textContent = new Date()
-    .toISOString()
-    .slice(0, 19)
-    .replace("T", " ");
+  const mode = runtime?.clock_mode === "fixed"
+    ? "SIMULATED UTC"
+    : runtime ? "BROWSER UTC" : "BROWSER UTC · metadata unavailable";
+  $("#utc-clock").textContent = `${mode} ${now().slice(0, 19).replace("T", " ")}`;
 }
 if (
   ![...$("#customer").options].some((option) => option.value === state.customer)
@@ -1057,7 +1093,9 @@ render();
 health();
 tick();
 loadPlan().catch(describeError);
+refreshRuntime();
 setInterval(health, HEALTH_POLL_MS);
+setInterval(refreshRuntime, HEALTH_POLL_MS);
 setInterval(tick, 1_000);
 if (storageFailure)
   flash(`Saved browser state could not be loaded: ${storageFailure}.`, true);

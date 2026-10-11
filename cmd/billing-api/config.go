@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"e2b/billing-api/internal/billingclock"
 )
 
 const (
@@ -21,6 +23,7 @@ const (
 )
 
 type config struct {
+	now               func() time.Time
 	startupTimeout    time.Duration
 	readHeaderTimeout time.Duration
 	readTimeout       time.Duration
@@ -110,6 +113,12 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if cfg.readHeaderTimeout >= cfg.shutdownTimeout ||
 		cfg.writeTimeout >= cfg.shutdownTimeout-cfg.readHeaderTimeout {
 		return config{}, fmt.Errorf("E2B_API_SHUTDOWN_TIMEOUT must exceed the header and write timeouts combined")
+	}
+
+	var err error
+	cfg.now, err = billingclock.New(getenv("E2B_DEMO_NOW"))
+	if err != nil {
+		return config{}, err
 	}
 
 	return cfg, nil

@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+mkdir -p /tmp/e2b-demo-runtime
+python /source/site/runtime.py
+
 # Supervise preview and gateway together; an exited child fails the container.
 mkdocs serve --strict --config-file /source/site/mkdocs.yml --dev-addr 127.0.0.1:8000 &
 preview_pid=$!

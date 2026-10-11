@@ -26,7 +26,14 @@ func newPostgresStore(t testing.TB, pool *pgxpool.Pool, config postgres.Config) 
 // Endpoint inputs and expected responses remain in the calling scenario.
 func newBillingHandler(t testing.TB, store *postgres.Store, timeout time.Duration, maxInFlight int) http.Handler {
 	t.Helper()
-	handler, err := httpapi.NewHandler(store, timeout, maxInFlight)
+	return newBillingHandlerWithClock(t, store, timeout, maxInFlight, nil)
+}
+
+// newBillingHandlerWithClock shares the scenario business clock with receipt
+// ingestion and current-month transport decisions without changing runtime timers.
+func newBillingHandlerWithClock(t testing.TB, store *postgres.Store, timeout time.Duration, maxInFlight int, now func() time.Time) http.Handler {
+	t.Helper()
+	handler, err := httpapi.NewHandler(store, timeout, maxInFlight, now)
 	if err != nil {
 		t.Fatalf("NewHandler(timeout=%s, maxInFlight=%d): %v", timeout, maxInFlight, err)
 	}

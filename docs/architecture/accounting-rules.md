@@ -65,7 +65,11 @@ publication, without changing credit, usage ratings, invoices,
 or numbering. A retry of an already issued invoice returns its original snapshot.
 Schedulers must also select completed months. Integration tests supply an explicit
 server clock to check the exact UTC boundary and run fixed assignment fixtures;
-HTTP callers cannot override that clock.
+HTTP callers cannot override that clock. API and worker can select a fixed
+business instant at startup with `E2B_DEMO_NOW`; this uses the same completed-month
+guard, receipt routing, pricing and audit rules. The unset configuration samples
+real time on each operation. Operational deadlines and heartbeats remain real.
+See [clock configuration](../guides/runtime-configuration.md#shared-business-clock).
 
 ## Exact money and credit
 

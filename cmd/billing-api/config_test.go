@@ -1,13 +1,14 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
 
 // loadConfig returns explicit runtime budgets for defaults and overrides, and
-// rejects malformed or incompatible settings instead of silently starting.
+// rejects malformed budgets and business clocks instead of silently starting.
 func TestLoadConfig(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -15,7 +16,26 @@ func TestLoadConfig(t *testing.T) {
 		want              config
 		wantError         bool
 		wantErrorContains string
+		wantClockTime     string
 	}{
+		{
+			name:        "fixed business time is configured at startup",
+			environment: map[string]string{"E2B_DEMO_NOW": "2026-11-01T08:00:00+08:00"},
+			want: config{
+				startupTimeout: 10 * time.Second, readHeaderTimeout: 5 * time.Second,
+				readTimeout: 15 * time.Second, writeTimeout: 35 * time.Second,
+				idleTimeout: 90 * time.Second, ingestionTimeout: 10 * time.Second,
+				rollbackTimeout: 5 * time.Second, shutdownTimeout: 45 * time.Second,
+				poolMaxConns: 8, poolMinConns: 2, maxInFlight: 32,
+			},
+			wantError: false, wantClockTime: "2026-11-01T00:00:00Z",
+		},
+		{
+			name:        "invalid demo clock prevents startup",
+			environment: map[string]string{"E2B_DEMO_NOW": "2026-11-01"},
+			wantError:   true, wantErrorContains: "E2B_DEMO_NOW",
+		},
+
 		{
 			name:        "empty environment uses documented budgets",
 			environment: nil,
@@ -177,7 +197,17 @@ func TestLoadConfig(t *testing.T) {
 				t.Fatalf("loadConfig(%v) error = %v; want nil", tt.environment, err)
 			}
 
-			if got != tt.want {
+			if got.now == nil {
+				t.Fatal("loadConfig clock provider = nil; want a configured business clock")
+			}
+
+			if tt.wantClockTime != "" && got.now().Format(time.RFC3339Nano) != tt.wantClockTime {
+				t.Errorf("loadConfig(%v) time=%s; want %s", tt.environment, got.now(), tt.wantClockTime)
+			}
+
+			got.now = nil
+
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("loadConfig(%v) = %+v; want %+v", tt.environment, got, tt.want)
 			}
 		})

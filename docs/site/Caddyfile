@@ -8,6 +8,13 @@
 	header Cache-Control "no-cache"
 
 	# The demonstration is a separate static browser client, with no Go handlers.
+	handle /demo/runtime.json {
+		header Cache-Control "no-store"
+		root * /tmp/e2b-demo-runtime
+		rewrite * /runtime.json
+		file_server
+	}
+
 	handle /demo {
 		redir /demo/ 308
 	}

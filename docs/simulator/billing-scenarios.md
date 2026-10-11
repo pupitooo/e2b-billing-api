@@ -5,6 +5,7 @@
 - [Run the complete assignment](#run-the-complete-assignment)
 - [Start an isolated assignment environment](#start-an-isolated-assignment-environment)
 - [Scenarios and review entry points](#scenarios-and-review-entry-points)
+- [Fixed-clock invoice demo](#billing-demo-invoice)
 - [Billing assignment](#billing-assignment)
 - [Command retries and conflicts](#command-retries-and-conflicts)
 - [Exact sub-cent credit](#exact-sub-cent-credit)
@@ -35,8 +36,7 @@ fail immediately if earlier billing actions have changed either account. Each se
 scenario also requires its own fresh seed accounts; acceptance tests create private
 schemas automatically. Changing `SOURCE` isolates receipt identities, not account balances.
 
-Invoice closure requires a completed UTC calendar month. The real API uses its
-server clock: October closes no earlier than `2026-11-01T00:00:00Z`, and November
+Invoice closure requires a completed UTC calendar month. The API uses its configured business clock (real time by default): October closes no earlier than `2026-11-01T00:00:00Z`, and November
 no earlier than `2026-12-01T00:00:00Z`. Before the October boundary, the assignment
 completes steps 1–12 and stops at step 13 with HTTP `422`; earlier committed
 commands remain stored. After the October boundary but before the November
@@ -44,9 +44,10 @@ boundary, it cannot issue the November invoice.
 The exact November invoice also requires the late October receipt to route to
 November. Receipt in December or later routes that charge to a later billing
 month, so waiting until December does not by itself reproduce every fixture result.
+For a live fixed-clock walkthrough, use the [demo environment](../guides/demo-console.md#fixed-clock-invoice-demo). The short invoice scenario needs one fixed November instant; the complete assignment advances from November to December between steps 18 and 19.
 For complete verification independent of the runtime calendar, run
 `make inbox-test RUN=BillingSimulator`. Those
-isolated integration servers declare an invoice clock at `2026-12-01T00:00:00Z`, while
+isolated integration servers declare an invoice clock at `2026-12-01T00:00:00Z`, and declare November receipt times for late usage, while
 exercising the same month guard, router, worker, and persistence. The price-version
 case additionally declares separate insertion times, described below. Requests have no
 clock override.
@@ -145,6 +146,32 @@ version 1, and UTC intervals. Amounts are USD unless labeled as cents or ticks;
 processing errors, and state version. Completed accounting reads require zero
 pending events and errors unless the row explicitly expects quarantine.
 HTTP `202` means durable receipt; financial processing is checked by later reads.
+
+## billing-demo-invoice
+
+The [nine-step fixture](billing-demo-invoice.json) demonstrates a past-month invoice
+against the real API and worker with `E2B_DEMO_NOW=2026-11-01T00:00:00Z`. Follow
+[the fresh fixed-clock environment](../guides/demo-console.md#fixed-clock-invoice-demo).
+Use fresh Cyberdyne seed state. Existing Acme usage is irrelevant to Cyberdyne's
+closure; prior Cyberdyne operations or invoices can invalidate the expectations.
+
+| Step | Input or action | Literal expected result |
+| --- | --- | --- |
+| 1 | Read Cyberdyne credit. | Balance 0; pending/errors 0; state version 0. |
+| 2 | Buy `concurrency_pack` on `2026-10-05`. | HTTP `200`; start month October; monthly price 2_000 cents. |
+| 3 | Send four `cpu_seconds` events: sandbox A, October 5, `100_000_000` units; B, October 10, `23_456_789`; A, October 20, `150_000_000`; B, October 25, `50_000_000`. Each interval is 12:00–13:00 UTC. | HTTP `202`; first two use 5 cents per million, last two use 6. |
+| 4 | Wait for accounting through credit reads. | Balance 0; pending/errors 0; state version 5. |
+| 5 | Read October gross usage. | `1_817_283_945` ticks; unlimited; pending/errors 0. |
+| 6 | Issue October invoice, discard successful reply and retry unchanged. | HTTP `200`; `CYBERDYNE-0001`; gross usage `1_817_283_945` ticks; credit 0; total 3_817 cents. |
+| 7 | Read October invoice. | Complete snapshot equals step 6. |
+| 8 | Repeat October issuance. | Same number, issue time and complete snapshot. |
+| 9 | Read final credit state. | Balance 0; pending/errors 0; state version 6. |
+
+The invoice aggregates by price version and usage month, not sandbox. Its lines
+are usage **6.17 USD** (`123_456_789` units), usage **12 USD** (`200_000_000`
+units), add-on **20 USD**, and credit **0 USD**: total **38.17 USD**. It samples
+the configured November issue time while preserving October consumption prices.
+No schema migration or seed price changes are required.
 
 ## Billing assignment
 

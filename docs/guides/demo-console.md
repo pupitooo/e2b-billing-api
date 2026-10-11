@@ -57,7 +57,7 @@ by ID. There is no customer-creation API in the current application.
 | Add-ons | Purchase a catalog add-on and inspect its stored subscription snapshot. |
 | Limits | Set, raise or remove a limit; query the selected month or server's current month. Zero is a real limit; null means unlimited. |
 | Invoices | Issue/retry a completed UTC month, retrieve its immutable snapshot, inspect exact audit values, and print the document. |
-| Assignment demo | Execute each published assignment step and compare the actual response to its literal expected result. |
+| Assignment demo | Select the complete assignment or fixed-clock October invoice walkthrough; execute literal expectations with separate saved cursors. |
 | Database | Open or preview prepared inspection statements for the selected context. |
 | Service | Prepare scoped pending cleanup or release of one repaired error; export/clear browser checkpoints independently of database state. |
 | Request history | Inspect original JSON and responses; retry a saved request with exactly the same bytes. |
@@ -108,13 +108,64 @@ Timeout or connection failure leaves the commit outcome unknown; it is not proof
 of rollback. Browser storage is a convenience for this demonstration, not a
 replacement for the Go simulator's durable producer buffering.
 
-The assignment runner loads the existing `billing-assignment.json` fixture from
-the published portal; its [24-step table](../simulator/billing-scenarios.md#billing-assignment)
-documents each action and expected result. It advances only when the declared status and response match.
+The walkthrough runner loads `billing-assignment.json` or `billing-demo-invoice.json` from
+the published portal; the assignment [24-step table](../simulator/billing-scenarios.md#billing-assignment)
+documents each assignment action and expected result. Each walkthrough retains its own cursor and captures when switching scenarios. It advances only when the declared status and response match.
 Accounting checks poll briefly with a visible stop control; failed expectations
 retain the current step. For declared response-loss faults, the runner sends the
 command, simulates losing its successful reply, and repeats the same original
 request. This demonstrates server idempotency without causing a real outage.
+
+## Fixed-clock invoice demo
+
+Use a previously unused Compose project and free ports, preserving the original
+seed catalog. These commands create a separate database; choose another project
+name for another fresh financial run:
+
+```sh
+export COMPOSE_PROJECT_NAME=e2b-clock-demo
+export E2B_POSTGRES_PORT=25432 E2B_API_PORT=28081 E2B_DOCS_PORT=28082
+export E2B_DEMO_NOW=2026-11-01T00:00:00Z
+make up SERVICE=postgres
+make migrate
+make up
+make links
+```
+
+Open that project's GUI, select **Assignment demo**, then **October invoice with
+add-on**. The clock displays **SIMULATED UTC**. Execute all nine steps; this
+scenario requires fresh Cyberdyne accounts and does not grant credit. It purchases
+`concurrency_pack` for October, sends four measurements from two sandboxes,
+waits for processing, closes October, and reads/retries the immutable invoice.
+The [literal scenario and step table](../simulator/billing-scenarios.md#billing-demo-invoice)
+show the expected **38.17 USD** total, two usage lines and the add-on.
+
+The same JSON is runnable through the CLI:
+
+```sh
+make simulate SCENARIO=billing-demo-invoice SOURCE=clock-demo STATE=/state/clock-invoice.json
+```
+
+Run GUI or CLI on fresh accounts, rather than both on the same already modified
+account. A new producer source isolates event identities, not financial state.
+To return to real time, `unset E2B_DEMO_NOW` and recreate all three services with
+`make up`. The clock metadata is supplied by the portal from startup configuration,
+not by a Go endpoint; [clock configuration](runtime-configuration.md#shared-business-clock)
+explains timestamp and runtime-timer responsibilities.
+
+For the complete assignment, keep the November fixed clock through step 18,
+including late October receipt and November accounting. Between steps 18 and 19:
+
+```sh
+make stop SERVICE=api
+make stop SERVICE=worker
+export E2B_DEMO_NOW=2026-12-01T00:00:00Z
+make up
+```
+
+Resume the existing walkthrough at step 19, keeping its database and cursor.
+Sending the late October receipt with a December clock would bill it in December
+instead of the declared November fixture.
 
 ## Fresh assignment data
 

@@ -51,7 +51,7 @@ func (s *Store) accountReceipt(ctx context.Context, candidate receipt) error {
 	var missingPrice *accounting.MissingPriceError
 	err := s.transact(ctx, func(tx pgx.Tx) error {
 		var err error
-		missingPrice, err = processReceipt(ctx, tx, candidate)
+		missingPrice, err = processReceipt(ctx, tx, candidate, s.now().UTC().Truncate(time.Microsecond))
 
 		return err
 	})
@@ -72,7 +72,7 @@ func (s *Store) accountReceipt(ctx context.Context, candidate receipt) error {
 
 // processReceipt keeps financial writes atomic and returns a catalog incident
 // separately from transaction failure so its quarantine can commit without charges.
-func processReceipt(ctx context.Context, tx pgx.Tx, candidate receipt) (*accounting.MissingPriceError, error) {
+func processReceipt(ctx context.Context, tx pgx.Tx, candidate receipt, processedAt time.Time) (*accounting.MissingPriceError, error) {
 	credit, err := lockAccount(ctx, tx, candidate.event.CustomerID)
 	if errors.Is(err, billing.ErrNotFound) {
 		return nil, quarantine(ctx, tx, candidate.event, "unknown customer")
@@ -121,7 +121,7 @@ func processReceipt(ctx context.Context, tx pgx.Tx, candidate receipt) (*account
 		return nil, quarantine(ctx, tx, item.event, err.Error())
 	}
 
-	return nil, persistRating(ctx, tx, item, rating, month, credit)
+	return nil, persistRating(ctx, tx, item, rating, month, credit, processedAt)
 }
 
 func loadPendingReceipt(ctx context.Context, tx pgx.Tx, key usage.Event) (receipt, error) {
@@ -185,7 +185,7 @@ func quarantine(ctx context.Context, tx pgx.Tx, event usage.Event, message strin
 	return err
 }
 
-func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounting.Rating, month time.Time, credit accounting.Amount) error {
+func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounting.Rating, month time.Time, credit accounting.Amount, processedAt time.Time) error {
 	e := item.event
 	allocation := accounting.AllocateCredit(rating.Charge, credit)
 	group, gross, err := cumulativeGross(ctx, tx, e.CustomerID, rating.Price, rating.UsageMonth, month, rating.Charge)
@@ -209,7 +209,7 @@ func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounti
 		return err
 	}
 
-	if err := recordCreditDebit(ctx, tx, e, group, allocation.Used); err != nil {
+	if err := recordCreditDebit(ctx, tx, e, group, allocation.Used, processedAt); err != nil {
 		return err
 	}
 
@@ -221,7 +221,7 @@ func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounti
 		return err
 	}
 
-	return completeReceipt(ctx, tx, e)
+	return completeReceipt(ctx, tx, e, processedAt)
 }
 
 func updateMonthlyUsage(ctx context.Context, tx pgx.Tx, customer string, month time.Time, charge accounting.Amount) error {
@@ -240,9 +240,9 @@ func updateAccountCredit(ctx context.Context, tx pgx.Tx, customer string, remain
 	return err
 }
 
-func completeReceipt(ctx context.Context, tx pgx.Tx, event usage.Event) error {
+func completeReceipt(ctx context.Context, tx pgx.Tx, event usage.Event, processedAt time.Time) error {
 	_, err := tx.Exec(ctx, `UPDATE usage_inbox SET processed_at=$3 WHERE source=$1 AND event_id=$2`,
-		event.Source, event.EventID, time.Now().UTC().Truncate(time.Microsecond))
+		event.Source, event.EventID, processedAt)
 
 	return err
 }
@@ -293,7 +293,7 @@ func updateGroup(ctx context.Context, tx pgx.Tx, group string, item receipt, rat
 	return err
 }
 
-func recordCreditDebit(ctx context.Context, tx pgx.Tx, e usage.Event, group string, used accounting.Amount) error {
+func recordCreditDebit(ctx context.Context, tx pgx.Tx, e usage.Event, group string, used accounting.Amount, recordedAt time.Time) error {
 	if used.Ticks().Sign() == 0 {
 		return nil
 	}
@@ -306,7 +306,7 @@ func recordCreditDebit(ctx context.Context, tx pgx.Tx, e usage.Event, group stri
 	_, err = tx.Exec(ctx, `INSERT INTO credit_entries
 		(credit_entry_id,customer_id,group_id,amount_ticks,recorded_at)
 		VALUES ($1,$2,$3,$4::numeric,$5)`, entryID, e.CustomerID, group,
-		"-"+used.Ticks().String(), time.Now().UTC().Truncate(time.Microsecond))
+		"-"+used.Ticks().String(), recordedAt)
 
 	return err
 }

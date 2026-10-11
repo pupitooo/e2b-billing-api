@@ -1,0 +1,240 @@
+{
+  "name": "billing-demo-invoice",
+  "steps": [
+    {
+      "name": "fresh Cyberdyne account",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "purchase the recurring pack for October",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/addons",
+        "body": {
+          "idempotency_key": "demo-october-pack",
+          "addon_name": "concurrency_pack",
+          "purchased_at": "2026-10-05"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "addon_name": "concurrency_pack",
+          "monthly_price_cents": 2000,
+          "start_month": "2026-10-01",
+          "purchased_at": "2026-10-05"
+        }
+      }
+    },
+    {
+      "name": "send four measurements across two sandboxes and two prices",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "demo-first-a",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "sandbox-a",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-05T12:00:00Z",
+              "period_end": "2026-10-05T13:00:00Z",
+              "units": 100000000
+            },
+            {
+              "source": "{{source}}",
+              "event_id": "demo-first-b",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "sandbox-b",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:00:00Z",
+              "period_end": "2026-10-10T13:00:00Z",
+              "units": 23456789
+            },
+            {
+              "source": "{{source}}",
+              "event_id": "demo-second-a",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "sandbox-a",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-20T12:00:00Z",
+              "period_end": "2026-10-20T13:00:00Z",
+              "units": 150000000
+            },
+            {
+              "source": "{{source}}",
+              "event_id": "demo-second-b",
+              "schema_version": 1,
+              "customer_id": "cyberdyne",
+              "sandbox_id": "sandbox-b",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-25T12:00:00Z",
+              "period_end": "2026-10-25T13:00:00Z",
+              "units": 50000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "wait until all four measurements are processed",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 5
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "verify exact October gross usage before closing",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/months/2026-10/limit-status"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "month": "2026-10",
+          "gross_charge_ticks": "1817283945",
+          "limit_cents": null,
+          "limit_reached": false,
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 5
+        }
+      }
+    },
+    {
+      "name": "issue October invoice and retry a lost successful response",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "number": "CYBERDYNE-0001",
+          "month": "2026-10",
+          "currency": "USD",
+          "total_cents": 3817,
+          "gross_usage_ticks": "1817283945",
+          "credit_used_ticks": "0",
+          "lines": [
+            {
+              "kind": "usage",
+              "price_version_id": "cpu-default-2026-10-01",
+              "usage_month": "2026-10",
+              "units": "123456789",
+              "amount_cents": 617,
+              "gross_ticks": "617283945",
+              "credit_ticks": "0"
+            },
+            {
+              "kind": "usage",
+              "price_version_id": "cpu-default-2026-10-15",
+              "usage_month": "2026-10",
+              "units": "200000000",
+              "amount_cents": 1200,
+              "gross_ticks": "1200000000",
+              "credit_ticks": "0"
+            },
+            {
+              "kind": "addon",
+              "description": "concurrency_pack",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      },
+      "capture": "october-invoice",
+      "fault": {
+        "lose_response": true
+      }
+    },
+    {
+      "name": "read the stored October invoice",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/invoices/2026-10"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "october-invoice"
+      }
+    },
+    {
+      "name": "reissue returns the complete original snapshot",
+      "request": {
+        "method": "POST",
+        "path": "/customers/cyberdyne/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "same_as": "october-invoice"
+      }
+    },
+    {
+      "name": "closing and retries preserve zero credit and one publication",
+      "request": {
+        "method": "GET",
+        "path": "/customers/cyberdyne/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "cyberdyne",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 6
+        }
+      }
+    }
+  ]
+}
