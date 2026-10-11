@@ -248,8 +248,15 @@ schema or Compose project, not a user's existing demonstration data.
 
 ## Delayed billing walkthrough
 
-Select **Delayed platform billing** in Assignment demo. The
+Select **Delayed platform billing** or **Recover a missed invoice** in Assignment demo. The
 [scenario guide](../simulator/delayed-billing.md) lists the clock phases and expected
 invoices. Each step displays its required UTC business instant; mismatched startup
 metadata blocks sending and retains the cursor. Restart API, worker and portal
 with the same `E2B_DEMO_NOW`, preserving their database volume, then reload.
+
+The **Invoices** screen also provides **Recover missed monthly invoices**: enter
+a completed through month and keep its operation key for retries. The response
+displays each returned snapshot separately in chronological order. A larger gap
+than 12 missing months needs consecutive earlier targets; successful retry keys
+retain the original range. The ordinary Issue and Load controls keep their own
+billing month. SQL inspection includes catch-up command history.

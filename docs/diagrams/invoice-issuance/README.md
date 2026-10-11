@@ -95,3 +95,8 @@ immutable retries, quarantine recovery, UTC boundaries, migration and
 publication rollback.
 
 The committed Mermaid source is editable and its PNG preview is readable without generation tooling. The renderer stays local and ignored; no SVG artifact is generated.
+
+The explicit [catch-up command](../../simulator/delayed-billing.md#missed-manual-invoice)
+repeats the build/publication activities for each missing month under one account
+lock and transaction, recording the immutable response range before commit. A
+failure rolls back every publication, including earlier months in that range.

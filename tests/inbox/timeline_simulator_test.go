@@ -18,18 +18,28 @@ import (
 	"e2b/billing-api/internal/worker"
 )
 
-// testBillingTimeline executes the same published GUI/CLI fixture, changing the
-// trusted server and worker clock before each step. Every CLI invocation resumes
-// its durable cursor in a new process. Receipts must retain the first physical
-// arrival instant through lost replies, closing and retries in later months.
+// billingTimelineScenario exposes each workflow and its literal storage totals.
+type billingTimelineScenario struct {
+	file                                                    string
+	wantCompleted                                           int
+	wantInbox, wantRatings, wantInvoices, wantCancellations int
+	wantInvoiceCents                                        int64
+	wantCredit                                              string
+}
+
+// testBillingTimeline declares the delayed platform workflow and literal storage totals.
 func testBillingTimeline(t *testing.T) {
-	scenario := struct {
-		file                                                    string
-		wantCompleted                                           int
-		wantInbox, wantRatings, wantInvoices, wantCancellations int
-		wantInvoiceCents                                        int64
-		wantCredit                                              string
-	}{file: "billing-delayed-platform", wantCompleted: 35, wantInbox: 15, wantRatings: 15, wantInvoices: 5, wantCancellations: 1, wantInvoiceCents: 40_700, wantCredit: "0"}
+	runBillingTimeline(t, billingTimelineScenario{file: "billing-delayed-platform", wantCompleted: 35, wantInbox: 15, wantRatings: 15, wantInvoices: 5, wantCancellations: 1, wantInvoiceCents: 40_700, wantCredit: "0"})
+}
+
+// testMissedInvoiceTimeline declares the skipped manual invoice and recovery totals.
+func testMissedInvoiceTimeline(t *testing.T) {
+	runBillingTimeline(t, billingTimelineScenario{file: "billing-missed-invoice", wantCompleted: 27, wantInbox: 6, wantRatings: 6, wantInvoices: 4, wantCancellations: 0, wantInvoiceCents: 10_200, wantCredit: "0"})
+}
+
+// runBillingTimeline shares a trusted receipt clock across real API and worker
+// calls, resumes the CLI after every step, and checks raw first-receipt timestamps.
+func runBillingTimeline(t *testing.T, scenario billingTimelineScenario) {
 	plan, err := simulator.LoadWorkflow("../../docs/simulator/" + scenario.file + ".json")
 	if err != nil {
 		t.Fatal(err)

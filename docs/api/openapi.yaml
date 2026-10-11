@@ -1054,7 +1054,7 @@ paths:
         Pending usage does not delay closing; retries return the same invoice.
         The first invoice cannot skip earlier known usage or active add-on months,
         even when the subscription has no usage. Close the purchase month first,
-        then each following month in order. A missing earlier month returns 409
+        then each following month in order, or use the catch-up endpoint. A missing earlier month returns 409
         without changing invoices, numbering, subscriptions, or credit.
         See [closing order and late usage](/architecture/usage-to-invoice/#invoice-generation-workflow).
       x-implementation-status: implemented
@@ -1169,6 +1169,161 @@ paths:
                 error:
                   code: invalid_command
                   field: month
+                  message: Only completed UTC calendar months can be closed.
+        '503':
+          description: Storage unavailable. Outcome may be unknown; retry unchanged command after Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
+  /customers/{customer_id}/invoices/catch-up:
+    post:
+      operationId: catchUpMonthlyInvoices
+      tags:
+      - Customers
+      summary: Recover missing monthly invoices
+      description: |
+        Issue each missing completed UTC month through through_month in one atomic transaction,
+        in chronological order. Begin after the latest closure, or at the earliest known
+        usage or add-on month for the first invoice. Include empty months; use existing
+        accounting and full active-month add-on fees without debiting credit again.
+        A request closes at most 12 missing months; longer gaps require earlier targets first.
+        Pending or quarantined usage remains outside the snapshots and is billed later.
+        A successful idempotency_key freezes the whole response range. Identical retries
+        return that range even after later invoices; changed targets return 409 with no effects.
+        A new key for an already issued target returns only that target's original snapshot.
+        Failure in any month rolls back the entire range, numbering, freezes and command history.
+        See [manual invoice recovery](/simulator/delayed-billing/#missed-manual-invoice).
+      x-implementation-status: implemented
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceCatchupInput'
+            example:
+              idempotency_key: recover-november-december
+              through_month: 2026-12
+      responses:
+        '200':
+          description: Missing invoices published atomically, or original command range or target snapshot returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceRun'
+              example:
+                customer_id: acme
+                through_month: 2026-12
+                invoices:
+                - customer_id: acme
+                  number: ACME-0002
+                  month: 2026-11
+                  customer_name: Acme Inc.
+                  country: US
+                  billing_address: 1 Market St, San Francisco, CA 94105
+                  currency: USD
+                  lines:
+                  - kind: credit
+                    description: Used credit
+                    amount_cents: 0
+                  total_cents: 0
+                  gross_usage_microcents: '0'
+                  credit_used_microcents: '0'
+                  issued_at: '2027-01-01T00:00:00Z'
+                - customer_id: acme
+                  number: ACME-0003
+                  month: 2026-12
+                  customer_name: Acme Inc.
+                  country: US
+                  billing_address: 1 Market St, San Francisco, CA 94105
+                  currency: USD
+                  lines:
+                  - kind: credit
+                    description: Used credit
+                    amount_cents: 0
+                  total_cents: 0
+                  gross_usage_microcents: '0'
+                  credit_used_microcents: '0'
+                  issued_at: '2027-01-01T00:00:00Z'
+        '400':
+          description: Invalid or ambiguous JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+        '404':
+          description: Customer does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '409':
+          description: Changed command target or incompatible closed history. No financial changes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_conflict
+                  message: Operation identity has different content, financial history conflicts, or closing
+                    is blocked.
+        '413':
+          description: Body exceeds 65_536 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Command body exceeds 65536 bytes.
+        '415':
+          description: Use uncompressed application/json with optional UTF-8 charset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: unsupported_media_type
+                  message: Use uncompressed application/json with optional UTF-8 charset.
+        '422':
+          description: Invalid command key or month, unfinished target, or more than 12 missing months. No financial changes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  field: through_month
                   message: Only completed UTC calendar months can be closed.
         '503':
           description: Storage unavailable. Outcome may be unknown; retry unchanged command after Retry-After.
@@ -1822,6 +1977,34 @@ components:
         subscription_id:
           $ref: '#/components/schemas/SubscriptionIdentifier'
           description: Purchased subscription whose fixed monthly price is charged; present only on add-on lines.
+
+    InvoiceCatchupInput:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, through_month]
+      properties:
+        idempotency_key:
+          $ref: '#/components/schemas/IdempotencyKey'
+        through_month:
+          $ref: '#/components/schemas/BillingMonth'
+          description: Inclusive completed UTC target month; at most 12 missing months per command.
+
+    InvoiceRun:
+      type: object
+      additionalProperties: false
+      required: [customer_id, through_month, invoices]
+      properties:
+        customer_id:
+          $ref: '#/components/schemas/Identifier'
+        through_month:
+          $ref: '#/components/schemas/BillingMonth'
+        invoices:
+          type: array
+          minItems: 1
+          maxItems: 12
+          description: Chronological missing-month snapshots frozen for this key; a new key for an existing target contains only that target.
+          items:
+            $ref: '#/components/schemas/Invoice'
 
     Invoice:
       type: object

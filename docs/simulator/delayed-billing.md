@@ -109,3 +109,77 @@ calendar dates, changed retries, closed-period rejection, the purchase-day and
 next-month boundaries, and full fees on last-day reactivation at a changed catalog
 price. Rejections compare complete financial state. Deterministic database gates force both cancellation/closing lock orders; concurrent command keys retain one termination. Upgrade tests preserve existing purchases and frozen snapshots, and SQL tests run lifecycle constraints in UTC and Asia/Shanghai. These are representative correctness
 workflows; the USD backlog amounts do not establish a throughput capacity.
+
+## Missed manual invoice
+
+[billing-missed-invoice.json](billing-missed-invoice.json) executes 27 public steps
+through the same GUI and CLI. October is invoiced normally. The operator forgets
+November. In January, the operator requests billing through December. The ordinary
+single-month endpoint correctly rejects the skipped predecessor; the new catch-up
+command issues separate November and December invoices together.
+
+| Billing month | Gross usage | Used credit | Add-on | Total | Issued at UTC |
+| --- | --- | --- | --- | --- | --- |
+| October | USD 10 | USD 10 | USD 20 | **USD 20** | 1 November |
+| November | USD 8 + USD 2 delivered in January | USD 5 | USD 20 | **USD 25** | 1 January |
+| December | USD 12 delivered in January | USD 0 | USD 20 | **USD 32** | 1 January |
+| January | USD 1 late December + USD 4 January | USD 0 | USD 20 | **USD 25** | 1 February |
+
+The USD 15 credit grant covers usage only. Combined usage is USD 37; credit of
+USD 15 plus four USD 20 add-on fees gives **USD 102**, preserving every charge.
+November remains open until catch-up, so its January receipt joins November's
+original group rather than receiving a late-usage label. December usage received
+and processed after catch-up appears on January's invoice with its original price
+and consumption month. Previously issued snapshots remain unchanged.
+
+The GUI offers **Assignment demo → Recover a missed invoice** and an independent
+**Invoices → Recover missed monthly invoices** form. Clock phases are
+`2026-10-31T00:00:00Z`, `2026-11-01T00:00:00Z`, `2026-11-30T00:00:00Z`,
+`2026-12-01T00:00:00Z`, `2027-01-01T00:00:00Z`, `2027-01-31T00:00:00Z`, and
+`2027-02-01T00:00:00Z`. Use fresh Acme seed data in a separate environment,
+preserve the database and cursor between phases, and apply the startup procedure
+above. CLI execution uses `SCENARIO=billing-missed-invoice MODE=step` with its own
+`SOURCE` and `STATE`.
+
+```json
+{
+  "idempotency_key": "recover-november-december",
+  "through_month": "2026-12"
+}
+```
+
+Send that body to `POST /customers/acme/invoices/catch-up`. The result contains
+`customer_id`, `through_month` and chronological `invoices`, each independently
+readable through the existing invoice GET. Keep the same key and body on retry,
+including after a lost response. A successful key permanently returns its original
+range even after later months close. Changed targets with the same key conflict.
+A new key for an existing target returns only that target's original snapshot.
+
+The implementation begins after the latest closed month. On a first run it begins
+at the earliest known raw usage, rated group or purchase month, including pending
+and quarantined receipts. It then issues every intervening month, including empty
+months, under one account lock and transaction. The trusted issue timestamp is
+sampled once; invoice numbers, snapshots, freezes, closures and successful command
+history commit together. A later-month failure rolls all publication writes back.
+Credit is not allocated again. Pending receipts do not block the batch; subsequent
+worker processing routes beyond the complete committed range without losing usage.
+
+At most 12 missing months fit one command to bound transaction length and account
+lock duration. A larger gap returns `422` without effects: request an earlier
+`through_month` first, then a new key for the remaining range. This is a recommended
+operational policy, not an assignment requirement. A durable asynchronous catch-up
+job with progress and retries is an alternative for very long histories. Automatic
+monthly scheduling and invoice delivery remain separate proposals.
+
+`TestCatchUpInvoices` covers missing predecessors, empty and add-on-only periods,
+cancellation, first-run obligation discovery, completed-month and 12/13-month
+boundaries (including UTC discovery in UTC and Asia/Shanghai), durable retries,
+customer/command scopes, concurrent keys and single-month closing, split recovery
+of longer gaps, and complete rollback
+when the second invoice fails. Worker-cutoff tests verify one rating and one group
+freeze across both processing orders. `TestCatchUpInvoicesAPI` verifies explicit
+transport fields and no financial effects on errors.
+`TestBillingSimulatorExecutable/missed_manual_invoice_with_real_receipt_clocks`
+checks all 27 CLI/API steps, six physical receipt timestamps, four immutable
+invoices and USD 102 total. GUI tests execute the actual selection, clock gate,
+command construction and multiple-snapshot rendering handlers.

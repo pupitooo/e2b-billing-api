@@ -156,6 +156,8 @@ original result. Changed content under the same identity returns `409`.
 | Price version | Required JSON `idempotency_key`, scoped to `/prices` |
 | Credit grant or spend limit | Customer, endpoint, and JSON `idempotency_key` |
 | Add-on purchase | Required JSON `idempotency_key`, scoped to the customer and add-on endpoint |
+| Add-on cancellation | Customer, cancellation endpoint and JSON `idempotency_key` |
+| Invoice catch-up | Customer, catch-up endpoint and JSON `idempotency_key`; original through month |
 | Invoice issuance | Customer and UTC month |
 
 Replaying an older spend-limit command returns its original result without
@@ -167,10 +169,10 @@ IDs use `subscription/<customer_id>/<addon_name>`, for example
 `subscription/acme/concurrency_pack`. Each component is percent-encoded separately:
 `acme/ops` becomes `acme%2Fops`, while a literal `acme%2Fops` becomes
 `acme%252Fops`. Inputs retain their existing 256-byte limits; generated subscription
-First-purchase IDs can reach 1550 ASCII bytes; later purchases append `/YYYY-MM-DD` and can reach 1561 bytes. Subscription responses and invoice lines use this
+IDs retain all old values. First-purchase IDs can reach 1550 ASCII bytes; later purchases append `/YYYY-MM-DD` and can reach 1561 bytes. Subscription responses and invoice lines use this
 larger response limit. No database migration is needed because the stored ID is
 unbounded `text`. Earlier IDs, operation results, and issued invoices stay unchanged.
-Price, add-on, credit, and spend-limit requests require the exact JSON field
+Price, add-on purchase/cancellation, invoice catch-up, credit, and spend-limit requests require the exact JSON field
 `idempotency_key`: 1 through 256 visible ASCII characters without whitespace, for
 example a UUID. Values are case-sensitive. Missing, null, or invalid strings return
 `422`; duplicate fields, unknown aliases, and wrong JSON types return `400`.
@@ -230,3 +232,19 @@ API interface changes must update the specification in the same change. Refresh
 Scalar after editing `openapi.yaml`; guides rebuild and refresh automatically.
 See [documentation maintenance](documentation.md) for publication,
 validation, and the one-port routing configuration.
+
+## Recovering missed invoices
+
+`POST /customers/{customer_id}/invoices/catch-up` requires `idempotency_key` and
+`through_month` (`YYYY-MM`). It issues every missing completed month through that
+target in one transaction, including empty and active add-on months. The result
+contains `customer_id`, `through_month`, and chronological `invoices`. No credit
+is applied a second time. A batch failure leaves all months and numbers unchanged.
+
+Identical retries return the original range even after later invoices. Changing
+the target under the same key returns `409`. A new key for an existing target
+returns only its original snapshot. More than 12 missing months returns `422`;
+request an earlier target first, then continue with a new key. Pending usage is
+billed after the closed range when the worker processes it. The ordinary monthly
+endpoint still rejects skipped predecessors. See the [timeline and literal
+example](../simulator/delayed-billing.md#missed-manual-invoice) and OpenAPI schemas.

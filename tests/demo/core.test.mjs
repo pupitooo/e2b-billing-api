@@ -288,6 +288,9 @@ test("buildCommand", async (t) => {
   });
 
   const cases = [
+    {scenario:"catch up through a completed month",operation:"catch-up-invoices",customer:"acme",input:{idempotency_key:"recover",through_month:"2026-12"},wantPath:"/customers/acme/invoices/catch-up",wantBody:{idempotency_key:"recover",through_month:"2026-12"},wantError:false},
+    {scenario:"catch-up requires a durable operation key",operation:"catch-up-invoices",customer:"acme",input:{through_month:"2026-12"},wantError:true},
+    {scenario:"catch-up rejects invalid calendar month",operation:"catch-up-invoices",customer:"acme",input:{idempotency_key:"recover",through_month:"2026-13"},wantError:true},
     {scenario: "cancel purchase using its owned identity and calendar date",operation:"cancel-addon",customer:"acme",input:{idempotency_key:"cancel",subscription_id:"subscription/acme/concurrency_pack",cancelled_at:"2026-10-31"},wantPath:"/customers/acme/addons/cancel",wantBody:{idempotency_key:"cancel",subscription_id:"subscription/acme/concurrency_pack",cancelled_at:"2026-10-31"},wantError:false},
     {
       scenario: "default price with a calendar date",

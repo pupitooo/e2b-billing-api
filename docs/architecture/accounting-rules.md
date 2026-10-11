@@ -433,6 +433,17 @@ include additional groups committed since the failed attempt. After a successful
 commit, every retry returns the original invoice and number. Earlier unclosed
 rated groups still block later closing; an empty month is supported.
 
+The explicit catch-up endpoint closes a chronological range in the same account
+transaction. It begins after the latest closure or at the earliest known receipt,
+rated group or purchase month on the first run, then includes every empty month
+through the completed target. At most 12 missing months are allowed per command;
+longer histories use earlier targets followed by new keys. Successful command
+keys freeze the full returned range; changed targets conflict. A new key for an
+existing target returns only that immutable snapshot. Any month failure rolls
+back the entire publication range and operation result. Credit is never debited
+again, and pending usage routes after the complete committed range. See
+[manual recovery](../simulator/delayed-billing.md#missed-manual-invoice).
+
 Usage processed on opposite sides of this cutoff belongs to different billing
 months and therefore different groups and rounding boundaries. Exact gross microcents
 are preserved, but the sum of cent-valued invoices can differ from rounding all

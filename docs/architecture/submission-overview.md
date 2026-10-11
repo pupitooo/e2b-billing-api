@@ -21,6 +21,7 @@ Roles identify callers and responsibilities; the assignment has no authenticatio
 | Customer | `POST /customers/{customer_id}/addons`, `POST /customers/{customer_id}/addons/cancel`, `POST /customers/{customer_id}/spend-limit` | Buy or cancel a recurring add-on and set or remove a gross monthly usage limit. |
 | Customer | `GET /customers/{customer_id}/credit` | Read remaining exact credit and accounting progress. |
 | Closing operator | `POST /customers/{customer_id}/invoices` | Explicitly issue one invoice for an ended UTC month in valid chronological order. |
+| Closing operator | `POST /customers/{customer_id}/invoices/catch-up` | Atomically recover up to 12 missing completed months, preserving one invoice per month and the command response on retry. |
 | Customer or E2B | `GET /customers/{customer_id}/invoices/{month}` | Read the immutable buyer and financial snapshot. |
 | Local operations | `GET /healthz` | Check HTTP availability; this does not verify database health. |
 

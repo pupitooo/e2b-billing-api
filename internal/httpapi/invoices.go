@@ -14,7 +14,23 @@ func registerInvoiceRoutes(mux *http.ServeMux, store Store, timeout time.Duratio
 	handler := invoiceHandler{store: store, timeout: timeout}
 
 	mux.HandleFunc("POST /customers/{customer_id}/invoices", handler.closeMonth)
+	mux.HandleFunc("POST /customers/{customer_id}/invoices/catch-up", handler.catchUp)
 	mux.HandleFunc("GET /customers/{customer_id}/invoices/{month}", handler.getInvoice)
+}
+
+func (handler invoiceHandler) catchUp(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		IdempotencyKey string `json:"idempotency_key"`
+		ThroughMonth   string `json:"through_month"`
+	}
+	if !commandJSON(w, r, &input, []string{"idempotency_key", "through_month"}) {
+		return
+	}
+
+	ctx, cancel := financialContext(r, handler.timeout)
+	defer cancel()
+	result, err := handler.store.CatchUpInvoices(ctx, r.PathValue("customer_id"), input.IdempotencyKey, input.ThroughMonth)
+	financialResult(w, result, err)
 }
 
 func (handler invoiceHandler) closeMonth(w http.ResponseWriter, r *http.Request) {

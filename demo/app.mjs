@@ -450,6 +450,8 @@ function invoicesHTML() {
         )
       : "") +
     `<div class="columns">${operationForm("invoices", "Issue or retry monthly invoice", fields, "Issue invoice")}${panel("Read an issued invoice", '<p class="section-note">Retrieve the selected customer\'s snapshot for the Billing month entered in the invoice form. Issue and Load use the same month. GET has no financial effects.</p><div class="actions"><button class="primary" id="read-invoice">Load invoice</button><button id="print-invoice">Print loaded invoice</button></div><p id="invoice-load-status" class="section-note" role="status" aria-live="polite"></p>')}</div>` +
+    operationForm("catch-up-invoices", "Recover missed monthly invoices", field("through_month", "Through completed UTC month", state.month, {type: "month"}) + field("idempotency_key", "Operation key", newKey()), "Catch up invoices") +
+    notice("Catch-up issues each missing month in chronological order, up to 12 months per command. Keep the operation key for retries; every returned invoice remains available through Load invoice.") +
     `<div id="invoice-output">${empty("No invoice loaded", "Load an issued invoice or issue a completed month to display its stored lines.")}</div>`
   );
 }
@@ -532,9 +534,9 @@ function assignmentHTML() {
   const last = state.assignment.last;
   return (
     intro(
-      plan.name === "billing-delayed-platform" ? "Delayed platform billing" : plan.name === "billing-demo-invoice" ? "October invoice walkthrough" : "The complete billing assignment",
+      plan.name === "billing-missed-invoice" ? "Recover a missed invoice" : plan.name === "billing-delayed-platform" ? "Delayed platform billing" : plan.name === "billing-demo-invoice" ? "October invoice walkthrough" : "The complete billing assignment",
       "Advance one reviewed step at a time. Expected results are loaded from the published simulator fixture, not calculated by this GUI.",
-      `<label>Scenario <select id="walkthrough-scenario" ${runner.running ? "disabled" : ""}><option value="billing-assignment" ${state.walkthroughScenario === "billing-assignment" ? "selected" : ""}>Complete assignment</option><option value="billing-demo-invoice" ${state.walkthroughScenario === "billing-demo-invoice" ? "selected" : ""}>October invoice with add-on</option><option value="billing-delayed-platform" ${state.walkthroughScenario === "billing-delayed-platform" ? "selected" : ""}>Delayed platform billing</option></select></label>` +
+      `<label>Scenario <select id="walkthrough-scenario" ${runner.running ? "disabled" : ""}><option value="billing-assignment" ${state.walkthroughScenario === "billing-assignment" ? "selected" : ""}>Complete assignment</option><option value="billing-demo-invoice" ${state.walkthroughScenario === "billing-demo-invoice" ? "selected" : ""}>October invoice with add-on</option><option value="billing-delayed-platform" ${state.walkthroughScenario === "billing-delayed-platform" ? "selected" : ""}>Delayed platform billing</option><option value="billing-missed-invoice" ${state.walkthroughScenario === "billing-missed-invoice" ? "selected" : ""}>Recover a missed invoice</option></select></label>` +
       '<button class="primary" id="next-step" ' +
         (runner.running || progress >= plan.steps.length ? "disabled" : "") +
         ">▷ " +
@@ -544,7 +546,9 @@ function assignmentHTML() {
         ">Stop polling</button>",
     ) +
     notice(
-      plan.name === "billing-delayed-platform"
+      plan.name === "billing-missed-invoice"
+        ? "Use fresh Acme seed data. Preserve the database and cursor between the required clock phases. October is issued, November is missed, and January catches up November and December. Totals: $20, $25, $32, $25. See the delayed billing guide."
+        : plan.name === "billing-delayed-platform"
         ? "Start with fresh Acme seed data. Each step shows its required business clock. Preserve volumes between clock changes. September–January invoice totals: $120, $0, $125, $142, $20. See the delayed billing guide for the full timeline."
         : plan.name === "billing-demo-invoice"
         ? "Use fresh Cyberdyne seed data and E2B_DEMO_NOW=2026-11-01T00:00:00Z for both API and worker. Expected invoice: usage $6.17 + $12.00, add-on $20.00, total $38.17. Closing includes processed usage only."
@@ -643,6 +647,8 @@ async function sendForm(form, request) {
       result = await client.retry(result.record);
     }
     resultContainer.innerHTML = resultHTML(result);
+    if (result.data?.invoices && $("#invoice-output"))
+      $("#invoice-output").innerHTML = result.data.invoices.map(invoiceHTML).join("");
     if (result.data?.lines && $("#invoice-output"))
       $("#invoice-output").innerHTML = invoiceHTML(result.data);
     if (result.status >= 200 && result.status < 300) {
@@ -725,7 +731,7 @@ $("#content").addEventListener("change", async (event) => {
   try {
     if (runner?.running) throw new Error("Wait for the running scenario step to finish.");
     const scenario = event.target.value;
-    if (!["billing-assignment", "billing-demo-invoice", "billing-delayed-platform"].includes(scenario))
+    if (!["billing-assignment", "billing-demo-invoice", "billing-delayed-platform", "billing-missed-invoice"].includes(scenario))
       throw new Error("Unknown walkthrough scenario.");
     state.walkthroughs[state.walkthroughScenario] = state.assignment;
     state.walkthroughScenario = scenario;

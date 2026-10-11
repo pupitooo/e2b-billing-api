@@ -351,13 +351,15 @@ function invoiceBrowser(t, customer, month, storageError) {
 // and sends no command until startup metadata matches; saved cursors then advance.
 test("timeline walkthrough",async(t)=>{
  const cases=[
-  {scenario:"matching September clock executes the first price command",inputClock:"2026-09-01T00:00:00Z",wantIndex:1,wantRequests:[{method:"POST",path:"/api/prices",body:{idempotency_key:"delayed-september-price",customer_id:"acme",metric:"cpu_seconds",price_per_million_cents:5,effective_from:"2026-09-01"}}],wantToast:"Step matched its declared expected result."},
-  {scenario:"October clock blocks September receipt scenario before sending",inputClock:"2026-10-01T00:00:00Z",wantIndex:0,wantRequests:[],wantToast:"This step requires E2B_DEMO_NOW=2026-09-01T00:00:00Z. Start services with that clock while preserving volumes, then reload this page."},
+  {scenario:"matching September clock executes the first price command",inputPlan:"billing-delayed-platform",wantTitle:"Delayed platform billing",wantClock:"2026-09-01T00:00:00Z",inputClock:"2026-09-01T00:00:00Z",wantIndex:1,wantRequests:[{method:"POST",path:"/api/prices",body:{idempotency_key:"delayed-september-price",customer_id:"acme",metric:"cpu_seconds",price_per_million_cents:5,effective_from:"2026-09-01"}}],wantToast:"Step matched its declared expected result."},
+  {scenario:"October clock blocks September receipt scenario before sending",inputPlan:"billing-delayed-platform",wantTitle:"Delayed platform billing",wantClock:"2026-09-01T00:00:00Z",inputClock:"2026-10-01T00:00:00Z",wantIndex:0,wantRequests:[],wantToast:"This step requires E2B_DEMO_NOW=2026-09-01T00:00:00Z. Start services with that clock while preserving volumes, then reload this page."},
+  {scenario:"matching October clock starts missed invoice plan",inputPlan:"billing-missed-invoice",wantTitle:"Recover a missed invoice",wantClock:"2026-10-31T00:00:00Z",inputClock:"2026-10-31T00:00:00Z",wantIndex:1,wantRequests:[{method:"POST",path:"/api/customers/acme/credits",body:{idempotency_key:"catchup-credit",amount_cents:1500}}],wantToast:"Step matched its declared expected result."},
+  {scenario:"wrong phase cannot begin missed invoice plan",inputPlan:"billing-missed-invoice",wantTitle:"Recover a missed invoice",wantClock:"2026-10-31T00:00:00Z",inputClock:"2027-01-01T00:00:00Z",wantIndex:0,wantRequests:[],wantToast:"This step requires E2B_DEMO_NOW=2026-10-31T00:00:00Z. Start services with that clock while preserving volumes, then reload this page."},
  ];
  for(const c of cases)await t.test(c.scenario,async(t)=>{
   const browser=invoiceBrowser(t,"acme","2026-09");
   globalThis.location.hash="#assignment";
-  const fixture=JSON.parse(await readFile(new URL("../../docs/simulator/billing-delayed-platform.json",import.meta.url),"utf8"));
+  const fixture=JSON.parse(await readFile(new URL(`../../docs/simulator/${c.inputPlan}.json`,import.meta.url),"utf8"));
   const requests=[];
   t.mock.method(globalThis,"fetch",async(path,options={})=>{
    if(path==="/api/healthz")return new Response("{}",{status:200});
@@ -368,13 +370,50 @@ test("timeline walkthrough",async(t)=>{
   });
   await import(`../../demo/app.mjs?timeline=${encodeURIComponent(c.scenario)}`);
   await new Promise(resolve=>setImmediate(resolve));
-  await browser.content.listeners.change({target:{id:"walkthrough-scenario",value:"billing-delayed-platform"}});
-  assert.ok(browser.content.innerHTML.includes("Delayed platform billing"),"timeline selection must be visible");
-  assert.ok(browser.content.innerHTML.includes("required UTC clock 2026-09-01T00:00:00Z"),"required clock must be visible beside the step");
+  await browser.content.listeners.change({target:{id:"walkthrough-scenario",value:c.inputPlan}});
+  assert.ok(browser.content.innerHTML.includes(c.wantTitle),"timeline selection must be visible");
+  assert.ok(browser.content.innerHTML.includes(`required UTC clock ${c.wantClock}`),"required clock must be visible beside the step");
   await browser.content.listeners.click({target:{id:"next-step",dataset:{},closest(){return this;},hasAttribute(){return false;}}});
 
   assert.equal(JSON.parse(browser.saved).assignment.index,c.wantIndex,`clock=${c.inputClock}: cursor`);
   assert.deepEqual(requests,c.wantRequests,`clock=${c.inputClock}: financial requests`);
   assert.equal(browser.toast.textContent,c.wantToast,`clock=${c.inputClock}: outcome`);
+ });
+});
+
+// catch-up invoice workflow sends its own month and stable key through the actual
+// form handler, and displays each returned monthly snapshot in response order.
+test("catch-up invoice workflow",async(t)=>{
+ const cases=[{
+  scenario:"both recovered invoices are visible",
+  inputFields:[["idempotency_key","recover"],["through_month","2026-12"]],
+  inputResponse:{customer_id:"acme",through_month:"2026-12",invoices:[
+   {number:"ACME-0002",month:"2026-11",customer_name:"Acme Inc.",country:"US",billing_address:"Acme",currency:"USD",issued_at:"2027-01-01T00:00:00Z",lines:[],total_cents:2500,gross_usage_microcents:"1000000000",credit_used_microcents:"500000000"},
+   {number:"ACME-0003",month:"2026-12",customer_name:"Acme Inc.",country:"US",billing_address:"Acme",currency:"USD",issued_at:"2027-01-01T00:00:00Z",lines:[],total_cents:3200,gross_usage_microcents:"1200000000",credit_used_microcents:"0"}]},
+  wantRequest:{method:"POST",path:"/api/customers/acme/invoices/catch-up",body:{idempotency_key:"recover",through_month:"2026-12"}},
+  wantNumbers:["ACME-0002","ACME-0003"],wantAmounts:["$25.00","$32.00"],wantToast:"Operation completed. Response is visible below and in the inspector."}];
+ for(const c of cases)await t.test(c.scenario,async(t)=>{
+  const browser=invoiceBrowser(t,"acme","2027-01");
+  browser.form.dataset.operation="catch-up-invoices";
+  t.mock.method(globalThis,"FormData",function(){return c.inputFields;});
+  const requests=[];
+  t.mock.method(globalThis,"fetch",async(path,options={})=>{
+   if(path==="/api/healthz")return new Response("{}",{status:200});
+   if(path==="/demo/runtime.json")return new Response('{"clock_mode":"fixed","fixed_now":"2027-01-01T00:00:00Z"}',{status:200});
+   if(path.startsWith("/simulator/"))return new Response('{"name":"billing-assignment","steps":[]}',{status:200});
+   requests.push({method:options.method,path,body:JSON.parse(options.body)});
+   return new Response(JSON.stringify(c.inputResponse),{status:200});
+  });
+  await import(`../../demo/app.mjs?catchup=${encodeURIComponent(c.scenario)}`);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(browser.content.innerHTML.includes("Recover missed monthly invoices"),"catch-up form must be visible");
+  await browser.content.listeners.submit({target:browser.form,preventDefault(){}});
+
+  assert.deepEqual(requests,[c.wantRequest],"catch-up command must use form month and key");
+  const first=browser.output.innerHTML.indexOf(c.wantNumbers[0]);
+  const second=browser.output.innerHTML.indexOf(c.wantNumbers[1]);
+  assert.ok(first>=0&&second>first,"monthly snapshots must appear chronologically");
+  for(const amount of c.wantAmounts)assert.ok(browser.output.innerHTML.includes(amount),`missing invoice amount ${amount}`);
+  assert.equal(browser.toast.textContent,c.wantToast,"catch-up outcome");
  });
 });

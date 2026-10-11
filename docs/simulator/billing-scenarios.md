@@ -2,6 +2,7 @@
 
 ## Contents
 
+- [Missed manual invoice](#missed-manual-invoice)
 - [Run the complete assignment](#run-the-complete-assignment)
 - [Start an isolated assignment environment](#start-an-isolated-assignment-environment)
 - [Scenarios and review entry points](#scenarios-and-review-entry-points)
@@ -132,6 +133,7 @@ in the GUI, and the live scenario's data remains unchanged.
 
 | Step table | Executable JSON | Steps |
 | --- | --- | ---: |
+| [Missed manual invoice](delayed-billing.md#missed-manual-invoice) | [billing-missed-invoice](billing-missed-invoice.json) | 27 |
 | [Billing assignment](#billing-assignment) | [billing-assignment](billing-assignment.json) | 24 |
 | [Command retries and conflicts](#command-retries-and-conflicts) | [billing-command-retries](billing-command-retries.json) | 16 |
 | [Exact sub-cent credit](#exact-sub-cent-credit) | [billing-exact-credit](billing-exact-credit.json) | 6 |
@@ -502,3 +504,11 @@ The [delayed billing guide](delayed-billing.md) documents the
 [billing-delayed-platform fixture](billing-delayed-platform.json), including its
 trusted clock phases, cancellation policy, all five invoice calculations and
 related worker-delay regressions. It is selectable in the GUI's Assignment demo.
+
+## Missed manual invoice
+
+The [recovery timeline](delayed-billing.md#missed-manual-invoice) documents
+[billing-missed-invoice.json](billing-missed-invoice.json): a normal October invoice,
+a forgotten November, and atomic catch-up through December. The GUI offers the
+same 27-step plan and a manual recovery form. Expected monthly totals are USD 20,
+USD 25, USD 32 and USD 25, including late receipts and recurring add-on fees.

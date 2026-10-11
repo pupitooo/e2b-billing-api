@@ -479,6 +479,12 @@ The [editable workflow](../diagrams/closing-workflow/closing-workflow.mmd),
 [receipt accounting view](../diagrams/usage-worker-accounting/usage-worker-accounting.png)
 show the same transaction and error-handling contracts.
 
+The [manual recovery command](../simulator/delayed-billing.md#missed-manual-invoice)
+repeats build and publication for every missing completed month in one account
+transaction, preserving one invoice per month and a stable response range per key.
+It includes empty months and active add-on fees without allocating credit again;
+a failure in any month rolls back the complete range.
+
 ### Example: complete assignment invoices
 
 Pure Go, database, and [public API simulator tests](../simulator/billing-scenarios.md) verify these literal results:

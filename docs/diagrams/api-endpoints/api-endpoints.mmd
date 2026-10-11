@@ -26,7 +26,7 @@ flowchart LR
     platform -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>POST /usage/batches<br/>GET /customers/{customer_id}/limit-status<br/>GET /customers/{customer_id}/months/{month}/limit-status</span>"| api
     customer -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>POST /customers/{customer_id}/spend-limit<br/>POST /customers/{customer_id}/addons<br/>POST /customers/{customer_id}/addons/cancel<br/>GET /customers/{customer_id}/credit<br/>GET /customers/{customer_id}/invoices/{month}</span>"| api
     admin -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>POST /prices<br/>POST /customers/{customer_id}/credits</span>"| api
-    closing -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>POST /customers/{customer_id}/invoices</span>"| api
+    closing -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>POST /customers/{customer_id}/invoices<br/>POST /customers/{customer_id}/invoices/catch-up</span>"| api
     health -->|"<span style='display: inline-block; white-space: nowrap; padding: 6px 16px'>GET /healthz</span>"| api
 
     api -.-> db

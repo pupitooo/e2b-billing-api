@@ -1,0 +1,772 @@
+{
+  "name": "billing-missed-invoice",
+  "steps": [
+    {
+      "name": "grant fifteen dollars before first accounting",
+      "business_time": "2026-10-31T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/credits",
+        "body": {
+          "idempotency_key": "catchup-credit",
+          "amount_cents": 1500
+        }
+      },
+      "want": {
+        "status": 200
+      }
+    },
+    {
+      "name": "buy recurring add-on in October",
+      "business_time": "2026-10-31T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/addons",
+        "body": {
+          "idempotency_key": "catchup-addon",
+          "addon_name": "concurrency_pack",
+          "purchased_at": "2026-10-01"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "monthly_price_cents": 2000,
+          "start_month": "2026-10-01"
+        }
+      }
+    },
+    {
+      "name": "receive ten October dollars",
+      "business_time": "2026-10-31T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "catchup-oct",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "catch-up",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:00:00Z",
+              "period_end": "2026-10-10T13:00:00Z",
+              "units": 250000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202
+      }
+    },
+    {
+      "name": "October accounting leaves five dollars credit",
+      "business_time": "2026-10-31T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_microcents": "500000000",
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "issue October normally",
+      "business_time": "2026-11-01T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "number": "ACME-0001",
+          "month": "2026-10",
+          "customer_name": "Acme Inc.",
+          "country": "US",
+          "billing_address": "1 Market St, San Francisco, CA 94105",
+          "currency": "USD",
+          "issued_at": "2026-11-01T00:00:00Z",
+          "gross_usage_microcents": "1000000000",
+          "credit_used_microcents": "1000000000",
+          "total_cents": 2000,
+          "lines": [
+            {
+              "kind": "usage",
+              "description": "Usage",
+              "metric": "cpu_seconds",
+              "usage_month": "2026-10",
+              "units": "250000000",
+              "amount_cents": 1000,
+              "gross_microcents": "1000000000",
+              "credit_microcents": "1000000000"
+            },
+            {
+              "kind": "addon",
+              "description": "concurrency_pack",
+              "subscription_id": "subscription/acme/concurrency_pack",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "description": "Used credit",
+              "amount_cents": -1000
+            }
+          ]
+        }
+      },
+      "capture": "october",
+      "fault": {
+        "lose_response": true
+      }
+    },
+    {
+      "name": "receive eight November dollars",
+      "business_time": "2026-11-30T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "catchup-nov",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "catch-up",
+              "metric": "cpu_seconds",
+              "period_start": "2026-11-10T12:00:00Z",
+              "period_end": "2026-11-10T13:00:00Z",
+              "units": 200000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202
+      }
+    },
+    {
+      "name": "November consumes the remaining credit",
+      "business_time": "2026-11-30T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_microcents": "0",
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "operator forgot November and no invoice exists",
+      "business_time": "2026-12-01T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-11"
+      },
+      "want": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found"
+          }
+        }
+      }
+    },
+    {
+      "name": "January receives two November dollars and twelve December dollars",
+      "business_time": "2027-01-01T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "catchup-nov-late",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "catch-up",
+              "metric": "cpu_seconds",
+              "period_start": "2026-11-30T23:59:00Z",
+              "period_end": "2026-12-01T00:00:00Z",
+              "units": 50000000
+            },
+            {
+              "source": "{{source}}",
+              "event_id": "catchup-dec",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "catch-up",
+              "metric": "cpu_seconds",
+              "period_start": "2026-12-10T12:00:00Z",
+              "period_end": "2026-12-10T13:00:00Z",
+              "units": 300000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202
+      }
+    },
+    {
+      "name": "backlog finishes accounting before catch-up",
+      "business_time": "2027-01-01T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_microcents": "0",
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "ordinary December issuance cannot skip November",
+      "business_time": "2027-01-01T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-12"
+        }
+      },
+      "want": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "billing_conflict"
+          }
+        }
+      }
+    },
+    {
+      "name": "catch up November and December atomically after lost reply",
+      "business_time": "2027-01-01T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices/catch-up",
+        "body": {
+          "idempotency_key": "catchup-run",
+          "through_month": "2026-12"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "through_month": "2026-12",
+          "invoices": [
+            {
+              "customer_id": "acme",
+              "number": "ACME-0002",
+              "month": "2026-11",
+              "customer_name": "Acme Inc.",
+              "country": "US",
+              "billing_address": "1 Market St, San Francisco, CA 94105",
+              "currency": "USD",
+              "issued_at": "2027-01-01T00:00:00Z",
+              "gross_usage_microcents": "1000000000",
+              "credit_used_microcents": "500000000",
+              "total_cents": 2500,
+              "lines": [
+                {
+                  "kind": "usage",
+                  "description": "Usage",
+                  "metric": "cpu_seconds",
+                  "usage_month": "2026-11",
+                  "units": "250000000",
+                  "amount_cents": 1000,
+                  "gross_microcents": "1000000000",
+                  "credit_microcents": "500000000"
+                },
+                {
+                  "kind": "addon",
+                  "description": "concurrency_pack",
+                  "subscription_id": "subscription/acme/concurrency_pack",
+                  "amount_cents": 2000
+                },
+                {
+                  "kind": "credit",
+                  "description": "Used credit",
+                  "amount_cents": -500
+                }
+              ]
+            },
+            {
+              "customer_id": "acme",
+              "number": "ACME-0003",
+              "month": "2026-12",
+              "customer_name": "Acme Inc.",
+              "country": "US",
+              "billing_address": "1 Market St, San Francisco, CA 94105",
+              "currency": "USD",
+              "issued_at": "2027-01-01T00:00:00Z",
+              "gross_usage_microcents": "1200000000",
+              "credit_used_microcents": "0",
+              "total_cents": 3200,
+              "lines": [
+                {
+                  "kind": "usage",
+                  "description": "Usage",
+                  "metric": "cpu_seconds",
+                  "usage_month": "2026-12",
+                  "units": "300000000",
+                  "amount_cents": 1200,
+                  "gross_microcents": "1200000000",
+                  "credit_microcents": "0"
+                },
+                {
+                  "kind": "addon",
+                  "description": "concurrency_pack",
+                  "subscription_id": "subscription/acme/concurrency_pack",
+                  "amount_cents": 2000
+                },
+                {
+                  "kind": "credit",
+                  "description": "Used credit",
+                  "amount_cents": 0
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "capture": "catchup",
+      "fault": {
+        "lose_response": true
+      }
+    },
+    {
+      "name": "retry returns the complete original recovery range",
+      "business_time": "2027-01-01T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices/catch-up",
+        "body": {
+          "idempotency_key": "catchup-run",
+          "through_month": "2026-12"
+        }
+      },
+      "want": {
+        "status": 200,
+        "same_as": "catchup"
+      }
+    },
+    {
+      "name": "changed target with same key conflicts",
+      "business_time": "2027-01-01T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices/catch-up",
+        "body": {
+          "idempotency_key": "catchup-run",
+          "through_month": "2027-01"
+        }
+      },
+      "want": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "billing_conflict"
+          }
+        }
+      }
+    },
+    {
+      "name": "new key on existing target reads only that snapshot",
+      "business_time": "2027-01-01T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices/catch-up",
+        "body": {
+          "idempotency_key": "catchup-new-key",
+          "through_month": "2026-12"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "through_month": "2026-12",
+          "invoices": [
+            {
+              "customer_id": "acme",
+              "number": "ACME-0003",
+              "month": "2026-12",
+              "customer_name": "Acme Inc.",
+              "country": "US",
+              "billing_address": "1 Market St, San Francisco, CA 94105",
+              "currency": "USD",
+              "issued_at": "2027-01-01T00:00:00Z",
+              "gross_usage_microcents": "1200000000",
+              "credit_used_microcents": "0",
+              "total_cents": 3200,
+              "lines": [
+                {
+                  "kind": "usage",
+                  "description": "Usage",
+                  "metric": "cpu_seconds",
+                  "usage_month": "2026-12",
+                  "units": "300000000",
+                  "amount_cents": 1200,
+                  "gross_microcents": "1200000000",
+                  "credit_microcents": "0"
+                },
+                {
+                  "kind": "addon",
+                  "description": "concurrency_pack",
+                  "subscription_id": "subscription/acme/concurrency_pack",
+                  "amount_cents": 2000
+                },
+                {
+                  "kind": "credit",
+                  "description": "Used credit",
+                  "amount_cents": 0
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "load original October after recovery",
+      "business_time": "2027-01-01T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-10"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "october"
+      }
+    },
+    {
+      "name": "load recovered November including January receipt in open origin",
+      "business_time": "2027-01-01T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-11"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "number": "ACME-0002",
+          "month": "2026-11",
+          "customer_name": "Acme Inc.",
+          "country": "US",
+          "billing_address": "1 Market St, San Francisco, CA 94105",
+          "currency": "USD",
+          "issued_at": "2027-01-01T00:00:00Z",
+          "gross_usage_microcents": "1000000000",
+          "credit_used_microcents": "500000000",
+          "total_cents": 2500,
+          "lines": [
+            {
+              "kind": "usage",
+              "description": "Usage",
+              "metric": "cpu_seconds",
+              "usage_month": "2026-11",
+              "units": "250000000",
+              "amount_cents": 1000,
+              "gross_microcents": "1000000000",
+              "credit_microcents": "500000000"
+            },
+            {
+              "kind": "addon",
+              "description": "concurrency_pack",
+              "subscription_id": "subscription/acme/concurrency_pack",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "description": "Used credit",
+              "amount_cents": -500
+            }
+          ]
+        }
+      },
+      "capture": "november"
+    },
+    {
+      "name": "load recovered December",
+      "business_time": "2027-01-01T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-12"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "number": "ACME-0003",
+          "month": "2026-12",
+          "customer_name": "Acme Inc.",
+          "country": "US",
+          "billing_address": "1 Market St, San Francisco, CA 94105",
+          "currency": "USD",
+          "issued_at": "2027-01-01T00:00:00Z",
+          "gross_usage_microcents": "1200000000",
+          "credit_used_microcents": "0",
+          "total_cents": 3200,
+          "lines": [
+            {
+              "kind": "usage",
+              "description": "Usage",
+              "metric": "cpu_seconds",
+              "usage_month": "2026-12",
+              "units": "300000000",
+              "amount_cents": 1200,
+              "gross_microcents": "1200000000",
+              "credit_microcents": "0"
+            },
+            {
+              "kind": "addon",
+              "description": "concurrency_pack",
+              "subscription_id": "subscription/acme/concurrency_pack",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "description": "Used credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      },
+      "capture": "december"
+    },
+    {
+      "name": "January receives one closed December dollar and four new dollars",
+      "business_time": "2027-01-31T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "catchup-dec-late",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "catch-up",
+              "metric": "cpu_seconds",
+              "period_start": "2026-12-31T23:59:00Z",
+              "period_end": "2027-01-01T00:00:00Z",
+              "units": 25000000
+            },
+            {
+              "source": "{{source}}",
+              "event_id": "catchup-jan",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "catch-up",
+              "metric": "cpu_seconds",
+              "period_start": "2027-01-10T12:00:00Z",
+              "period_end": "2027-01-10T13:00:00Z",
+              "units": 100000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202
+      }
+    },
+    {
+      "name": "late usage completes once with no remaining credit",
+      "business_time": "2027-01-31T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_microcents": "0",
+          "pending_events": 0,
+          "processing_errors": 0
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "issue January including late December after catch-up cutoff",
+      "business_time": "2027-02-01T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2027-01"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "number": "ACME-0004",
+          "month": "2027-01",
+          "customer_name": "Acme Inc.",
+          "country": "US",
+          "billing_address": "1 Market St, San Francisco, CA 94105",
+          "currency": "USD",
+          "issued_at": "2027-02-01T00:00:00Z",
+          "gross_usage_microcents": "500000000",
+          "credit_used_microcents": "0",
+          "total_cents": 2500,
+          "lines": [
+            {
+              "kind": "usage",
+              "description": "Late usage from 2026-12",
+              "metric": "cpu_seconds",
+              "usage_month": "2026-12",
+              "units": "25000000",
+              "amount_cents": 100,
+              "gross_microcents": "100000000",
+              "credit_microcents": "0"
+            },
+            {
+              "kind": "usage",
+              "description": "Usage",
+              "metric": "cpu_seconds",
+              "usage_month": "2027-01",
+              "units": "100000000",
+              "amount_cents": 400,
+              "gross_microcents": "400000000",
+              "credit_microcents": "0"
+            },
+            {
+              "kind": "addon",
+              "description": "concurrency_pack",
+              "subscription_id": "subscription/acme/concurrency_pack",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "description": "Used credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      },
+      "capture": "january"
+    },
+    {
+      "name": "old catch-up key retains two invoices after January closes",
+      "business_time": "2027-02-01T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices/catch-up",
+        "body": {
+          "idempotency_key": "catchup-run",
+          "through_month": "2026-12"
+        }
+      },
+      "want": {
+        "status": 200,
+        "same_as": "catchup"
+      }
+    },
+    {
+      "name": "producer replay preserves the physical November receipt",
+      "business_time": "2027-02-01T00:00:00Z",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "catchup-nov",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "catch-up",
+              "metric": "cpu_seconds",
+              "period_start": "2026-11-10T12:00:00Z",
+              "period_end": "2026-11-10T13:00:00Z",
+              "units": 200000000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202
+      }
+    },
+    {
+      "name": "reload immutable 2026-10 after all recovery and late receipts",
+      "business_time": "2027-02-01T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-10"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "october"
+      }
+    },
+    {
+      "name": "reload immutable 2026-11 after all recovery and late receipts",
+      "business_time": "2027-02-01T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-11"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "november"
+      }
+    },
+    {
+      "name": "reload immutable 2026-12 after all recovery and late receipts",
+      "business_time": "2027-02-01T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-12"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "december"
+      }
+    },
+    {
+      "name": "reload immutable 2027-01 after all recovery and late receipts",
+      "business_time": "2027-02-01T00:00:00Z",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2027-01"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "january"
+      }
+    }
+  ]
+}

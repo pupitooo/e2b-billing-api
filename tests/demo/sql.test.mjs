@@ -80,6 +80,7 @@ test("inspectionSQL", async (t) => {
         "operation_scope = 'addons/' || E'acme'",
         "operation_scope = 'credits/' || E'acme'",
         "operation_scope = 'addon-cancellations/' || E'acme'",
+        "operation_scope = 'invoice-catch-up/' || E'acme'",
         "operation_scope = 'spend-limit/' || E'acme'",
         "operation_scope = 'prices'",
         "request_payload->'price'->>'customer_id' = E'acme'",

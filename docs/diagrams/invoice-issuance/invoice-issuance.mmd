@@ -23,7 +23,7 @@ flowchart TB
         buyer["<b>7. Read buyer details and the next number</b><br/>Tables: customers, customer_billing_state<br/>Fields: name, country, billing_address, next_invoice_number"]
         header["<b>8. Build the invoice header</b><br/>Currency: USD; month: requested UTC month<br/>Number: uppercase customer ID + padded sequence<br/>Reject an exhausted sequence before publication"]
         groups["<b>9. Load the target month's rated groups</b><br/>Table: rated_usage_groups; filter: customer and billing_month<br/>Order: usage_month, metric, price_version_id<br/>Input: units, exact gross microcents, allocated credit microcents"]
-        addons["<b>10. Load applicable add-on subscriptions</b><br/>Table: addon_subscriptions; start_month at or before target<br/>Order: addon_name, subscription_id<br/>Use each subscription's stored full monthly price"]
+        addons["<b>10. Load applicable add-on subscriptions</b><br/>Tables: addon_subscriptions, addon_cancellations<br/>start_month at or before target; inclusive end_month, if present, at or after target<br/>Order: addon_name, subscription_id<br/>Use each subscription's stored full monthly price"]
         net["<b>11. Calculate each group's exact net</b><br/>Repeat steps 11-15 for each group; skip when there are none<br/>Formula: gross microcents - previously allocated credit microcents<br/>Reject credit exceeding gross; do not debit credit again"]
         roundGross["<b>12. Round each group's gross to cents</b><br/>Rule: half-up; reject values outside signed 64-bit cents"]
         roundNet["<b>13. Round each group's net to cents</b><br/>Rule: half-up; reject values outside signed 64-bit cents"]

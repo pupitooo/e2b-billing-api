@@ -125,7 +125,7 @@ export function customerPath(customer, suffix) {
 export function buildCommand(operation, fields, customer) {
   const key = String(fields.idempotency_key || "");
   if (
-    ["prices", "credits", "addons", "cancel-addon", "spend-limit"].includes(operation) &&
+    ["prices", "credits", "addons", "cancel-addon", "catch-up-invoices", "spend-limit"].includes(operation) &&
     !key
   )
     throw new Error(
@@ -182,6 +182,8 @@ export function buildCommand(operation, fields, customer) {
           fields.unlimited === "on" ? null : usdToCents(fields.limit),
       }),
     };
+  if (operation === "catch-up-invoices")
+    return { method: "POST", path: customerPath(customer, "invoices/catch-up"), body: wireJSON({ idempotency_key: key, through_month: validMonth(fields.through_month) }) };
   if (operation === "invoices")
     return {
       method: "POST",
