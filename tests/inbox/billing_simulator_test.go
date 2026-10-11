@@ -39,6 +39,7 @@ func TestBillingSimulatorExecutable(t *testing.T) {
 		{name: "complete assignment", file: "billing-assignment", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 24},
 		{name: "command identities and changed-content conflicts", file: "billing-command-retries", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 16},
 		{name: "exact sub-cent credit", file: "billing-exact-credit", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 6},
+		{name: "three zero-cent invoices retain usage without carrying rounding remainders", file: "billing-subcent-invoices", invoiceTime: "2027-01-01T00:00:00Z", wantCompleted: 15},
 		{name: "credit exhaustion and a full recurring add-on", file: "billing-credit-exhaustion", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 9},
 		{name: "platform reads and resets monthly limit status", file: "billing-limit-status", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 15},
 		{name: "default versions and customer override", file: "billing-price-versions", invoiceTime: "2026-12-01T00:00:00Z", priceCommandTimes: []string{"2026-10-01T00:00:00Z", "2026-10-01T00:00:00Z", "2026-12-01T00:00:00Z", "2026-12-01T00:00:00Z"}, wantCompleted: 8},

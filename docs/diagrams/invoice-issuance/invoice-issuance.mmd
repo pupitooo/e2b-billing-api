@@ -10,6 +10,7 @@ config:
 ---
 %% One durable transaction. The account lock serializes worker processing and closing.
 %% Numbered boxes are logical activities, not separate transactions.
+%% Money amounts in *_ticks fields are microcents; 1 cent = 1_000_000 microcents.
 flowchart TB
     request["<b>1. Validate the closing input</b><br/>POST /customers/{customer_id}/invoices<br/>Input: customer_id and YYYY-MM month"]
     subgraph issue["One atomic publication transaction - no pending usage processing"]
@@ -21,13 +22,13 @@ flowchart TB
         ready{"<b>6. Is closing history valid?</b><br/>First closing: no earlier usage in usage_inbox<br/>Later closing: previous month must be closed<br/>No closed target/later month or earlier unclosed groups"}
         buyer["<b>7. Read buyer details and the next number</b><br/>Tables: customers, customer_billing_state<br/>Fields: name, country, billing_address, next_invoice_number"]
         header["<b>8. Build the invoice header</b><br/>Currency: USD; month: requested UTC month<br/>Number: uppercase customer ID + padded sequence<br/>Reject an exhausted sequence before publication"]
-        groups["<b>9. Load the target month's rated groups</b><br/>Table: rated_usage_groups; filter: customer and billing_month<br/>Order: usage_month, metric, price_version_id<br/>Input: units, exact gross ticks, allocated credit ticks"]
+        groups["<b>9. Load the target month's rated groups</b><br/>Table: rated_usage_groups; filter: customer and billing_month<br/>Order: usage_month, metric, price_version_id<br/>Input: units, exact gross microcents, allocated credit microcents"]
         addons["<b>10. Load applicable add-on subscriptions</b><br/>Table: addon_subscriptions; start_month at or before target<br/>Order: addon_name, subscription_id<br/>Use each subscription's stored full monthly price"]
-        net["<b>11. Calculate each group's exact net</b><br/>Repeat steps 11-15 for each group; skip when there are none<br/>Formula: gross ticks - previously allocated credit ticks<br/>Reject credit exceeding gross; do not debit credit again"]
+        net["<b>11. Calculate each group's exact net</b><br/>Repeat steps 11-15 for each group; skip when there are none<br/>Formula: gross microcents - previously allocated credit microcents<br/>Reject credit exceeding gross; do not debit credit again"]
         roundGross["<b>12. Round each group's gross to cents</b><br/>Rule: half-up; reject values outside signed 64-bit cents"]
         roundNet["<b>13. Round each group's net to cents</b><br/>Rule: half-up; reject values outside signed 64-bit cents"]
         deduction["<b>14. Derive each group's displayed credit</b><br/>Formula: rounded gross cents - rounded net cents"]
-        usageLines["<b>15. Assemble usage lines and audit totals</b><br/>One usage line per group, displaying gross cents<br/>Keep price, metric, original usage month, units and exact ticks<br/>Label earlier usage_month as late usage<br/>Sum exact gross, exact credit and displayed credit deductions"]
+        usageLines["<b>15. Assemble usage lines and audit totals</b><br/>One usage line per group, displaying gross cents<br/>Keep price, metric, original usage month, units and exact microcents<br/>Label earlier usage_month as late usage<br/>Sum exact gross, exact credit and displayed credit deductions"]
         addonLines["<b>16. Append the add-on lines</b><br/>Amount: full stored monthly price in cents<br/>Credit allocated to usage does not reduce add-ons"]
         creditLine["<b>17. Append one aggregate credit line</b><br/>Amount: negative sum of the group credit deductions<br/>Include the line even when its amount is zero"]
         total["<b>18. Calculate and validate the invoice total</b><br/>Formula: sum all usage, add-on and credit lines<br/>Use an arbitrary-precision sum; validate the final result<br/>Required range: nonnegative signed 64-bit cents"]

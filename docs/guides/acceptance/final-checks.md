@@ -51,8 +51,8 @@ separately from the automated suite, using its numbered step table.
 | [Price boundary](../../simulator/billing-scenarios.md#price-boundary), 5 steps | Compare every step with the canonical action and expected-result table. |
 | [Month boundary](../../simulator/billing-scenarios.md#utc-month-boundary), 5 steps | Compare every step with the canonical action and expected-result table. |
 | [Usage HTTP tests](../../../tests/api/usage_batches_test.go) and [repository tests](../../../tests/inbox/usage_inbox_test.go) | Identical concurrent batches insert once; changed content conflicts and rolls back the entire batch, including a fresh preceding event. Preserve original receipt and processing metadata. Invalid later input causes no partial acceptance. Test transaction cancellation, lock waits, opposite ordering, and commit/rollback races. |
-| [Accounting processing](../../../tests/inbox/billing_test.go), [missing-price recovery](../../../tests/inbox/missing_price_test.go) | Two 60_000-unit default-price increments form 600_000 ticks and one rounded cent, rather than rounding each receipt. Concurrent workers/replay charge once. A late database failure rolls back all financial effects. Missing valid prices commit a P0 error without charges, log once, and recover only after a dated price and explicit release; a failed quarantine commit retains pending input without a committed-incident report. Unsupported schema 2 produces no rating or debit and remains a visible error. |
-| [Money and calendar primitives](../../../internal/accounting/money_test.go), [UTC calendar tests](../../../internal/accounting/calendar_test.go) | A limit is reached at equality using exact gross ticks, including credit-covered usage. Credit stays nonnegative; half-cent ties use half-up presentation. Month calculations normalize offsets to UTC, and add-ons cost zero before their purchase month. |
+| [Accounting processing](../../../tests/inbox/billing_test.go), [missing-price recovery](../../../tests/inbox/missing_price_test.go) | Two 60_000-unit default-price increments form 600_000 microcents and one rounded cent, rather than rounding each receipt. Concurrent workers/replay charge once. A late database failure rolls back all financial effects. Missing valid prices commit a P0 error without charges, log once, and recover only after a dated price and explicit release; a failed quarantine commit retains pending input without a committed-incident report. Unsupported schema 2 produces no rating or debit and remains a visible error. |
+| [Money and calendar primitives](../../../internal/accounting/money_test.go), [UTC calendar tests](../../../internal/accounting/calendar_test.go) | A limit is reached at equality using exact gross microcents, including credit-covered usage. Credit stays nonnegative; half-cent ties use half-up presentation. Month calculations normalize offsets to UTC, and add-ons cost zero before their purchase month. |
 | [Invoice closing](../../../tests/inbox/invoices_test.go), [processed cutoff](../../../tests/inbox/processed_closing_test.go), and [first-month UTC boundary](../../../tests/inbox/first_closing_test.go) | Eight concurrent close requests produce one `ACME-0001`. Only already processed groups enter a one-transaction invoice. Pending and quarantined usage in the target month stay untouched and do not block issuance. The first close cannot skip earlier existing usage; later new invoices require the preceding month closed (`409` on conflict). Both worker/closing lock orders preserve exactly-once charges. Later worker processing and recovery route forward without changing the original invoice; publication failure rolls back closure, freezing and numbering. Empty months are valid; invalid months return `422`, missing invoices/customers `404`. |
 | [Grant](../../../tests/inbox/credit_test.go), [purchase](../../../tests/inbox/addons_test.go), and [price](../../../tests/inbox/prices_test.go) | Changed operation content, missing catalog/customers, and retroactive changes produce their declared errors with no extra grant, subscription, or price. A new purchase cannot alter a closed month. |
 | [Simulator generation](../../../internal/simulator/scenario_test.go) and [transport executable](../../../tests/api/simulator_test.go) | Splitting across sandboxes/minutes preserves the assignment totals; offline generation, failed send, restart, delivery barriers, reversed retries, and replay retain the intended events. Replayed delivery preserves the inbox. |
@@ -191,7 +191,7 @@ printf 'Scenario exit status: %s\n' "$acceptance_scenario_status"
 | --- | --- | --- |
 | [7.1](#71-save-the-invoice-snapshots-before-restart) | Read all three invoices and save complete canonical JSON with `jq -S`. | Three `*-before.json` snapshots exist for comparison; formatting/key order cannot affect equality. |
 | [7.2](#72-stop-and-restart-the-complete-assignment-environment) | Stop and start the same project without removing volumes; rerun migrations and read producer status. | Services become healthy; migration is a no-op; `completed=24 steps=24`. |
-| [7.3](#73-read-the-invoices-again-and-compare-all-retained-state) | Save `*-after.json`, compare all three invoices, reread accounts, and repeat section 5's SQL queries. | Three `cmp` calls exit `0`; Acme balance `700_000_000` ticks/version 8; Cyberdyne October limit reached/version 4; all database counts, totals, ledger, frozen groups, and invoice numbers unchanged; no new migration/activity. |
+| [7.3](#73-read-the-invoices-again-and-compare-all-retained-state) | Save `*-after.json`, compare all three invoices, reread accounts, and repeat section 5's SQL queries. | Three `cmp` calls exit `0`; Acme balance `700_000_000` microcents/version 8; Cyberdyne October limit reached/version 4; all database counts, totals, ledger, frozen groups, and invoice numbers unchanged; no new migration/activity. |
 | [7.4](#74-save-the-restart-result-and-reset-after-the-assignment-scenario) | Record assignment/restart results; retain snapshots, producer state, SQL output, comparisons, and service logs; reset. | Assignment activity and producer progress removed; original seed catalog and empty accounts restored; evidence available for section 9. |
 
 ### 7.1 Save the invoice snapshots before restart
@@ -458,14 +458,14 @@ request JSON, and send. Complete the polling row before issuing the invoice.
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
 | 1 | Read Acme's fresh credit using GET `/customers/acme/credit`. | HTTP `200`; credit 0, version 0, pending/errors 0. |
-| 2 | Grant 25 USD using POST `/customers/acme/credits`, `{"idempotency_key":"covered-grant","amount_cents":2500}`. | HTTP `200`; one grant; balance `2_500_000_000` ticks. |
+| 2 | Grant 25 USD using POST `/customers/acme/credits`, `{"idempotency_key":"covered-grant","amount_cents":2500}`. | HTTP `200`; one grant; balance `2_500_000_000` microcents. |
 | 3 | Buy `concurrency_pack` using POST `/customers/acme/addons`, `{"idempotency_key":"covered-pack","addon_name":"concurrency_pack","purchased_at":"2026-10-05"}`. | HTTP `200`; monthly price 20 USD, start month `2026-10-01`. |
 | 4 | Set a 15 USD limit using POST `/customers/acme/spend-limit`, `{"idempotency_key":"covered-limit","limit_cents":1500}`. | HTTP `200`; limit 1_500 cents. |
 | 5 | Read GET `/customers/acme/months/2026-10/limit-status` before usage. | HTTP `200`; gross 0, `limit_reached=false`, pending/errors 0. The 20 USD add-on is excluded from gross usage. |
 | 6 | Send the JSON below to POST `/usage/batches`: Acme `400_000_000` units for October 10, 12:00–13:00. | HTTP `202`; every unit is durably accepted. |
-| 7 | Poll GET `/customers/acme/months/2026-10/limit-status` until accounting completes. | HTTP `200`; gross `1_600_000_000` ticks (16 USD), limit 15 USD, `limit_reached=true`, version 4, pending/errors 0. |
-| 8 | Issue October using POST `/customers/acme/invoices`, `{"month":"2026-10"}`. | HTTP `200`; `ACME-0001`: usage 16 USD + add-on 20 USD − credit 16 USD = **20 USD**. Exact gross and used credit each `1_600_000_000` ticks. |
-| 9 | Read GET `/customers/acme/credit` after closing. | HTTP `200`; 9 USD (`900_000_000` ticks) remain, version 5, pending/errors 0; no additional invoice debit. |
+| 7 | Poll GET `/customers/acme/months/2026-10/limit-status` until accounting completes. | HTTP `200`; gross `1_600_000_000` microcents (16 USD), limit 15 USD, `limit_reached=true`, version 4, pending/errors 0. |
+| 8 | Issue October using POST `/customers/acme/invoices`, `{"month":"2026-10"}`. | HTTP `200`; `ACME-0001`: usage 16 USD + add-on 20 USD − credit 16 USD = **20 USD**. Exact gross and used credit each `1_600_000_000` microcents. |
+| 9 | Read GET `/customers/acme/credit` after closing. | HTTP `200`; 9 USD (`900_000_000` microcents) remain, version 5, pending/errors 0; no additional invoice debit. |
 | 10 | Read GET `/customers/acme/months/2026-10/limit-status` after closing. | HTTP `200`; gross 16 USD, limit 15 USD, `limit_reached=true`, version 5, pending/errors 0; credit-covered usage still reaches the gross limit. |
 | 11 | Raise the limit using POST `/customers/acme/spend-limit`, `{"idempotency_key":"covered-raised","limit_cents":2000}`. | HTTP `200`; limit 20 USD. |
 | 12 | Read GET `/customers/acme/months/2026-10/limit-status` after raising the limit. | HTTP `200`; unchanged gross 16 USD, limit 20 USD, `limit_reached=false`, version 6, pending/errors 0. |
@@ -497,10 +497,10 @@ keep assignment evidence unchanged. Compare with these literal outcomes and
 
 | Persisted record / check | Expected result |
 | --- | --- |
-| Monthly gross usage | One entry, `1_600_000_000` ticks (16 USD). |
-| Credit ledger | One `2_500_000_000`-tick grant and one `1_600_000_000`-tick usage debit; no add-on or closing debit. |
-| Remaining credit | `900_000_000` ticks (9 USD). |
-| October invoice | `ACME-0001`; usage 1_600 cents + add-on 2_000 cents − credit 1_600 cents = 2_000 cents; exact gross and used credit each `1_600_000_000` ticks. |
+| Monthly gross usage | One entry, `1_600_000_000` microcents (16 USD). |
+| Credit ledger | One `2_500_000_000`-microcent grant and one `1_600_000_000`-microcent usage debit; no add-on or closing debit. |
+| Remaining credit | `900_000_000` microcents (9 USD). |
+| October invoice | `ACME-0001`; usage 1_600 cents + add-on 2_000 cents − credit 1_600 cents = 2_000 cents; exact gross and used credit each `1_600_000_000` microcents. |
 | Final limit status | After raising the limit: gross 16 USD, limit 20 USD, `limit_reached=false`, version 6, pending/errors 0. |
 
 ### 8.4 Save the combined result and reset after the scenario

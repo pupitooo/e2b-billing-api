@@ -9,6 +9,7 @@
 - [Billing assignment](#billing-assignment)
 - [Command retries and conflicts](#command-retries-and-conflicts)
 - [Exact sub-cent credit](#exact-sub-cent-credit)
+- [Zero-total invoices without remainder carry](#zero-total-invoices-without-remainder-carry)
 - [Credit exhaustion](#credit-exhaustion)
 - [Monthly limit status](#monthly-limit-status)
 - [Price versions](#price-versions)
@@ -132,6 +133,7 @@ in the GUI, and the live scenario's data remains unchanged.
 | [Billing assignment](#billing-assignment) | [billing-assignment](billing-assignment.json) | 24 |
 | [Command retries and conflicts](#command-retries-and-conflicts) | [billing-command-retries](billing-command-retries.json) | 16 |
 | [Exact sub-cent credit](#exact-sub-cent-credit) | [billing-exact-credit](billing-exact-credit.json) | 6 |
+| [Zero-total invoices without remainder carry](#zero-total-invoices-without-remainder-carry) | [billing-subcent-invoices](billing-subcent-invoices.json) | 15 |
 | [Credit exhaustion](#credit-exhaustion) | [billing-credit-exhaustion](billing-credit-exhaustion.json) | 9 |
 | [Monthly limit status](#monthly-limit-status) | [billing-limit-status](billing-limit-status.json) | 15 |
 | [Price versions](#price-versions) | [billing-price-versions](billing-price-versions.json) | 8 |
@@ -141,8 +143,8 @@ in the GUI, and the live scenario's data remains unchanged.
 Each numbered row corresponds to exactly one JSON step. The tables are the
 human-readable scenario descriptions; the linked JSON supplies the complete
 request and response assertions. All measurements use `cpu_seconds`, schema
-version 1, and UTC intervals. Amounts are USD unless labeled as cents or ticks;
-1 USD is 100_000_000 ticks. Fresh-account reads require zero credit, pending events,
+version 1, and UTC intervals. Amounts are USD unless labeled as cents or microcents;
+1 USD is 100_000_000 microcents. JSON fields ending in `_ticks` contain microcents. Fresh-account reads require zero credit, pending events,
 processing errors, and state version. Completed accounting reads require zero
 pending events and errors unless the row explicitly expects quarantine.
 HTTP `202` means durable receipt; financial processing is checked by later reads.
@@ -161,8 +163,8 @@ closure; prior Cyberdyne operations or invoices can invalidate the expectations.
 | 2 | Buy `concurrency_pack` on `2026-10-05`. | HTTP `200`; start month October; monthly price 2_000 cents. |
 | 3 | Send four `cpu_seconds` events: sandbox A, October 5, `100_000_000` units; B, October 10, `23_456_789`; A, October 20, `150_000_000`; B, October 25, `50_000_000`. Each interval is 12:00–13:00 UTC. | HTTP `202`; first two use 5 cents per million, last two use 6. |
 | 4 | Wait for accounting through credit reads. | Balance 0; pending/errors 0; state version 5. |
-| 5 | Read October gross usage. | `1_817_283_945` ticks; unlimited; pending/errors 0. |
-| 6 | Issue October invoice, discard successful reply and retry unchanged. | HTTP `200`; `CYBERDYNE-0001`; gross usage `1_817_283_945` ticks; credit 0; total 3_817 cents. |
+| 5 | Read October gross usage. | `1_817_283_945` microcents; unlimited; pending/errors 0. |
+| 6 | Issue October invoice, discard successful reply and retry unchanged. | HTTP `200`; `CYBERDYNE-0001`; gross usage `1_817_283_945` microcents; credit 0; total 3_817 cents. |
 | 7 | Read October invoice. | Complete snapshot equals step 6. |
 | 8 | Repeat October issuance. | Same number, issue time and complete snapshot. |
 | 9 | Read final credit state. | Balance 0; pending/errors 0; state version 6. |
@@ -186,19 +188,19 @@ Use the [run prerequisites](#run-the-complete-assignment) for calendar and recei
 | 4 | Purchase Acme's `concurrency_pack` with key `acme-pack` at `2026-10-05`. | HTTP `200`; monthly price 20 USD, start month `2026-10-01`; capture the subscription response. |
 | 5 | Set Cyberdyne's monthly limit to 15 USD with key `october-limit`. | HTTP `200`; stored limit is 1_500 cents. |
 | 6 | Send the October 10, 12:00–13:00 measurements: Acme `100_000_000` units and Cyberdyne `123_456_789` units. | HTTP `202`; both measurements are durably accepted. |
-| 7 | Poll Acme's credit after the first hour. | HTTP `200`; 4 USD consumed, 21 USD remaining (`2_100_000_000` ticks); state version 3. |
-| 8 | Poll Cyberdyne's October limit status. | HTTP `200`; gross usage `617_283_945` ticks (6.17283945 USD), limit 15 USD, `limit_reached=false`. |
+| 7 | Poll Acme's credit after the first hour. | HTTP `200`; 4 USD consumed, 21 USD remaining (`2_100_000_000` microcents); state version 3. |
+| 8 | Poll Cyberdyne's October limit status. | HTTP `200`; gross usage `617_283_945` microcents (6.17283945 USD), limit 15 USD, `limit_reached=false`. |
 | 9 | Retry both first-hour measurements with unchanged identities and content. | HTTP `202`; no additional receipt, charge, or credit debit. |
 | 10 | Send the October 20, 12:00–13:00 measurements: `200_000_000` units for each customer. | HTTP `202`; two additional measurements are accepted. |
-| 11 | Poll Acme's credit after October usage. | HTTP `200`; another 8 USD consumed, 13 USD remaining (`1_300_000_000` ticks); state version 4. |
-| 12 | Poll Cyberdyne's October limit status. | HTTP `200`; gross usage `1_817_283_945` ticks (18.17283945 USD), limit 15 USD, `limit_reached=true`. |
-| 13 | Issue Acme's October invoice; discard the committed reply and retry unchanged. | HTTP `200`; one `ACME-0001` snapshot: usage 12 USD + add-on 20 USD − credit 12 USD = **20 USD**. Exact gross and used credit are each `1_200_000_000` ticks. |
-| 14 | Issue Cyberdyne's October invoice after its limit was reached. | HTTP `200`; `CYBERDYNE-0001`: usage lines 6.17 USD and 12 USD, credit 0, total **18.17 USD**. Exact gross is `1_817_283_945` ticks; all usage remains billable. |
+| 11 | Poll Acme's credit after October usage. | HTTP `200`; another 8 USD consumed, 13 USD remaining (`1_300_000_000` microcents); state version 4. |
+| 12 | Poll Cyberdyne's October limit status. | HTTP `200`; gross usage `1_817_283_945` microcents (18.17283945 USD), limit 15 USD, `limit_reached=true`. |
+| 13 | Issue Acme's October invoice; discard the committed reply and retry unchanged. | HTTP `200`; one `ACME-0001` snapshot: usage 12 USD + add-on 20 USD − credit 12 USD = **20 USD**. Exact gross and used credit are each `1_200_000_000` microcents. |
+| 14 | Issue Cyberdyne's October invoice after its limit was reached. | HTTP `200`; `CYBERDYNE-0001`: usage lines 6.17 USD and 12 USD, credit 0, total **18.17 USD**. Exact gross is `1_817_283_945` microcents; all usage remains billable. |
 | 15 | Deliver Acme's late October 30, 12:00–13:00 measurement of `50_000_000` units after October closing; discard the committed reply and retry. | HTTP `202`; one receipt, priced using October consumption time; billing month November under the required receipt-time assumptions. |
 | 16 | Deliver Acme's November 3, 12:00–13:00 measurement of `100_000_000` units. | HTTP `202`; one additional receipt. |
-| 17 | Poll Acme's credit after late October and November usage. | HTTP `200`; 7 USD remaining (`700_000_000` ticks); state version 7. |
+| 17 | Poll Acme's credit after late October and November usage. | HTTP `200`; 7 USD remaining (`700_000_000` microcents); state version 7. |
 | 18 | Poll Cyberdyne's November limit status. | HTTP `200`; gross usage 0, retained limit 15 USD, `limit_reached=false`. |
-| 19 | Issue Acme's November invoice. | HTTP `200`; `ACME-0002`: late October usage 2 USD + November usage 4 USD + add-on 20 USD − credit 6 USD = **20 USD**. Exact gross and used credit are each `600_000_000` ticks. |
+| 19 | Issue Acme's November invoice. | HTTP `200`; `ACME-0002`: late October usage 2 USD + November usage 4 USD + add-on 20 USD − credit 6 USD = **20 USD**. Exact gross and used credit are each `600_000_000` microcents. |
 | 20 | Read Acme's credit after invoice issuance. | HTTP `200`; still 7 USD, state version 8; invoice issuance consumes no additional credit. |
 | 21 | Read Acme's October invoice after late usage. | HTTP `200`; complete response equals the snapshot captured at step 13. |
 | 22 | Retry Acme's October invoice issuance. | HTTP `200`; the same complete snapshot, number, and issue time; no second invoice. |
@@ -217,7 +219,7 @@ UTC date after catalog locking for a new command; unchanged retries retain their
 | 2 | Grant 25 USD with key `welcome`; discard the committed reply and retry unchanged. | HTTP `200`; one grant despite the lost reply. |
 | 3 | Repeat the same 25 USD grant and key. | HTTP `200`; original grant returned without another credit increase. |
 | 4 | Reuse `welcome` but change the amount to 26 USD. | HTTP `409`, `billing_conflict`; no additional grant. |
-| 5 | Poll Acme's credit. | HTTP `200`; exactly 25 USD (`2_500_000_000` ticks), state version 1. |
+| 5 | Poll Acme's credit. | HTTP `200`; exactly 25 USD (`2_500_000_000` microcents), state version 1. |
 | 6 | Buy `concurrency_pack` with key `acme-pack` at `2026-10-05T00:00:00Z`. | HTTP `200`; monthly price 20 USD; capture the subscription response. |
 | 7 | Retry the identical purchase with `acme-pack`. | HTTP `200`; original purchase returned; no duplicate subscription. |
 | 8 | Try the same add-on and purchase time using a new key, `another-pack`. | HTTP `409`, `billing_conflict`; a second subscription is rejected. |
@@ -240,9 +242,37 @@ October must be a completed UTC month before step 5.
 | 1 | Read Acme's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
 | 2 | Grant 0.01 USD with key `one-cent`. | HTTP `200`; one-cent grant accepted. |
 | 3 | Send two `1_250`-unit increments on October 10, 12:00–12:01 and 12:01–12:02. | HTTP `202`; both increments accepted. |
-| 4 | Poll Acme's credit after processing. | HTTP `200`; `10_000` ticks consumed; `990_000` ticks (0.0099 USD) remain, state version 3. |
-| 5 | Issue the October invoice. | HTTP `200`; `ACME-0001`, total 0 cents; usage `2_500` units, displayed usage and credit lines each 0 cents. Exact gross and used credit are each `10_000` ticks. |
-| 6 | Read credit after invoice rounding. | HTTP `200`; still `990_000` ticks, state version 4; no additional tick consumed. |
+| 4 | Poll Acme's credit after processing. | HTTP `200`; `10_000` microcents consumed; `990_000` microcents (0.0099 USD) remain, state version 3. |
+| 5 | Issue the October invoice. | HTTP `200`; `ACME-0001`, total 0 cents; usage `2_500` units, displayed usage and credit lines each 0 cents. Exact gross and used credit are each `10_000` microcents. |
+| 6 | Read credit after invoice rounding. | HTTP `200`; still `990_000` microcents, state version 4; no additional microcent consumed. |
+
+## Zero-total invoices without remainder carry
+
+Source: [billing-subcent-invoices.json](billing-subcent-invoices.json).
+Use fresh Acme seed data with no credit or add-ons. The fixed business clock must
+be at least `2027-01-01T00:00:00Z` to close all three months; integration tests use
+that instant. Each receipt contains `50_000` units at the existing Acme override
+of 4 cents per million, worth exactly `200_000` microcents (USD 0.002).
+Each month's group rounds independently to zero cents. The three exact charges
+sum to USD 0.006, but no rounding remainder is carried into a later invoice.
+This is the [explicit rounding policy](../architecture/accounting-rules.md#rounding-and-invoice-presentation),
+not an additional requirement from the assignment.
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Read Acme's fresh account. | HTTP `200`; credit, pending events, errors, and state version are all zero. |
+| 2 | Send `50_000` October units. | HTTP `202`; accepted. |
+| 3 | Wait for October accounting. | HTTP `200`; credit 0, no pending/errors, version 1. |
+| 4 | Close October and capture the snapshot. | HTTP `200`; `ACME-0001`, total 0 cents, one usage line with `50_000` units, exact gross `200_000` microcents, credit 0. |
+| 5 | Send `50_000` November units. | HTTP `202`; accepted. |
+| 6 | Wait for November accounting. | HTTP `200`; credit 0, no pending/errors, version 3. |
+| 7 | Close November and capture the snapshot. | HTTP `200`; `ACME-0002`, total 0 cents, one usage line with `50_000` units, exact gross `200_000` microcents, credit 0. |
+| 8 | Send `50_000` December units. | HTTP `202`; accepted. |
+| 9 | Wait for December accounting. | HTTP `200`; credit 0, no pending/errors, version 5. |
+| 10 | Close December and capture the snapshot. | HTTP `200`; `ACME-0003`, total 0 cents, one usage line with `50_000` units, exact gross `200_000` microcents, credit 0. The combined three-month value creates no extra charge. |
+| 11–13 | Read each invoice after all closures. | HTTP `200`; each complete response equals its captured snapshot. |
+| 14 | Retry October issuance. | HTTP `200`; original October snapshot and number. |
+| 15 | Read final credit and state version. | HTTP `200`; credit 0, no pending/errors, version 6; reads and retry caused no financial effects. |
 
 ## Credit exhaustion
 
@@ -255,11 +285,11 @@ October must be a completed UTC month before step 6.
 | 2 | Grant 0.01 USD with key `one-cent`. | HTTP `200`; one-cent grant accepted. |
 | 3 | Buy `concurrency_pack` with key `acme-pack` at `2026-10-31T23:59:59Z`. | HTTP `200`; full monthly price 20 USD, start month `2026-10-01`, despite purchase in October's last second. |
 | 4 | Send `500_000` units for October 10, 12:00–13:00. | HTTP `202`; measurement accepted; gross usage is 0.02 USD when processed. |
-| 5 | Poll Acme's credit. | HTTP `200`; credit exhausted to 0 ticks, state version 3. |
-| 6 | Issue the October invoice and capture it. | HTTP `200`; `ACME-0001`: usage 0.02 USD + add-on 20 USD − credit 0.01 USD = **20.01 USD**. Exact gross `2_000_000` ticks, used credit `1_000_000` ticks. |
+| 5 | Poll Acme's credit. | HTTP `200`; credit exhausted to 0 microcents, state version 3. |
+| 6 | Issue the October invoice and capture it. | HTTP `200`; `ACME-0001`: usage 0.02 USD + add-on 20 USD − credit 0.01 USD = **20.01 USD**. Exact gross `2_000_000` microcents, used credit `1_000_000` microcents. |
 | 7 | Grant another 0.05 USD with key `later`. | HTTP `200`; new grant accepted without rewriting previous allocations. |
 | 8 | Read the issued October invoice. | HTTP `200`; complete response equals the snapshot captured at step 6. |
-| 9 | Poll Acme's credit. | HTTP `200`; `5_000_000` ticks (0.05 USD), state version 5; no retroactive debit. |
+| 9 | Poll Acme's credit. | HTTP `200`; `5_000_000` microcents (0.05 USD), state version 5; no retroactive debit. |
 
 ## Monthly limit status
 
@@ -271,17 +301,17 @@ October must be a completed UTC month before step 15.
 | 1 | Read Cyberdyne's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
 | 2 | Set a 15 USD monthly limit with key `first`. | HTTP `200`; limit 1_500 cents. |
 | 3 | Send `123_456_789` units for October 10, 12:00–13:00. | HTTP `202`; measurement accepted. |
-| 4 | Poll October limit status. | HTTP `200`; gross `617_283_945` ticks (6.17283945 USD), limit 15 USD, `limit_reached=false`. |
+| 4 | Poll October limit status. | HTTP `200`; gross `617_283_945` microcents (6.17283945 USD), limit 15 USD, `limit_reached=false`. |
 | 5 | Send `200_000_000` units for October 20, 12:00–13:00. | HTTP `202`; measurement accepted even though total usage will exceed the limit. |
-| 6 | Poll October limit status. | HTTP `200`; gross `1_817_283_945` ticks (18.17283945 USD), limit 15 USD, `limit_reached=true`. |
+| 6 | Poll October limit status. | HTTP `200`; gross `1_817_283_945` microcents (18.17283945 USD), limit 15 USD, `limit_reached=true`. |
 | 7 | Raise the limit to 20 USD with key `higher`. | HTTP `200`; limit 2_000 cents. |
-| 8 | Poll October limit status. | HTTP `200`; unchanged gross `1_817_283_945` ticks, limit 20 USD, `limit_reached=false`. |
+| 8 | Poll October limit status. | HTTP `200`; unchanged gross `1_817_283_945` microcents, limit 20 USD, `limit_reached=false`. |
 | 9 | Restore the 15 USD limit with key `restore`. | HTTP `200`; limit 1_500 cents. |
 | 10 | Read November limit status. | HTTP `200`; gross 0, retained limit 15 USD, `limit_reached=false`. |
 | 11 | Set the limit to 0 with key `zero`. | HTTP `200`; zero is stored as a real limit. |
 | 12 | Read November status with zero spend and a zero limit. | HTTP `200`; gross 0, limit 0, `limit_reached=true`. |
 | 13 | Remove the limit with key `unlimited` and `limit_cents=null`. | HTTP `200`; unlimited configuration stored. |
-| 14 | Read October status with the limit removed. | HTTP `200`; gross remains `1_817_283_945` ticks, limit NULL, `limit_reached=false`. |
+| 14 | Read October status with the limit removed. | HTTP `200`; gross remains `1_817_283_945` microcents, limit NULL, `limit_reached=false`. |
 | 15 | Issue Cyberdyne's October invoice. | HTTP `200`; `CYBERDYNE-0001`, usage lines 6.17 USD and 12 USD, credit 0, total **18.17 USD**; exceeding the limit discarded no usage. |
 
 ## Price versions
@@ -301,7 +331,7 @@ Historical catalog repair uses [controlled operator SQL](../guides/accounting-re
 | 5 | Poll Cyberdyne's credit after rating. | HTTP `200`; credit 0, state version 2; both receipts processed without errors. |
 | 6 | Try a new default of 9 cents per million, effective `2026-10-12`, key `retroactive-default`. | HTTP `422`, `invalid_command`, field `effective_from`; rated history remains unchanged. |
 | 7 | Try a new Cyberdyne override of 1 cent per million, effective `2026-10-10`, key `retroactive-override`. | HTTP `422`, `invalid_command`, field `effective_from`; rated history remains unchanged. |
-| 8 | Issue Cyberdyne's October invoice. | HTTP `200`; `CYBERDYNE-0001`, usage 8 USD and 3 USD, credit 0, total **11 USD**. Exact gross `1_100_000_000` ticks; line IDs match the captured prices, ordered by price-version ID. |
+| 8 | Issue Cyberdyne's October invoice. | HTTP `200`; `CYBERDYNE-0001`, usage 8 USD and 3 USD, credit 0, total **11 USD**. Exact gross `1_100_000_000` microcents; line IDs match the captured prices, ordered by price-version ID. |
 
 ## Price boundary
 
@@ -383,7 +413,7 @@ the same recovery controls can be applied to the assignment.
 | Step | Simulator action | Expected result |
 | --- | --- | --- |
 | 1 | Start `billing-exact-credit` against an unavailable endpoint with `MAX_ATTEMPTS=1`. | Process fails before its first successful read; completed steps 0; the original plan and failed-step error remain saved. |
-| 2 | Start a new process with the original plan, source, and state file against the available API. | All 6 steps pass; final credit `990_000` ticks, zero-cent invoice, no duplicated effects. |
+| 2 | Start a new process with the original plan, source, and state file against the available API. | All 6 steps pass; final credit `990_000` microcents, zero-cent invoice, no duplicated effects. |
 
 Network failures and unexpected HTTP `408`, `429`, or `5xx` responses retry with
 exponential backoff. `Retry-After` is a minimum delay. Other unexpected HTTP results

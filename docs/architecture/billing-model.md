@@ -35,7 +35,7 @@ This diagram shows all 16 tables and their SQL columns, primary keys, foreign ke
 
 [Open full-size PNG](../diagrams/implemented-data-model/implemented-data-model.png) · [Editable Mermaid source](../diagrams/implemented-data-model/implemented-data-model.mmd).
 
-All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns belonging to primary and foreign keys, including composite keys. Solid relationships include the referenced identity in the child's primary key; dashed relationships are other declared foreign keys. The Mermaid source records the composite unique constraints. `billing_ticks` is an exact `numeric` domain for non-negative finite integers; one cent is 1_000_000 ticks.
+All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns belonging to primary and foreign keys, including composite keys. Solid relationships include the referenced identity in the child's primary key; dashed relationships are other declared foreign keys. The Mermaid source records the composite unique constraints. `billing_ticks` is an exact `numeric` domain for non-negative finite integer amounts in microcents; one cent is 1_000_000 microcents. Columns ending in `_ticks` contain microcents; the signed ledger uses `billing_signed_ticks`.
 
 `usage_inbox` has no customer or metric foreign keys. Its optional one-to-one relationship with `usage_ratings` records whether an event has been assigned to a group; each rating references one `rated_usage_groups` row. The diagram shows database cardinalities, so a customer may have zero or one account-state row even though the seed creates one for each initial customer. Receipt matching and price ownership checks are enforced by triggers, as described below.
 
@@ -50,14 +50,14 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 | `metrics` | Supported metering identifiers. |
 | `api_idempotency_operations` | Append-only scoped request keys, normalized original inputs, successful resource results, and creation times. Written atomically with prices, subscriptions, credit grants, and spend-limit changes; keys are retained indefinitely. |
 | `price_versions` | Historical prices for a metric, either a default (`customer_id IS NULL`) or a customer override. Each version stores an explicit effective instant; new API versions use midnight UTC on the supplied calendar date. |
-| `rated_usage_groups` | Totals grouped by customer, price version, original usage month, and billing month; stores exact units/gross ticks, booked gross cents, and allocated credit ticks. |
+| `rated_usage_groups` | Totals grouped by customer, price version, original usage month, and billing month; stores exact units/gross microcents, booked gross cents, and allocated credit microcents. |
 | `usage_ratings` | Links one `(source, event_id)` from `usage_inbox` to exactly one group. Many events can share a group. |
-| `monthly_usage` | Gross usage charges in exact ticks per customer and original UTC month, before credit and add-ons. |
-| `credit_entries` | Exact signed tick history: positive grants without a group and negative usage debits referencing a group owned by the same customer. Server-generated `credit_entry_id` identifies each row; API keys live in the shared command history. Usage effects commit with the unique event rating and receipt checkpoint. |
+| `monthly_usage` | Gross usage charges in exact microcents per customer and original UTC month, before credit and add-ons. |
+| `credit_entries` | Exact signed microcent history: positive grants without a group and negative usage debits referencing a group owned by the same customer. Server-generated `credit_entry_id` identifies each row; API keys live in the shared command history. Usage effects commit with the unique event rating and receipt checkpoint. |
 | `addons` | Add-on catalog and monthly price in cents. |
 | `addon_subscriptions` | Customer purchases with a monthly price snapshot and the UTC purchase month. One subscription per customer and add-on is supported; cancellation and multiple quantities are future work. |
 | `closed_billing_months` | Immutable customer/month closures used to route late consumption forward. |
-| `invoices` | One immutable snapshot per customer/month, with unique per-customer number and total cents. Buyer details, ordered lines, exact audit ticks, and issue time are in `snapshot`. |
+| `invoices` | One immutable snapshot per customer/month, with unique per-customer number and total cents. Buyer details, ordered lines, exact audit microcents, and issue time are in `snapshot`. |
 | `invoiced_usage_groups` | Links issued invoices to groups; a trigger rejects changes to frozen groups. |
 
 Identifiers, balances, prices, and timestamps are supplied explicitly. `customer_billing_state.state_version` defaults to zero and `next_invoice_number` to one for new accounts; callers may supply explicit initial values. Version increments and text validation remain application responsibilities. The inbox remains independent of the catalog: ingestion can preserve unknown customers or metrics for an explicit processing error rather than losing the input.
@@ -83,7 +83,7 @@ Migration `002_billing_model.sql` creates the model. Migration `003_assignment_s
 
 Both accounts start with zero credit, no spend limit, and state version zero. The example's USD 25 grant, purchase, USD 15 limit, metering events, and invoices are business actions performed by public APIs and the billing simulator, rather than initial catalog data. No financial history or usage is seeded.
 
-Migration `004_exact_credit.sql` converts existing cent credit values to ticks without rewriting migration 002 or its seed. It adds the finite signed-integer domain `billing_signed_ticks` for ledger amounts. See the [conversion and legacy-allocation limitation](../guides/migrations.md#migration-and-verification).
+Migration `004_exact_credit.sql` converts existing cent credit values to microcents without rewriting migration 002 or its seed. It adds the finite signed-integer domain `billing_signed_ticks` for ledger amounts. See the [conversion and legacy-allocation limitation](../guides/migrations.md#migration-and-verification).
 
 The migration runner applies schema, seed, and version records in one transaction under the existing advisory lock. On an existing volume it applies only pending versions. Repeated runs skip the seed, preserving changed account state and customer details. A seed error rolls back the model migration and its version record too.
 

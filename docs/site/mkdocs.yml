@@ -110,6 +110,7 @@ extra:
     - simulator/billing-command-retries.json
     - simulator/billing-credit-exhaustion.json
     - simulator/billing-exact-credit.json
+    - simulator/billing-subcent-invoices.json
     - simulator/billing-limit-status.json
     - simulator/billing-month-boundary.json
     - simulator/billing-price-boundary.json

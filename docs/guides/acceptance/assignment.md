@@ -121,7 +121,7 @@ Expect server time zone `UTC` and the following literal catalog:
 | `cpu-default-2026-10-15` | Default, 6 cents per million, `2026-10-15T00:00:00Z` |
 | `cpu-acme-2026-10-01` | Acme override, 4 cents per million, `2026-10-01T00:00:00Z` |
 | `concurrency_pack` | 2_000 cents per month |
-| Each account | Zero ticks, NULL limit, `state_version=0`, `next_invoice_number=1` |
+| Each account | Zero microcents, NULL limit, `state_version=0`, `next_invoice_number=1` |
 | Activity counts | Zero receipts, credit entries, subscriptions, and invoices |
 
 Any different starting balance, version, activity, or catalog is a failed
@@ -236,7 +236,7 @@ Each command below creates a new producer process while reusing its durable stat
 | [4.2](#42-stop-the-api-verify-failed-delivery-and-recover-steps-12) | Stop the API, attempt step 1 once, inspect the checkpoint, restart, and complete steps 1–2. | Transport failure leaves completed count 0 and empty accounts; recovery reaches `completed=2 steps=24`. |
 | [4.3](#43-verify-the-lost-grant-reply-and-complete-steps-35) | Lose the committed 25 USD grant reply; inspect credit and progress; retry and complete purchase/limit commands. | One grant, one 20 USD subscription, Cyberdyne limit 15 USD; completed count 5. |
 | [4.4](#44-stop-the-worker-and-verify-durable-receipt-at-step-6) | Stop the worker, send step 6, inspect accounts and inbox rows, then restart the worker. | HTTP `202`; completed count 6; one pending receipt per customer, no rating links or financial processing before restart. |
-| [4.5](#45-complete-steps-79-and-compare-receipt-metadata) | Await accounting reads 7–8, snapshot the receipts, replay step 9, and compare metadata. | Acme credit 21 USD; Cyberdyne gross `617_283_945` ticks; completed count 9; identical receipt files and no extra financial effects. |
+| [4.5](#45-complete-steps-79-and-compare-receipt-metadata) | Await accounting reads 7–8, snapshot the receipts, replay step 9, and compare metadata. | Acme credit 21 USD; Cyberdyne gross `617_283_945` microcents; completed count 9; identical receipt files and no extra financial effects. |
 | [4.6](#46-complete-steps-1024-against-the-checkpoint-table) | Execute one command for each remaining row 10–24 in the linked canonical table, observing step 1.4's prerequisites. | Every declared HTTP response and literal amount matches; completed count 24; no pending events or processing errors. |
 | [4.7](#47-save-and-verify-the-completed-simulator-checkpoint) | Save CLI status and the complete producer state. | `completed=24 steps=24`, `next_step=24`, `step_count=24`, and no `last_error`; both evidence files exist. |
 
@@ -311,7 +311,7 @@ evidence of the expected network failure.
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
 | 1 | Execute assignment step 3 with `MAX_ATTEMPTS=1`, losing its committed grant reply. | Process fails with `injected lost committed response`; `completed=2 steps=24`, although the 25 USD grant committed. |
-| 2 | Read saved progress and Acme's credit independently. | Completed count 2; credit `2_500_000_000` ticks, version 1, pending/errors 0. |
+| 2 | Read saved progress and Acme's credit independently. | Completed count 2; credit `2_500_000_000` microcents, version 1, pending/errors 0. |
 | 3 | Resume the original step using `acceptance_next`. | The unchanged `welcome` command confirms the original grant; completed count 3, no extra credit. |
 | 4 | Execute assignment step 4 using `acceptance_next`. | One `concurrency_pack` subscription at 20 USD per month; completed count 4. |
 | 5 | Execute assignment step 5 using `acceptance_next`. | Cyberdyne limit 15 USD; completed count 5. |
@@ -339,14 +339,14 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 **Initial state**
 
 - Steps 3 through 5 have passed (`completed=5`); API and worker are running.
-- Acme has 2_500_000_000 credit ticks, version 2, and the `acme-pack` subscription.
+- Acme has 2_500_000_000 credit microcents, version 2, and the `acme-pack` subscription.
 - Cyberdyne has zero credit, a 1_500-cent limit, and version 1.
 - Neither customer has usage receipts, pending events, or processing errors.
 
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
 | 1 | Stop the worker and execute assignment step 6. | HTTP `202`; completed count 6; both first-hour receipts are durable. |
-| 2 | Read Acme's credit and Cyberdyne's October status while the worker is stopped. | Acme credit `2_500_000_000` ticks, version 2; Cyberdyne gross 0, version 1. Each customer has one pending event and zero errors. |
+| 2 | Read Acme's credit and Cyberdyne's October status while the worker is stopped. | Acme credit `2_500_000_000` microcents, version 2; Cyberdyne gross 0, version 1. Each customer has one pending event and zero errors. |
 | 3 | Query the two inbox rows and their rating links before restarting the worker; save `receipts-worker-stopped.txt`. | Exactly two rows; both `processed_at` and `processing_error` are NULL; `rating_links=0` for each receipt. |
 | 4 | Restart the worker, then proceed to the next accounting reads. | The existing receipts are processed; the canonical assignment's steps 7–8 establish the expected credit and gross amounts. |
 
@@ -387,7 +387,7 @@ Complete the two accounting reads, snapshot the first receipts, and repeat them:
 
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
-| 1 | Execute assignment steps 7–8 to await both accounts' processing. | Acme credit 21 USD; Cyberdyne October gross `617_283_945` ticks, below its 15 USD limit; pending/errors 0. |
+| 1 | Execute assignment steps 7–8 to await both accounts' processing. | Acme credit 21 USD; Cyberdyne October gross `617_283_945` microcents, below its 15 USD limit; pending/errors 0. |
 | 2 | Save both first-hour inbox rows, including their receipt and processing timestamps. | Two processed rows saved in `receipts-before-retry.jsonl`. |
 | 3 | Execute assignment step 9 to resend the same measurements. | HTTP `202`; completed count 9; no new receipt or financial effect. |
 | 4 | Save the same rows again and compare the files with `cmp`. | Files identical, including `received_at` and `processed_at`; `cmp` exits zero. |
@@ -421,8 +421,8 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 
 - Steps 7 through 9 have passed (`completed=9`); both first-hour receipts are
   processed, and the saved receipt comparisons are identical.
-- Acme has 2_100_000_000 credit ticks and version 3. Cyberdyne's October gross is
-  617_283_945 ticks, below its 1_500-cent limit. Both have zero pending events and
+- Acme has 2_100_000_000 credit microcents and version 3. Cyberdyne's October gross is
+  617_283_945 microcents, below its 1_500-cent limit. Both have zero pending events and
   processing errors.
 - All services needed for delivery and accounting are running in the same
   assignment project, using the same durable workflow state.
@@ -484,7 +484,7 @@ times in one uninterrupted run.
 
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
-| [5.1](#51-compare-the-complete-invoice-responses) | Read Acme October/November and Cyberdyne October invoices; save full JSON and compare fields and ordered lines. | Three HTTP `200` responses; identities, currency, months, numbers, exact ticks, and amounts match the tables below; line amounts sum to totals. |
+| [5.1](#51-compare-the-complete-invoice-responses) | Read Acme October/November and Cyberdyne October invoices; save full JSON and compare fields and ordered lines. | Three HTTP `200` responses; identities, currency, months, numbers, exact microcents, and amounts match the tables below; line amounts sum to totals. |
 | [5.2](#52-query-the-final-database-state-independently) | Query receipts, rating links/groups, monthly usage, account state, ledger, subscriptions, invoices, and closed months through PostgreSQL. | Independent output is saved in `final-state.txt`; expected values come from the literal tables, not production calculations. |
 | [5.3](#53-compare-the-persisted-state-with-the-literal-expectations) | Compare every SQL record with the group and persisted-state tables below. | Six processed receipts, six rating links, five frozen groups, three invoices/closed months, and all literal financial values match. |
 
@@ -510,7 +510,7 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 
 Compare the saved JSON with these literal lines and the field checks below:
 
-| Invoice | Ordered line amounts, cents | Gross usage ticks | Credit used ticks | Total cents |
+| Invoice | Ordered line amounts, cents | Gross usage microcents | Credit used microcents | Total cents |
 | --- | --- | --- | --- | --- |
 | Acme October, `ACME-0001` | Usage 1_200; pack 2_000; credit −1_200 | 1_200_000_000 | 1_200_000_000 | 2_000 |
 | Cyberdyne October, `CYBERDYNE-0001` | Usage at 5 cents: 617; at 6 cents: 1_200; credit 0 | 1_817_283_945 | 0 | 1_817 |
@@ -519,7 +519,7 @@ Compare the saved JSON with these literal lines and the field checks below:
 | Invoice field / check | Expected result |
 | --- | --- |
 | Buyer | Customer identity and billing address match the section 3 seed table. |
-| Currency, month, number, and exact audit ticks | `USD`, requested month, customer-specific number, and gross/credit ticks match the invoice table. |
+| Currency, month, number, and exact audit microcents | `USD`, requested month, customer-specific number, and gross/credit microcents match the invoice table. |
 | Cyberdyne's first usage charge | Exact USD 6.172_839_45 before presentation rounding; displayed amount 617 cents. |
 | Acme November usage months | Late line `usage_month: 2026-10`; ordinary line `usage_month: 2026-11`. |
 | Acme's late-line label | `Late usage from 2026-10` |
@@ -572,7 +572,7 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 
 Compare `final-state.txt` with both tables below.
 
-| Customer / price | Usage month → invoice month | Units | Gross ticks | Credit ticks | Booked gross cents |
+| Customer / price | Usage month → invoice month | Units | Gross microcents | Credit microcents | Booked gross cents |
 | --- | --- | --- | --- | --- | --- |
 | Acme / `cpu-acme-2026-10-01` | October → October | 300_000_000 | 1_200_000_000 | 1_200_000_000 | 1_200 |
 | Acme / `cpu-acme-2026-10-01` | October → November | 50_000_000 | 200_000_000 | 200_000_000 | 200 |
@@ -584,13 +584,13 @@ Compare `final-state.txt` with both tables below.
 | --- | --- |
 | Receipts and rating links | Six receipts and six links: exactly one each for `acme-first`, `acme-second`, `acme-late`, `acme-november`, `cyberdyne-first`, and `cyberdyne-second`. All processed; no errors. |
 | Retry metadata | Original `received_at` and `processed_at` survive identical retries; step 4.5's files compare equal. |
-| Acme monthly gross | October `1_400_000_000` ticks including late usage; November `400_000_000` ticks. Consumption-month gross can differ from invoice gross. |
-| Cyberdyne monthly gross | October `1_817_283_945` ticks; November row absent, with the API projecting zero. |
-| Acme account and ledger | Balance and ledger each `700_000_000` ticks; NULL limit; state version 8; next invoice number 3. |
+| Acme monthly gross | October `1_400_000_000` microcents including late usage; November `400_000_000` microcents. Consumption-month gross can differ from invoice gross. |
+| Cyberdyne monthly gross | October `1_817_283_945` microcents; November row absent, with the API projecting zero. |
+| Acme account and ledger | Balance and ledger each `700_000_000` microcents; NULL limit; state version 8; next invoice number 3. |
 | Cyberdyne account and ledger | Balance and ledger each 0; limit 1_500 cents; state version 4; next invoice number 2. |
 | Subscriptions | One Acme `concurrency_pack` subscription. |
 | Invoices, closed months, and frozen groups | Three invoices, three closed months, five frozen groups; invoice numbers and buyer details match the invoice/seed tables. |
-| Credit entries | Five entries: one `2_500_000_000`-tick grant; four usage debits of `400_000_000`, `800_000_000`, `200_000_000`, and `400_000_000` ticks. |
+| Credit entries | Five entries: one `2_500_000_000`-microcent grant; four usage debits of `400_000_000`, `800_000_000`, `200_000_000`, and `400_000_000` microcents. |
 | Add-on and closing effects on credit | No credit entry pays an add-on or is created by invoice issuance. |
 
 

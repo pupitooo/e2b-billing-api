@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 // invoice workflow executes the actual form and Load handlers in isolated browser
 // contexts. POST and GET use the form month, and every Load visibly reports its
 // progress and outcome, even when the immutable document remains unchanged.
+// Positive usage that rounds to zero retains its units and exact amount on screen.
 test("invoice workflow", async (t) => {
   const cases = [
     {
@@ -57,6 +58,38 @@ test("invoice workflow", async (t) => {
       wantLoadingButtonText: "Loading…",
       wantLoadingMessage: "Loading invoice for acme · 2026-09…",
       wantLoadMessage: "Invoice ACME-0001 for 2026-09 loaded.",
+      wantFinalDisabled: false,
+      wantFinalButtonText: "Load invoice",
+    },
+    {
+      scenario: "issue and load a zero-total invoice with positive measured usage",
+      inputCustomer: "acme",
+      inputHeaderMonth: "2026-10",
+      inputFormMonth: "2026-10",
+      inputResponse: {
+        customer_id: "acme", month: "2026-10", number: "ACME-0001",
+        lines: [
+          { kind: "usage", description: "Usage", usage_month: "2026-10", units: "50000", amount_cents: 0, gross_ticks: "200000", credit_ticks: "0" },
+          { kind: "credit", description: "Used credit", amount_cents: 0 },
+        ],
+        total_cents: 0, gross_usage_ticks: "200000", credit_used_ticks: "0",
+      },
+      inputResponseStatus: 200,
+      inputSteps: ["issue", "load"],
+      wantRequests: [
+        { method: "POST", path: "/api/customers/acme/invoices", body: { month: "2026-10" } },
+        { method: "GET", path: "/api/customers/acme/invoices/2026-10", body: null },
+      ],
+      wantSnapshotNumber: "ACME-0001",
+      wantSnapshotMonth: "2026-10",
+      wantInvoiceHTML: ['<td class="number">50_000</td>', '<td class="number">$0.00</td>', 'Exact usage: $0.00200000', '<strong>$0.00</strong>'],
+      wantStatus: 200,
+      wantErrorMessage: null,
+      wantToastMessage: "Operation completed. Response is visible below and in the inspector.",
+      wantLoadingDisabled: true,
+      wantLoadingButtonText: "Loading…",
+      wantLoadingMessage: "Loading invoice for acme · 2026-10…",
+      wantLoadMessage: "Invoice ACME-0001 for 2026-10 loaded.",
       wantFinalDisabled: false,
       wantFinalButtonText: "Load invoice",
     },
@@ -203,6 +236,10 @@ test("invoice workflow", async (t) => {
 
       assert.ok(browser.output.innerHTML.includes(c.wantSnapshotNumber), `${detail}: missing invoice number=${c.wantSnapshotNumber}`);
       assert.ok(browser.output.innerHTML.includes(`Month: ${c.wantSnapshotMonth}`), `${detail}: missing invoice month=${c.wantSnapshotMonth}`);
+
+      for (const expected of c.wantInvoiceHTML || [])
+        assert.ok(browser.output.innerHTML.includes(expected), `${detail}: HTML=${browser.output.innerHTML}; want fragment=${expected}`);
+
       if (issuedHTML !== undefined)
         assert.equal(browser.output.innerHTML, issuedHTML, `${detail}: Load must show the issued snapshot unchanged`);
     });

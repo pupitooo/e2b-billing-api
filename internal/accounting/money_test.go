@@ -584,6 +584,8 @@ func TestAllocateCredit(t *testing.T) {
 
 // InvoiceAmounts rounds gross and net group totals and derives balanced credit
 // lines; assignment amounts remain exact and over-allocation or overflow fails.
+// Positive uncredited amounts below half a cent are valid zero-cent charges;
+// an exact half cent rounds up to one cent.
 func TestInvoiceAmounts(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -592,6 +594,27 @@ func TestInvoiceAmounts(t *testing.T) {
 		want        accounting.InvoiceCharge
 		wantError   bool
 	}{
+		{
+			name:        "uncredited one tenth cent remains a valid zero-cent charge",
+			grossTicks:  "100000",
+			creditTicks: "0",
+			want:        accounting.InvoiceCharge{GrossCents: 0, CreditCents: 0, NetCents: 0},
+			wantError:   false,
+		},
+		{
+			name:        "uncredited charge one tick below half a cent rounds to zero",
+			grossTicks:  "499999",
+			creditTicks: "0",
+			want:        accounting.InvoiceCharge{GrossCents: 0, CreditCents: 0, NetCents: 0},
+			wantError:   false,
+		},
+		{
+			name:        "uncredited exact half cent rounds to one cent",
+			grossTicks:  "500000",
+			creditTicks: "0",
+			want:        accounting.InvoiceCharge{GrossCents: 1, CreditCents: 0, NetCents: 1},
+			wantError:   false,
+		},
 		{
 			name:        "half-cent credit does not independently round the credit line",
 			grossTicks:  "1000000",

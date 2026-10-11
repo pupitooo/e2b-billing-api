@@ -6,7 +6,7 @@ This document defines the shared financial rules, their transaction boundaries,
 and the migration and verification requirements:
 
 - [Fixed calendar-month contract](#fixed-calendar-month-contract): whole UTC calendar periods and one immutable invoice per customer/month.
-- [Exact money and credit](#exact-money-and-credit): tick precision, exact charge calculations, signed credit entries, and allocation order.
+- [Exact money and credit](#exact-money-and-credit): microcent precision, exact charge calculations, signed credit entries, and allocation order.
 - [Historical prices and groups](#historical-prices-and-groups): customer overrides, consumption-time pricing, supported intervals, and stable grouping keys.
 - [Price insertion contract](#price-insertion-contract): UTC calendar activation, lock-time date validation, stable retries, and controlled historical repairs.
 - [Catalog provisioning and P0 recovery](#catalog-provisioning-and-p0-recovery): required dated prices before metering and explicit recovery from a missing valid catalog.
@@ -14,7 +14,7 @@ and the migration and verification requirements:
 - [UTC months, limits, add-ons, and late usage](#utc-months-limits-add-ons-and-late-usage): supported years, gross spend limits, full monthly add-on charges, and routing after closure.
 - [Transaction and closing contract](#transaction-and-closing-contract): customer locks, atomic financial effects, retries, the processed-usage cutoff, and invoice issuance.
 - [Invoice generation and delivery (proposal)](../brainstorming/invoice-scheduling.md#invoice-generation-and-delivery-proposal): first-day generation, customer-selected days, late input, and scheduling safeguards.
-- [Migration and verification](../guides/migrations.md#migration-and-verification): converting cent credit to ticks, incompatible legacy allocations, and Go and SQL coverage.
+- [Migration and verification](../guides/migrations.md#migration-and-verification): converting cent credit to microcents, incompatible legacy allocations, and Go and SQL coverage.
 
 `internal/accounting` implements pure Go calculations for historical rating,
 exact credit, UTC months, limits, add-ons, and invoice presentation. The usage API acknowledges durable inbox receipt; the standalone worker applies
@@ -24,7 +24,7 @@ are implemented in `internal/billing` and documented in OpenAPI.
 The assignment requires monthly invoices over UTC calendar months, historical
 prices, customer overrides, usage-only credit, gross monthly limits, full monthly
 add-on charges, immutable invoices, and the example's numerical results. The
-system must allocate **credit in exact ticks before rounding** and preserve whole
+system must allocate **credit in exact microcents before rounding** and preserve whole
 UTC calendar months as fixed billing periods. Half-up rounding, allocation order,
 and the processed-usage closing cutoff are implementation policies for this reference
 implementation. The [system contract register](system-contracts.md)
@@ -73,31 +73,35 @@ See [clock configuration](../guides/runtime-configuration.md#shared-business-clo
 
 ## Exact money and credit
 
-All amounts are USD. One cent is 1_000_000 ticks; one tick is USD 0.000_000_01.
-Prices remain whole cents per million resource units. The price denominator and
-money resolution are separate constants:
+All amounts are USD. Usage charges and credit are stored as **whole microcents**:
+one microcent is one millionth of a cent. Code, database domains, and API fields
+call this unit `ticks`; `*_ticks` values are amounts in microcents.
 
 ```text
-price_unit_count = 1_000_000
-ticks_per_cent = 1_000_000
-gross_charge_ticks = (((units * price_per_million_cents) * ticks_per_cent) / price_unit_count)
-used_credit_ticks = min(new_charge_ticks, available_credit_ticks)
-remaining_credit_ticks = available_credit_ticks - used_credit_ticks
-net_charge_ticks = new_charge_ticks - used_credit_ticks
+1 cent = 1_000_000 microcents
+1 USD = 100_000_000 microcents
+amount_microcents = amount_cents * 1_000_000
+amount_usd = amount_microcents / 100_000_000
+
+charge_microcents = units * price_per_million_cents
+used_credit_microcents = min(charge_microcents, available_credit_microcents)
+remaining_credit_microcents = available_credit_microcents - used_credit_microcents
+net_charge_microcents = charge_microcents - used_credit_microcents
 ```
 
-`accounting.PriceUnitCount` and `accounting.TicksPerCent` currently cancel in the
-charge formula. Multiply before dividing with arbitrary-precision integers and
-reject a nonzero remainder. [Issue #29](https://github.com/pupitooo/e2b-billing-api/issues/29)
-proposes a denominator stored on each historical price version, preserving the
-current money resolution and backfilling legacy versions with 1_000_000.
+`price_versions.price_per_million_cents` stores a **rate in whole cents per
+1_000_000 resource units**, not a usage charge. A rate of 5 therefore means
+5 microcents per resource unit. Keeping that rate in cents loses no precision;
+the calculated charge is in microcents. The general conversion and the separate
+price-denominator proposal are explained in [rating](usage-to-invoice.md#4-rating-the-cost-under-the-historical-price).
 
 Go amounts are immutable arbitrary-precision integers; PostgreSQL uses finite
-integer `numeric` values. Negative amounts, fractional ticks, and overflow when
+integer `numeric` values. Negative amounts, fractional microcents, and overflow when
 converting to `bigint` cents are errors. The signed ledger stores positive grants
 and negative usage debits; zero entries are invalid.
 
-A 5_000-tick charge with one cent available uses 5_000 ticks and retains 995_000.
+A 5_000-microcent charge with one cent available uses 5_000 microcents and retains
+995_000 microcents.
 Never round a debit or balance to cents. Credit pays usage only, never add-ons.
 Allocate credit in the order transactions serialize on the customer's account
 lock, which need not be historical measurement order across delayed events.
@@ -120,7 +124,7 @@ not assumed. Supporting multiple segments would require extending the current
 one-receipt-to-one-group relationship.
 
 The stable group key is `(customer_id, price_version_id, usage_month, billing_month)`.
-Sandbox identities and HTTP batch boundaries do not create rounding boundaries. Preserve gross ticks
+Sandbox identities and HTTP batch boundaries do not create rounding boundaries. Preserve gross microcents
 separately from credit. `booked_charge_cents` remains a rounded gross projection,
 not a credit debit or a net invoice amount.
 
@@ -285,9 +289,9 @@ an already issued invoice.
 Use half-up on each cumulative frozen group, never on individual events:
 
 ```text
-round_cents(ticks) = floor((ticks + 500_000) / 1_000_000)
-gross_cents = round_cents(group_gross_ticks)
-net_cents = round_cents(group_gross_ticks - group_credit_ticks)
+round_cents(microcents) = floor((microcents + 500_000) / 1_000_000)
+gross_cents = round_cents(group_gross_microcents)
+net_cents = round_cents(group_gross_microcents - group_credit_microcents)
 credit_line_cents = -(gross_cents - net_cents)
 ```
 
@@ -297,10 +301,26 @@ than independently rounding credit, so displayed lines sum to rounded net usage.
 For one cent gross and half a cent credit, net rounds to one cent and displayed
 credit is zero cents. The ledger still records the exact half-cent debit.
 
-Immutable invoice snapshots retain exact gross and credit ticks for
+Immutable invoice snapshots retain exact gross and credit microcents for
 audit alongside cent presentation. Presentation never overwrites credit records.
 Sum already rounded group lines without another rounding step. Add-ons use their
 purchased whole-cent price. Invoice totals need checked addition within `bigint`.
+
+A positive usage charge below half a cent after credit rounds to zero cents.
+Zero-cent usage lines and zero-total invoices are valid: retain every processed
+group's complete resource units, original usage month, price version, and exact
+gross and credit microcents. A zero-total invoice still closes its month, freezes its
+groups, and reserves its ordinary invoice number; reads and retries preserve it.
+There is no minimum charge and no carry of a rounding remainder into another
+group or invoice. Exact historical microcents remain available for audit, limits,
+and credit accounting; they are not an unpaid balance to collect later.
+For example, uncredited usage of USD 0.002 in each of three months produces
+three zero-total invoices, even though its combined value is USD 0.006.
+Exactly half a cent rounds up to one cent. Credit continues to be consumed
+in exact microcents before presentation, including when the displayed amount is zero.
+The assignment requires cent-valued invoices but specifies neither a minimum
+charge nor remainder carry; this is the system's explicit rounding policy.
+
 Migration 007 introduced invoice snapshots, group freezes and per-customer numbering alongside the former closing cohorts. Migration 009 retires cohort bookkeeping; invoices are now published directly from processed groups.
 
 ## UTC months, limits, add-ons, and late usage
@@ -310,7 +330,7 @@ Consumption, receipt times, and accounting months support UTC years 1000 through
 determine validity. Calendar years retain ordinary digits without underscores.
 
 `UsageMonth` uses the original UTC month regardless of timestamp offset.
-`LimitReached` compares that month's exact gross ticks with the limit converted
+`LimitReached` compares that month's exact gross microcents with the limit converted
 from cents. Credit and add-ons are excluded. `NULL` means unlimited; zero is reached
 even with no spend. All measured usage remains billable after reaching a limit.
 Raising the limit or selecting the new UTC month's gross total can clear it.
@@ -378,7 +398,7 @@ commit, every retry returns the original invoice and number. Earlier unclosed
 rated groups still block later closing; an empty month is supported.
 
 Usage processed on opposite sides of this cutoff belongs to different billing
-months and therefore different groups and rounding boundaries. Exact gross ticks
+months and therefore different groups and rounding boundaries. Exact gross microcents
 are preserved, but the sum of cent-valued invoices can differ from rounding all
 usage in one group: two half-cent charges in separate invoices round to one cent
 each, while together they round to one cent. Credit follows worker transaction
@@ -390,35 +410,25 @@ quarantined usage or the worker's atomic financial transaction.
 
 ## Money and months
 
-All amounts are USD. Credit balances, allocations, and ledger entries use exact integer ticks. Limits, add-on prices, and the booked gross projection use integer cents. The initial price contract supports whole cents per million units: `price_per_million_cents` is `5`, `6`, or `4` for the assignment prices of USD 0.05, 0.06, and 0.04 per million.
+Usage charges, credit balances, allocations, and ledger entries are in microcents;
+see [the unit definition and conversions](#exact-money-and-credit). Catalog rates,
+limits, add-on prices, and invoice presentation retain their whole-cent contracts.
+PostgreSQL integer-valued `numeric` and Go `big.Int` preserve the exact sums;
+conversion to signed 64-bit cents checks overflow.
 
-One tick is one millionth of a cent, or USD 0.000_000_01. For this price contract:
-
-```text
-price_unit_count = 1_000_000
-ticks_per_cent = 1_000_000
-exact_charge_ticks = (((units × price_per_million_cents) × ticks_per_cent) / price_unit_count)
-```
-
-`accounting.PriceUnitCount` defines the resource units covered by the price; `accounting.TicksPerCent` defines monetary resolution. They currently have equal values and cancel in the formula. [Issue #29](https://github.com/pupitooo/e2b-billing-api/issues/29) proposes storing `price_unit_count` on each historical price version, backfilling existing versions with 1_000_000, and requiring new rates to be exactly representable in whole ticks. That proposal preserves the current tick scale; this implementation still uses a fixed price denominator.
-
-Integer-valued PostgreSQL `numeric` stores exact tick totals and aggregate units beyond the `bigint` range. Negative, fractional, infinite, and NaN values are rejected. The Go rater uses immutable arbitrary-precision integers and checks conversions to signed 64-bit cents. PostgreSQL documents the distinction between [exact numeric and floating-point types](https://www.postgresql.org/docs/18/datatype-numeric.html).
-
-Cyberdyne's first rate is USD 0.05 (5 cents) per 1_000_000 units. Its first 123_456_789 units are charged as follows:
+Cyberdyne's first 123_456_789 units at 5 cents per million give:
 
 ```text
-exact_charge_ticks = (((123_456_789 × 5) × 1_000_000) / 1_000_000)
-                   = (123_456_789 × 5)
-                   = 617_283_945 ticks
-ticks_per_dollar = (100 × 1_000_000) = 100_000_000
-exact_charge_usd = (617_283_945 / 100_000_000) = USD 6.172_839_45
-booked_gross_cents = floor(((617_283_945 + 500_000) / 1_000_000))
-                   = 617 cents = USD 6.17
+charge_microcents = 123_456_789 × 5 = 617_283_945
+charge_usd = 617_283_945 / 100_000_000 = USD 6.172_839_45
+booked_gross_cents = floor((617_283_945 + 500_000) / 1_000_000) = 617
 ```
 
-First multiply units by the price in cents, then multiply by ticks per cent, and finally divide by the units covered by that price. The two million-valued constants cancel, so this rate charges 5 ticks per resource unit. The group stores the exact tick amount alongside its booked 617 gross cents; subsequent usage is added to the exact group total before rounding again.
-
-Credit is allocated against new exact ticks before rounding. The shared Go helpers round cumulative gross and net groups and derive a balancing credit line; migrations do not perform accounting. `allocated_credit_ticks` cannot exceed `exact_charge_ticks`, even when rounded gross cents are higher.
+The group retains 617_283_945 microcents in `exact_charge_ticks` and 617 cents in
+`booked_charge_cents`. New usage adds to the microcent total before the gross
+projection is rounded again. Credit uses the exact new charge before rounding;
+`allocated_credit_ticks` cannot exceed `exact_charge_ticks`. Migrations define
+storage and constraints; the application performs these calculations.
 
 `usage_month` and `billing_month` are finite first-of-month `date` values. Application code derives them in UTC. Late October usage billed in November retains `usage_month = 2026-10-01` and `billing_month = 2026-11-01`; its gross spend belongs to October. Billing months cannot precede usage months. Timestamps are finite `timestamptz` values. Subscription start months are checked against the purchase timestamp in UTC, independently of the SQL session's time zone.
 

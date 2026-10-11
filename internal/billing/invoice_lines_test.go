@@ -20,7 +20,8 @@ type invoiceUsageFixture struct {
 }
 
 // TestAssembleInvoice verifies financial presentation without PostgreSQL: empty
-// invoices, late credited usage, per-group rounding, and invalid credit amounts.
+// invoices, retained zero-cent usage, late credited usage, per-group rounding,
+// and invalid credit amounts.
 // Each scenario declares its exact storage facts and literal invoice snapshot.
 func TestAssembleInvoice(t *testing.T) {
 	cases := []struct {
@@ -40,6 +41,23 @@ func TestAssembleInvoice(t *testing.T) {
 				CustomerID: "acme", Number: "ACME-0002", Month: "2026-11",
 				Lines:      []InvoiceLine{{Kind: "credit", Description: "Used credit", AmountCents: 0}},
 				TotalCents: 0, GrossUsageTicks: "0", CreditUsedTicks: "0",
+			},
+		},
+		{
+			name:  "zero-cent usage lines retain units and exact charges for each price group",
+			month: "2026-10", header: Invoice{CustomerID: "acme", Number: "ACME-0001", Month: "2026-10"},
+			usage: []invoiceUsageFixture{
+				{priceVersionID: "first-price", metric: "cpu_seconds", usageMonth: "2026-10", units: "75000", grossTicks: "300000", creditTicks: "0"},
+				{priceVersionID: "second-price", metric: "cpu_seconds", usageMonth: "2026-10", units: "60000", grossTicks: "300000", creditTicks: "0"},
+			},
+			wantInvoice: Invoice{
+				CustomerID: "acme", Number: "ACME-0001", Month: "2026-10",
+				Lines: []InvoiceLine{
+					{Kind: "usage", Description: "Usage", AmountCents: 0, PriceVersionID: "first-price", Metric: "cpu_seconds", UsageMonth: "2026-10", Units: "75000", GrossTicks: "300000", CreditTicks: "0"},
+					{Kind: "usage", Description: "Usage", AmountCents: 0, PriceVersionID: "second-price", Metric: "cpu_seconds", UsageMonth: "2026-10", Units: "60000", GrossTicks: "300000", CreditTicks: "0"},
+					{Kind: "credit", Description: "Used credit", AmountCents: 0},
+				},
+				TotalCents: 0, GrossUsageTicks: "600000", CreditUsedTicks: "0",
 			},
 		},
 		{

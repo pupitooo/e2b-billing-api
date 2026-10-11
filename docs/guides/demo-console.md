@@ -69,7 +69,8 @@ parameters are escaped for their output contexts. Displayed money uses exact
 integer arithmetic; the GUI preserves int64 JSON tokens without converting them
 to imprecise JavaScript numbers. The remaining credit and gross usage cards show
 rounded USD totals with the exact eight-decimal USD amounts underneath. The API
-inspector exposes the exact tick values. Invoice lines use
+inspector exposes microcent amounts in the API fields named `*_ticks`
+(1 cent = 1_000_000 microcents). Invoice lines use
 the server's stored cent presentation rather than calculating another invoice.
 
 A `202` reply means durable receipt, not successful financial processing. Refresh
