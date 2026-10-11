@@ -8,12 +8,13 @@ import (
 )
 
 type limitHandler struct {
+	now     func() time.Time
 	store   Store
 	timeout time.Duration
 }
 
-func registerLimitRoutes(mux *http.ServeMux, store Store, timeout time.Duration) {
-	handler := limitHandler{store: store, timeout: timeout}
+func registerLimitRoutes(mux *http.ServeMux, store Store, timeout time.Duration, now func() time.Time) {
+	handler := limitHandler{store: store, timeout: timeout, now: now}
 
 	mux.HandleFunc("POST /customers/{customer_id}/spend-limit", handler.setSpendLimit)
 	mux.HandleFunc("GET /customers/{customer_id}/limit-status", handler.getLimitStatus)
@@ -44,7 +45,7 @@ func (handler limitHandler) setSpendLimit(w http.ResponseWriter, r *http.Request
 func (handler limitHandler) getLimitStatus(w http.ResponseWriter, r *http.Request) {
 	month := r.PathValue("month")
 	if month == "" {
-		month = time.Now().UTC().Format("2006-01")
+		month = handler.now().UTC().Format("2006-01")
 	}
 
 	ctx, cancel := financialContext(r, handler.timeout)

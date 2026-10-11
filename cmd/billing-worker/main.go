@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"e2b/billing-api/internal/billingclock"
 	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/worker"
 )
@@ -17,6 +18,7 @@ import (
 const workerPoolMaxConns = 2
 
 type config struct {
+	now             func() time.Time
 	pollInterval    time.Duration
 	batchTimeout    time.Duration
 	shutdownTimeout time.Duration
@@ -62,7 +64,7 @@ func run(args []string, getenv func(string) string) int {
 	}
 
 	defer pool.Close()
-	store, err := postgres.NewStore(pool, postgres.Config{})
+	store, err := postgres.NewStore(pool, postgres.Config{Now: cfg.now})
 	if err != nil {
 		logger.Error("Initialize billing store", "error", err)
 		return 1
@@ -119,6 +121,12 @@ func loadConfig(getenv func(string) string) (config, error) {
 
 	if cfg.batchTimeout >= cfg.heartbeatMaxAge || cfg.pollInterval >= cfg.heartbeatMaxAge-cfg.batchTimeout {
 		return config{}, fmt.Errorf("E2B_WORKER_HEARTBEAT_MAX_AGE must exceed the batch timeout plus polling interval")
+	}
+
+	var err error
+	cfg.now, err = billingclock.New(getenv("E2B_DEMO_NOW"))
+	if err != nil {
+		return config{}, err
 	}
 
 	return cfg, nil

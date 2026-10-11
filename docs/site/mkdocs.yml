@@ -105,6 +105,7 @@ extra:
     - diagrams/usage-to-invoice/usage-to-invoice.png
     - diagrams/usage-worker-accounting/usage-worker-accounting.mmd
     - diagrams/usage-worker-accounting/usage-worker-accounting.png
+    - simulator/billing-demo-invoice.json
     - simulator/billing-assignment.json
     - simulator/billing-command-retries.json
     - simulator/billing-credit-exhaustion.json

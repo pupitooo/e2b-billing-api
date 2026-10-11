@@ -1,5 +1,36 @@
 # API and worker runtime configuration
 
+## Shared business clock
+
+`E2B_DEMO_NOW` is optional and empty by default. API and worker select their
+business clock through `internal/billingclock`: an unset value samples real time
+on every call; a supplied RFC3339 timestamp fixes business time at that instant.
+UTC years 1000 through 9999 and microsecond precision are required after offset
+conversion. Invalid values prevent either Go process from starting before it
+opens database resources.
+
+The same provider drives receipt `received_at`, current-month limit queries,
+price activation validation, grant and command audit times, usage `processed_at`
+and debit audit times, and invoice publication time. One worker transaction uses
+one sampled processing instant for receipt completion and credit debit. Identical
+retries retain original persisted timestamps. Domain month and pricing rules stay
+unchanged. Heartbeats, timeouts, polling, backoff and shutdown use real time.
+
+Compose supplies the same setting to `api`, `worker`, and `docs`. The portal
+creates `/demo/runtime.json` at startup: `{"clock_mode":"real"}` or
+`{"clock_mode":"fixed","fixed_now":"2026-11-01T00:00:00Z"}`. This is a static
+file served by Caddy outside the Go API. It describes configuration, not live
+process state. The GUI displays simulated UTC time in fixed mode, otherwise
+advisory browser UTC; it refreshes metadata without caching. Metadata failure is
+shown as unavailable. HTTP callers cannot set the clock.
+
+Use the [fixed-clock invoice demo](demo-console.md#fixed-clock-invoice-demo) in a
+separate Compose project. To change or remove the setting, stop API and worker,
+then recreate API, worker and portal with the same environment using `make up`.
+Keep the database and simulator/browser checkpoint. `make restart` alone does
+not apply changed environment variables. Advance time only between finished
+scenario steps; stored invoices and earlier audit timestamps remain immutable.
+
 ## API runtime budgets
 
 The API reads configuration once at startup. Compose passes the settings below

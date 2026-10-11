@@ -86,6 +86,9 @@ and receipt-time prerequisites, explained in that guide.
 
 Before the portal is running, the same guides are readable directly in the repository:
 
+For a past-month invoice with multiple usage prices and an add-on, use the
+[fixed-clock demo](docs/guides/demo-console.md#fixed-clock-invoice-demo).
+
 | Topic | Start here |
 | --- | --- |
 | All documentation | [Documentation index](docs/index.md) |

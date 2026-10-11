@@ -103,6 +103,7 @@ node_modules/
 !/docs/site/Caddyfile
 !/docs/site/Dockerfile
 !/docs/site/serve.sh
+!/docs/site/runtime.py
 !/docs/guides/local-development.md
 !/docs/guides/runtime-configuration.md
 !/docs/guides/database-operations.md

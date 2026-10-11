@@ -13,14 +13,16 @@ import (
 )
 
 type usageHandler struct {
+	now      func() time.Time
 	store    BatchStore
 	timeout  time.Duration
 	inFlight chan struct{}
 }
 
 // registerUsageRoutes shares one admission budget across all usage requests.
-func registerUsageRoutes(mux *http.ServeMux, store BatchStore, timeout time.Duration, maxInFlight int) {
+func registerUsageRoutes(mux *http.ServeMux, store BatchStore, timeout time.Duration, maxInFlight int, now func() time.Time) {
 	handler := usageHandler{
+		now:      now,
 		store:    store,
 		timeout:  timeout,
 		inFlight: make(chan struct{}, maxInFlight),
@@ -40,11 +42,11 @@ func (handler usageHandler) postUsageBatches(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	postUsageBatches(w, r, handler.store, handler.timeout)
+	postUsageBatches(w, r, handler.store, handler.timeout, handler.now())
 }
 
-func postUsageBatches(w http.ResponseWriter, r *http.Request, store BatchStore, ingestionTimeout time.Duration) {
-	receivedAt := time.Now().UTC().Truncate(time.Microsecond)
+func postUsageBatches(w http.ResponseWriter, r *http.Request, store BatchStore, ingestionTimeout time.Duration, receivedAt time.Time) {
+	receivedAt = receivedAt.UTC().Truncate(time.Microsecond)
 	batch, validationError := readUsageBatch(w, r)
 	if validationError != nil {
 		writeRequestError(w, validationError)

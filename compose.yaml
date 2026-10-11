@@ -22,6 +22,7 @@ services:
         condition: service_healthy
     environment:
       TZ: UTC
+      E2B_DEMO_NOW: ${E2B_DEMO_NOW:-}
       PGHOST: postgres
       PGPORT: "5432"
       PGDATABASE: e2b_billing
@@ -80,6 +81,8 @@ services:
 
   docs:
     build: ./docs/site
+    environment:
+      E2B_DEMO_NOW: ${E2B_DEMO_NOW:-}
     init: true
     restart: unless-stopped
     depends_on:
@@ -129,6 +132,7 @@ services:
     stop_grace_period: ${E2B_WORKER_STOP_GRACE_PERIOD:-10s}
     environment:
       TZ: UTC
+      E2B_DEMO_NOW: ${E2B_DEMO_NOW:-}
       E2B_WORKER_POLL_INTERVAL: ${E2B_WORKER_POLL_INTERVAL:-1s}
       E2B_WORKER_BATCH_TIMEOUT: ${E2B_WORKER_BATCH_TIMEOUT:-5s}
       E2B_WORKER_SHUTDOWN_TIMEOUT: ${E2B_WORKER_SHUTDOWN_TIMEOUT:-5s}

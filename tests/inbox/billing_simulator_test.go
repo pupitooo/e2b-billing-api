@@ -35,6 +35,7 @@ func TestBillingSimulatorExecutable(t *testing.T) {
 		unavailableRequests int32
 		wantCompleted       int
 	}{
+		{name: "fixed-clock invoice with four measurements and an add-on", file: "billing-demo-invoice", invoiceTime: "2026-11-01T00:00:00Z", wantCompleted: 9},
 		{name: "complete assignment", file: "billing-assignment", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 24},
 		{name: "command identities and changed-content conflicts", file: "billing-command-retries", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 16},
 		{name: "exact sub-cent credit", file: "billing-exact-credit", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 6},
@@ -120,7 +121,12 @@ func billingSimulatorAPI(t *testing.T, unavailableRequests int32, invoiceTime ti
 	t.Helper()
 	pool := billingDatabase(t)
 	store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return invoiceTime }})
-	handler := newBillingHandler(t, store, 5*time.Second, 8)
+	receiptTime := invoiceTime
+	// Fixed assignment late usage must arrive in November even when closing November in December.
+	if invoiceTime.Equal(parseBillingTime(t, "2026-12-01T00:00:00Z")) {
+		receiptTime = parseBillingTime(t, "2026-11-01T00:00:00Z")
+	}
+	handler := newBillingHandlerWithClock(t, store, 5*time.Second, 8, func() time.Time { return receiptTime })
 	var priceClock atomic.Value
 	priceClock.Store(invoiceTime)
 	priceStore := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return priceClock.Load().(time.Time) }})

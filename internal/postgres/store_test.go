@@ -33,7 +33,7 @@ func TestNewStore(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			before := time.Now()
+			before := time.Now().Truncate(time.Microsecond)
 			store, err := NewStore(tc.pool, Config{RollbackTimeout: tc.rollbackTimeout, Now: tc.clock})
 
 			if (err != nil) != tc.wantError {

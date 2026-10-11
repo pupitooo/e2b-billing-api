@@ -39,6 +39,7 @@ type invoiceExpectation struct {
 // Only already processed groups enter the invoice. Later worker processing
 // cannot reopen an issued month, even for usage received before closing.
 func TestCloseMonth(t *testing.T) {
+	t.Run("shared business clock", testSharedBusinessClock)
 	t.Run("first closing checks existing usage in UTC", testClosingFirstMonthBoundary)
 	t.Run("skipped months cannot strand pending usage", testClosingSkippedMonths)
 	t.Run("quarantined receipts do not block issuance", testQuarantinedClosing)

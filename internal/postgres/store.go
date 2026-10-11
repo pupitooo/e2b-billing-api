@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"e2b/billing-api/internal/billingclock"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -41,7 +42,7 @@ func NewStore(pool *pgxpool.Pool, config Config) (*Store, error) {
 	}
 
 	if config.Now == nil {
-		config.Now = time.Now
+		config.Now = billingclock.RealNow
 	}
 
 	return &Store{pool: pool, now: config.Now, rollbackTimeout: config.RollbackTimeout}, nil

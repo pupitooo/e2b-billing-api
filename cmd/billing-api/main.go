@@ -50,7 +50,7 @@ func run(getenv func(string) string) error {
 		log.Print("PostgreSQL pool closed")
 	}()
 
-	store, err := postgres.NewStore(pool, postgres.Config{RollbackTimeout: cfg.rollbackTimeout})
+	store, err := postgres.NewStore(pool, postgres.Config{RollbackTimeout: cfg.rollbackTimeout, Now: cfg.now})
 	if err != nil {
 		return fmt.Errorf("initialize billing store: %w", err)
 	}
@@ -59,6 +59,7 @@ func run(getenv func(string) string) error {
 		store,
 		cfg.ingestionTimeout,
 		int(cfg.maxInFlight),
+		cfg.now,
 	)
 	if err != nil {
 		return fmt.Errorf("initialize HTTP handler: %w", err)

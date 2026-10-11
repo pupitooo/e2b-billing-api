@@ -9,6 +9,8 @@ import unittest
 
 import yaml
 
+from runtime import write_runtime
+
 SOURCE_DIRECTORY = Path("/source")
 CONFIGURATION_FILE = SOURCE_DIRECTORY / "site/mkdocs.yml"
 
@@ -173,6 +175,22 @@ class TestBuild(unittest.TestCase):
                                   f"rendered {relative_path} missing expected resource link {link}")
                 search = json.loads((site / "search/search_index.json").read_text())
                 self.assertNotIn(case["want_absent_search_text"], json.dumps(search))
+
+
+# TestRuntimeMetadata checks isolated startup files without exposing other environment values.
+class TestRuntimeMetadata(unittest.TestCase):
+    # test_write_runtime keeps the real mode minimal and safely encodes the configured fixed value.
+    def test_write_runtime(self):
+        cases = [
+            {"name": "real mode", "fixed_now": "", "want": {"clock_mode": "real"}},
+            {"name": "fixed UTC clock", "fixed_now": "2026-11-01T00:00:00Z", "want": {"clock_mode": "fixed", "fixed_now": "2026-11-01T00:00:00Z"}},
+            {"name": "metadata preserves offset and precision", "fixed_now": "2026-11-01T08:00:00.123456+08:00", "want": {"clock_mode": "fixed", "fixed_now": "2026-11-01T08:00:00.123456+08:00"}},
+        ]
+        for case in cases:
+            with self.subTest(case["name"]), tempfile.TemporaryDirectory() as directory:
+                destination = Path(directory) / "runtime.json"
+                write_runtime(destination, case["fixed_now"])
+                self.assertEqual(json.loads(destination.read_text()), case["want"])
 
 
 if __name__ == "__main__":

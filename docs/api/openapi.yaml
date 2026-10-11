@@ -6,6 +6,10 @@ info:
     Receive sandbox usage, manage prices, credit and spend limits, and issue monthly invoices.
     All implemented routes are registered together; the API requires storage at startup.
     Storage failures after startup return the documented retryable responses.
+    Business timestamps and current-month decisions use the shared application clock.
+    E2B_DEMO_NOW selects fixed demo time at process startup; unset uses real time.
+    HTTP requests cannot set or advance that clock. The static portal publishes
+    startup metadata separately at /demo/runtime.json.
     See the [API guide](/guides/api-reference/) for request and retry rules.
 
     ## API endpoints and callers
@@ -23,9 +27,58 @@ tags:
     description: Default and customer-specific price versions under /prices
   - name: Usage
     description: Measurements supplied by the sandbox platform
+  - name: Demo runtime
+    description: Startup metadata served by the static docs portal, outside the Go API
   - name: Healthz
     description: HTTP server availability
 paths:
+  /demo/runtime.json:
+    servers:
+      - url: /
+        description: Docs portal origin; this route does not use the /api proxy
+    get:
+      operationId: getDemoRuntime
+      tags: [Demo runtime]
+      summary: Read demo clock configuration
+      x-implementation-status: implemented
+      description: |
+        The docs service creates this JSON file at startup from E2B_DEMO_NOW,
+        using the same Compose configuration as API and worker. It describes
+        configuration, not a live reading or a cross-process health check.
+        Fixed time stays constant until the processes are recreated. In real
+        mode the GUI uses advisory browser time; the API decides month eligibility.
+        Reload metadata after changing the environment and recreating all three services.
+      responses:
+        '200':
+          description: Real or fixed clock configuration, without database access.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    additionalProperties: false
+                    required: [clock_mode]
+                    properties:
+                      clock_mode:
+                        const: real
+                  - type: object
+                    additionalProperties: false
+                    required: [clock_mode, fixed_now]
+                    properties:
+                      clock_mode:
+                        const: fixed
+                      fixed_now:
+                        type: string
+                        format: date-time
+                        description: Configured RFC3339 instant; Go validates UTC years 1000 through 9999 and microsecond precision.
+              examples:
+                real:
+                  value:
+                    clock_mode: real
+                fixed:
+                  value:
+                    clock_mode: fixed
+                    fixed_now: '2026-11-01T00:00:00Z'
   /usage/batches:
     post:
       operationId: postUsageBatches

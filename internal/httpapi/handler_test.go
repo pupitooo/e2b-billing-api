@@ -39,7 +39,7 @@ func TestNewHandler(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler, err := httpapi.NewHandler(tc.store, tc.operationTimeout, tc.maxInFlight)
+			handler, err := httpapi.NewHandler(tc.store, tc.operationTimeout, tc.maxInFlight, nil)
 
 			if (err != nil) != tc.wantError {
 				t.Fatalf("NewHandler(store=%T, timeout=%s, maxInFlight=%d): error=%v; wantError=%t", tc.store, tc.operationTimeout, tc.maxInFlight, err, tc.wantError)
@@ -59,6 +59,7 @@ func TestNewHandler(t *testing.T) {
 // Handler.ServeHTTP routes requests, validates complete batches, and returns
 // the declared HTTP result after storage commits or reports a retryable failure.
 func TestHandlerServeHTTP(t *testing.T) {
+	t.Run("current month uses the business clock", testHTTPBusinessClock)
 	t.Run("handler routes", func(t *testing.T) {
 		tests := []struct {
 			name        string
@@ -1379,7 +1380,7 @@ func (response *observedResponse) WriteHeader(status int) {
 // Scenario inputs and expected transport outcomes remain explicit in each test.
 func newTestHandler(t *testing.T, store httpapi.Store, timeout time.Duration, maxInFlight int) http.Handler {
 	t.Helper()
-	handler, err := httpapi.NewHandler(store, timeout, maxInFlight)
+	handler, err := httpapi.NewHandler(store, timeout, maxInFlight, nil)
 	if err != nil {
 		t.Fatalf("NewHandler(timeout=%s, maxInFlight=%d): %v", timeout, maxInFlight, err)
 	}

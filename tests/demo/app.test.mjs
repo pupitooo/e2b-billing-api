@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 // invoice workflow executes the actual form and Load handlers in isolated browser
 // contexts. POST and GET use the form month, and every Load visibly reports its
@@ -156,6 +157,7 @@ test("invoice workflow", async (t) => {
       const requests = [];
       const browser = invoiceBrowser(t, c.inputCustomer, c.inputHeaderMonth, c.inputStorageError);
       t.mock.method(globalThis, "fetch", async (path, options = {}) => {
+        if (path === "/demo/runtime.json") return new Response('{"clock_mode":"real"}', { status: 200 });
         if (path === "/api/healthz") return new Response("{}", { status: 200 });
         if (path === "/simulator/billing-assignment.json")
           return new Response('{"steps":[]}', { status: 200 });
@@ -207,6 +209,51 @@ test("invoice workflow", async (t) => {
   }
 });
 
+// walkthrough runtime loads the published portal clock, selects an alternate
+// literal plan, and preserves separate cursors when switching back and forth.
+test("walkthrough runtime", async (t) => {
+  const cases = [
+    { scenario: "fixed clock stays visible during scenario switches", inputRuntime: { clock_mode: "fixed", fixed_now: "2026-11-01T00:00:00Z" }, inputRuntimeStatus: 200, wantClockPrefix: "SIMULATED UTC 2026-11-01 00:00:00", wantOriginalCursor: 4, wantInvoiceCursor: 1 },
+    { scenario: "real clock uses advisory browser time", inputRuntime: { clock_mode: "real" }, inputRuntimeStatus: 200, wantClockPrefix: "BROWSER UTC ", wantOriginalCursor: 4, wantInvoiceCursor: 1 },
+    { scenario: "missing metadata is visibly unavailable", inputRuntime: {}, inputRuntimeStatus: 404, wantClockPrefix: "BROWSER UTC · metadata unavailable ", wantOriginalCursor: 4, wantInvoiceCursor: 1 },
+  ];
+  for (const c of cases) {
+    await t.test(c.scenario, async (t) => {
+      const browser = invoiceBrowser(t, "cyberdyne", "2026-10");
+      browser.saved = JSON.stringify({ customer: "cyberdyne", month: "2026-10", source: "demo-ui/clock-test", assignment: { source: "demo-ui/clock-test", index: 4, captures: {}, completed: [], last: null } });
+      globalThis.location.hash = "#assignment";
+      const plans = {
+        "billing-assignment": JSON.parse(await readFile(new URL("../../docs/simulator/billing-assignment.json", import.meta.url), "utf8")),
+        "billing-demo-invoice": JSON.parse(await readFile(new URL("../../docs/simulator/billing-demo-invoice.json", import.meta.url), "utf8")),
+      };
+      const requests = [];
+      t.mock.method(globalThis, "fetch", async (path, options = {}) => {
+        if (path === "/api/healthz") return new Response("{}", { status: 200 });
+        if (path === "/demo/runtime.json") return new Response(JSON.stringify(c.inputRuntime), { status: c.inputRuntimeStatus });
+        if (path.startsWith("/simulator/")) return new Response(JSON.stringify(plans[path.split("/").pop().replace(".json", "")]), { status: 200 });
+        requests.push({ path, method: options.method });
+        return new Response('{"customer_id":"cyberdyne","credit_balance_ticks":"0","pending_events":0,"processing_errors":0,"state_version":0}', { status: 200 });
+      });
+      await import(`../../demo/app.mjs?clock=${encodeURIComponent(c.scenario)}`);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      assert.ok(browser.clock.textContent.startsWith(c.wantClockPrefix), `clock=${browser.clock.textContent}; want prefix=${c.wantClockPrefix}`);
+      await browser.content.listeners.change({ target: { id: "walkthrough-scenario", value: "billing-demo-invoice" } });
+      assert.ok(browser.content.innerHTML.includes("October invoice walkthrough"), "selected plan must be displayed");
+      await browser.content.listeners.click({ target: { id: "next-step", dataset: {}, closest() { return this; }, hasAttribute() { return false; } } });
+      let saved = JSON.parse(browser.saved);
+      assert.equal(saved.assignment.index, c.wantInvoiceCursor, "invoice walkthrough advances its own cursor");
+      await browser.content.listeners.change({ target: { id: "walkthrough-scenario", value: "billing-assignment" } });
+      saved = JSON.parse(browser.saved);
+      assert.equal(saved.assignment.index, c.wantOriginalCursor, "assignment cursor must be retained");
+      await browser.content.listeners.change({ target: { id: "walkthrough-scenario", value: "billing-demo-invoice" } });
+      saved = JSON.parse(browser.saved);
+      assert.equal(saved.assignment.index, c.wantInvoiceCursor, "invoice cursor must survive switching back");
+      assert.deepEqual(requests, [{ path: "/api/customers/cyberdyne/credit", method: "GET" }], "switching plans performs no financial commands");
+    });
+  }
+});
+
 // invoiceBrowser supplies only DOM and storage plumbing. Each scenario owns its
 // fields, handlers and journal; network responses and expectations stay in cases.
 function invoiceBrowser(t, customer, month, storageError) {
@@ -220,7 +267,7 @@ function invoiceBrowser(t, customer, month, storageError) {
     return nodes.get(selector);
   };
   const browser = {
-    content: node("#content"), output: node("#invoice-output"), toast: node("#toast"),
+    clock: node("#utc-clock"), content: node("#content"), output: node("#invoice-output"), toast: node("#toast"),
     loadStatus: node("#invoice-load-status"),
     month: node('#content form[data-operation="invoices"] [name="month"]'),
     saved: JSON.stringify({ customer, month, source: "demo-ui/invoice-test" }),
