@@ -73,6 +73,7 @@ func TestGrantCredit(t *testing.T) {
 // TestCreditAPI verifies grant validation and the exact public balance query.
 // The expected response is literal JSON, independent of accounting helpers.
 func TestCreditAPI(t *testing.T) {
+	t.Run("rejection preserves complete financial state", testCreditRejectedState)
 	t.Run("invalid backend clock is a server failure", testCreditAPIClockFailure)
 	t.Run("JSON idempotency keys", func(t *testing.T) {
 		testCommandBodyKeys(t, commandKeyEndpoint{
@@ -99,9 +100,16 @@ func TestCreditAPI(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			response := financialRequest(t, financialHandler(t), tc.method, tc.path, tc.body)
+			pool := billingDatabase(t)
+			before := addonFinancialSnapshot(t, pool)
+			response := financialRequest(t, resourceHandler(t, pool), tc.method, tc.path, tc.body)
 			if response.Code != tc.wantStatus {
 				t.Fatalf("%s %s(%s): status=%d body=%s want %d", tc.method, tc.path, tc.body, response.Code, response.Body, tc.wantStatus)
+			}
+			if tc.wantStatus != 200 {
+				if after := addonFinancialSnapshot(t, pool); after != before {
+					t.Fatalf("Rejected command(%s) changed state: before=%s after=%s", tc.body, before, after)
+				}
 			}
 			if tc.wantBody != "" && response.Body.String() != tc.wantBody+"\n" {
 				t.Fatalf("%s %s: body=%s want %s", tc.method, tc.path, response.Body, tc.wantBody)

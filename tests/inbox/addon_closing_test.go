@@ -221,8 +221,8 @@ func assertAddonClosingState(t *testing.T, pool *pgxpool.Pool, want addonClosing
 }
 
 // addonFinancialSnapshot captures complete committed invoice, subscription,
-// command, ledger and account rows in stable order to expose any rejected write
-// or retry mutation, including older immutable invoice contents.
+// command, ledger, catalog, account and usage rows in stable order. Rejections
+// and retries must preserve every projection, including frozen groups and receipts.
 func addonFinancialSnapshot(t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
 	var snapshot string
@@ -232,7 +232,13 @@ func addonFinancialSnapshot(t *testing.T, pool *pgxpool.Pool) string {
         'subscriptions',(SELECT jsonb_agg(s ORDER BY subscription_id) FROM addon_subscriptions s),
         'operations',(SELECT jsonb_agg(o ORDER BY operation_scope,idempotency_key) FROM api_idempotency_operations o),
         'credit',(SELECT jsonb_agg(e ORDER BY credit_entry_id) FROM credit_entries e),
-        'accounts',(SELECT jsonb_agg(a ORDER BY customer_id) FROM customer_billing_state a))::text`).Scan(&snapshot)
+        'accounts',(SELECT jsonb_agg(a ORDER BY customer_id) FROM customer_billing_state a),
+        'prices',(SELECT jsonb_agg(p ORDER BY price_version_id) FROM price_versions p),
+        'receipts',(SELECT jsonb_agg(r ORDER BY source,event_id) FROM usage_inbox r),
+        'ratings',(SELECT jsonb_agg(r ORDER BY source,event_id) FROM usage_ratings r),
+        'groups',(SELECT jsonb_agg(g ORDER BY group_id) FROM rated_usage_groups g),
+        'monthly',(SELECT jsonb_agg(m ORDER BY customer_id,usage_month) FROM monthly_usage m),
+        'frozen',(SELECT jsonb_agg(f ORDER BY group_id) FROM invoiced_usage_groups f))::text`).Scan(&snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,9 @@ package inbox_test
 import (
 	"context"
 	"e2b/billing-api/internal/postgres"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -192,7 +194,8 @@ func TestSetSpendLimit(t *testing.T) {
 	}
 }
 
-// TestSpendLimitAPI verifies explicit nullable limits and canonical month paths.
+// TestSpendLimitAPI verifies response fields, persisted nullable configuration,
+// exact gross thresholds and both sides of the current UTC month boundary.
 func TestSpendLimitAPI(t *testing.T) {
 	t.Run("JSON idempotency keys", func(t *testing.T) {
 		testCommandBodyKeys(t, commandKeyEndpoint{
@@ -202,28 +205,93 @@ func TestSpendLimitAPI(t *testing.T) {
 			wantSuccess: commandKeyState{limitOperations: 1, creditMicrocents: "0", version: 1, limit: limitValue(1500)},
 		})
 	})
+
+	scenario := struct {
+		initialLimit             int64
+		initialGross, serverTime string
+	}{initialLimit: 1501, initialGross: "1500000000", serverTime: "2026-11-01T07:59:59+08:00"}
 	cases := []struct {
-		name       string
-		method     string
-		path       string
-		body       string
-		wantStatus int
+		name, method, path, body, wantCode, wantField, wantBody string
+		serverTime                                              string
+		wantStatus                                              int
+		wantLimit                                               *int64
+		wantVersion                                             int64
+		wantOperations                                          int
+		wantReached                                             bool
 	}{
-		{name: "set finite limit", method: "POST", path: "/customers/cyberdyne/spend-limit", body: `{"idempotency_key":"limit","limit_cents":1500}`, wantStatus: 200},
-		{name: "remove limit explicitly", method: "POST", path: "/customers/cyberdyne/spend-limit", body: `{"idempotency_key":"unlimited","limit_cents":null}`, wantStatus: 200},
-		{name: "omitted limit is invalid", method: "POST", path: "/customers/cyberdyne/spend-limit", body: `{"idempotency_key":"limit"}`, wantStatus: 422},
-		{name: "read monthly status", method: "GET", path: "/customers/cyberdyne/months/2026-10/limit-status", wantStatus: 200},
-		{name: "noncanonical month rejected", method: "GET", path: "/customers/cyberdyne/months/2026-1/limit-status", wantStatus: 422},
-		{name: "current UTC status", method: "GET", path: "/customers/cyberdyne/limit-status", wantStatus: 200},
+		{name: "set finite limit at exact gross boundary", method: "POST", path: "/customers/cyberdyne/spend-limit", body: `{"idempotency_key":"limit","limit_cents":1500}`, wantStatus: 200, wantBody: `{"idempotency_key":"limit","limit_cents":1500}`, wantLimit: limitValue(1500), wantVersion: 2, wantOperations: 2, wantReached: true},
+		{name: "remove limit explicitly", method: "POST", path: "/customers/cyberdyne/spend-limit", body: `{"idempotency_key":"unlimited","limit_cents":null}`, wantStatus: 200, wantBody: `{"idempotency_key":"unlimited","limit_cents":null}`, wantVersion: 2, wantOperations: 2},
+		{name: "omitted limit preserves finite configuration", method: "POST", path: "/customers/cyberdyne/spend-limit", body: `{"idempotency_key":"limit"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "limit_cents", wantLimit: limitValue(1501), wantVersion: 1, wantOperations: 1},
+		{name: "negative limit preserves finite configuration", method: "POST", path: "/customers/cyberdyne/spend-limit", body: `{"idempotency_key":"limit","limit_cents":-1}`, wantStatus: 422, wantCode: "invalid_command", wantField: "limit_cents", wantLimit: limitValue(1501), wantVersion: 1, wantOperations: 1},
+		{name: "zero limit is valid and reached", method: "POST", path: "/customers/cyberdyne/spend-limit", body: `{"idempotency_key":"limit","limit_cents":0}`, wantStatus: 200, wantBody: `{"idempotency_key":"limit","limit_cents":0}`, wantLimit: limitValue(0), wantVersion: 2, wantOperations: 2, wantReached: true},
+		{name: "read monthly status", method: "GET", path: "/customers/cyberdyne/months/2026-10/limit-status", wantStatus: 200, wantBody: `{"customer_id":"cyberdyne","month":"2026-10","limit_cents":1501,"gross_charge_microcents":"1500000000","limit_reached":false,"state_version":1,"pending_events":0,"processing_errors":0}`, wantLimit: limitValue(1501), wantVersion: 1, wantOperations: 1},
+		{name: "noncanonical month rejected", method: "GET", path: "/customers/cyberdyne/months/2026-1/limit-status", wantStatus: 422, wantCode: "invalid_command", wantField: "month", wantLimit: limitValue(1501), wantVersion: 1, wantOperations: 1},
+		{name: "current UTC status before boundary despite November local date", method: "GET", path: "/customers/cyberdyne/limit-status", wantStatus: 200, wantBody: `{"customer_id":"cyberdyne","month":"2026-10","limit_cents":1501,"gross_charge_microcents":"1500000000","limit_reached":false,"state_version":1,"pending_events":0,"processing_errors":0}`, wantLimit: limitValue(1501), wantVersion: 1, wantOperations: 1},
+		{name: "current UTC status at November boundary resets gross", serverTime: "2026-11-01T08:00:00+08:00", method: "GET", path: "/customers/cyberdyne/limit-status", wantStatus: 200, wantBody: `{"customer_id":"cyberdyne","month":"2026-11","limit_cents":1501,"gross_charge_microcents":"0","limit_reached":false,"state_version":1,"pending_events":0,"processing_errors":0}`, wantLimit: limitValue(1501), wantVersion: 1, wantOperations: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			response := financialRequest(t, financialHandler(t), tc.method, tc.path, tc.body)
+			pool := billingDatabase(t)
+			ctx := context.Background()
+			clockText := scenario.serverTime
+			if tc.serverTime != "" {
+				clockText = tc.serverTime
+			}
+			clock := parseBillingTime(t, clockText)
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return clock }})
+			if err := store.SetSpendLimit(ctx, "cyberdyne", billing.SpendLimitChange{IdempotencyKey: "initial", LimitCents: &scenario.initialLimit}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, "INSERT INTO monthly_usage VALUES ('cyberdyne','2026-10-01',$1::numeric)", scenario.initialGross); err != nil {
+				t.Fatal(err)
+			}
+			handler := newBillingHandlerWithClock(t, store, 5*time.Second, 8, func() time.Time { return clock })
+			before := addonFinancialSnapshot(t, pool)
+
+			response := financialRequest(t, handler, tc.method, tc.path, tc.body)
+
 			if response.Code != tc.wantStatus {
-				t.Fatalf("%s %s(%s): status=%d body=%s want %d", tc.method, tc.path, tc.body, response.Code, response.Body, tc.wantStatus)
+				t.Fatalf("%s %s(%s): HTTP=%d body=%s; want %d", tc.method, tc.path, tc.body, response.Code, response.Body, tc.wantStatus)
+			}
+			var failure struct {
+				Error struct{ Code, Field string } `json:"error"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &failure); err != nil {
+				t.Fatal(err)
+			}
+			if failure.Error.Code != tc.wantCode || failure.Error.Field != tc.wantField {
+				t.Fatalf("%s %s: error=%+v; want code=%s field=%s", tc.method, tc.path, failure.Error, tc.wantCode, tc.wantField)
+			}
+			if tc.wantBody != "" && response.Body.String() != tc.wantBody+"\n" {
+				t.Errorf("%s %s: body=%s; want %s", tc.method, tc.path, response.Body, tc.wantBody)
+			}
+			if tc.wantStatus != 200 || tc.method == "GET" {
+				if after := addonFinancialSnapshot(t, pool); after != before {
+					t.Fatalf("Read/rejected limit changed financial state: before=%s after=%s", before, after)
+				}
+			}
+
+			var limit *int64
+			var version int64
+			var operations int
+			if err := pool.QueryRow(ctx, `SELECT spend_limit_cents,state_version,(SELECT count(*) FROM api_idempotency_operations) FROM customer_billing_state WHERE customer_id='cyberdyne'`).Scan(&limit, &version, &operations); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(limit, tc.wantLimit) || version != tc.wantVersion || operations != tc.wantOperations {
+				t.Fatalf("%s %s: limit=%v version=%d operations=%d; want %v %d %d", tc.method, tc.path, limit, version, operations, tc.wantLimit, tc.wantVersion, tc.wantOperations)
+			}
+			if tc.method == "POST" && tc.wantStatus == 200 {
+				status, err := store.MonthlyLimitStatus(ctx, "cyberdyne", "2026-10")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if status.LimitReached != tc.wantReached || status.GrossChargeMicrocents != scenario.initialGross || !reflect.DeepEqual(status.LimitCents, tc.wantLimit) {
+					t.Fatalf("Stored October status=%+v; want limit=%v reached=%t gross=%s", status, tc.wantLimit, tc.wantReached, scenario.initialGross)
+				}
 			}
 		})
 	}
+
 }
 
 // limitValue supplies an address for the literal cents in a scenario; it does

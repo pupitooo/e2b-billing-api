@@ -54,9 +54,16 @@ func testClosingFirstMonthBoundary(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			before := addonFinancialSnapshot(t, pool)
 			_, err = store.CloseMonth(ctx, "acme", tc.closingMonth)
 			if !errors.Is(err, tc.wantError) {
 				t.Fatalf("CloseMonth(%s) usage=%+v timezone=%s error=%v; want %v", tc.closingMonth, event, tc.timeZone, err, tc.wantError)
+			}
+
+			if tc.wantError != nil {
+				if after := addonFinancialSnapshot(t, pool); after != before {
+					t.Fatalf("Rejected first closing changed state: before=%s after=%s", before, after)
+				}
 			}
 
 			var invoices, ratings, processed int
