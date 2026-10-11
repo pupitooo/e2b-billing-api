@@ -2,8 +2,10 @@ package httpapi_test
 
 import (
 	"context"
+	"e2b/billing-api/internal/accounting"
+	"e2b/billing-api/internal/billing"
 	"e2b/billing-api/internal/httpapi"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 	"encoding/json"
 	"errors"
@@ -17,6 +19,42 @@ import (
 	"testing"
 	"time"
 )
+
+// TestNewHandler rejects missing storage at construction and accepts a complete
+// dependency, ensuring the API cannot start with silently omitted endpoints.
+func TestNewHandler(t *testing.T) {
+	cases := []struct {
+		name             string
+		store            httpapi.Store
+		operationTimeout time.Duration
+		maxInFlight      int
+		wantError        bool
+		wantErrorMessage string
+		wantNilHandler   bool
+	}{
+		{name: "missing interface", store: nil, operationTimeout: time.Second, maxInFlight: 1, wantError: true, wantErrorMessage: "billing store is required", wantNilHandler: true},
+		{name: "typed nil PostgreSQL store", store: (*postgres.Store)(nil), operationTimeout: time.Second, maxInFlight: 1, wantError: true, wantErrorMessage: "billing store is required", wantNilHandler: true},
+		{name: "typed nil function store", store: storeFunc(nil), operationTimeout: time.Second, maxInFlight: 1, wantError: true, wantErrorMessage: "billing store is required", wantNilHandler: true},
+		{name: "complete store", store: acceptingStore(), operationTimeout: time.Second, maxInFlight: 1, wantError: false, wantNilHandler: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handler, err := httpapi.NewHandler(tc.store, tc.operationTimeout, tc.maxInFlight)
+
+			if (err != nil) != tc.wantError {
+				t.Fatalf("NewHandler(store=%T, timeout=%s, maxInFlight=%d): error=%v; wantError=%t", tc.store, tc.operationTimeout, tc.maxInFlight, err, tc.wantError)
+			}
+
+			if tc.wantError && err.Error() != tc.wantErrorMessage {
+				t.Errorf("NewHandler(store=%T): error=%q; want %q", tc.store, err.Error(), tc.wantErrorMessage)
+			}
+
+			if (handler == nil) != tc.wantNilHandler {
+				t.Errorf("NewHandler(store=%T): nil handler=%t; want %t", tc.store, handler == nil, tc.wantNilHandler)
+			}
+		})
+	}
+}
 
 // Handler.ServeHTTP routes requests, validates complete batches, and returns
 // the declared HTTP result after storage commits or reports a retryable failure.
@@ -67,8 +105,17 @@ func TestHandlerServeHTTP(t *testing.T) {
 				wantAllow:   "POST",
 				body:        "",
 			},
+			{name: "prices route", description: "The required store keeps this endpoint registered.", method: http.MethodGet, path: "/prices", wantStatus: http.StatusMethodNotAllowed, wantAllow: "POST", body: ""},
+			{name: "credit grants route", description: "The required store keeps this endpoint registered.", method: http.MethodGet, path: "/customers/acme/credits", wantStatus: http.StatusMethodNotAllowed, wantAllow: "POST", body: ""},
+			{name: "credit balance route", description: "The required store keeps this endpoint registered.", method: http.MethodPost, path: "/customers/acme/credit", wantStatus: http.StatusMethodNotAllowed, wantAllow: "GET, HEAD", body: ""},
+			{name: "add-ons route", description: "The required store keeps this endpoint registered.", method: http.MethodGet, path: "/customers/acme/addons", wantStatus: http.StatusMethodNotAllowed, wantAllow: "POST", body: ""},
+			{name: "spend limit route", description: "The required store keeps this endpoint registered.", method: http.MethodGet, path: "/customers/acme/spend-limit", wantStatus: http.StatusMethodNotAllowed, wantAllow: "POST", body: ""},
+			{name: "current limit status route", description: "The required store keeps this endpoint registered.", method: http.MethodPost, path: "/customers/acme/limit-status", wantStatus: http.StatusMethodNotAllowed, wantAllow: "GET, HEAD", body: ""},
+			{name: "monthly limit status route", description: "The required store keeps this endpoint registered.", method: http.MethodPost, path: "/customers/acme/months/2026-10/limit-status", wantStatus: http.StatusMethodNotAllowed, wantAllow: "GET, HEAD", body: ""},
+			{name: "invoice issuance route", description: "The required store keeps this endpoint registered.", method: http.MethodGet, path: "/customers/acme/invoices", wantStatus: http.StatusMethodNotAllowed, wantAllow: "POST", body: ""},
+			{name: "invoice retrieval route", description: "The required store keeps this endpoint registered.", method: http.MethodPost, path: "/customers/acme/invoices/2026-10", wantStatus: http.StatusMethodNotAllowed, wantAllow: "GET, HEAD", body: ""},
 		}
-		handler := httpapi.NewHandler(acceptingStore(), 10*time.Second, 32)
+		handler := newTestHandler(t, acceptingStore(), 10*time.Second, 32)
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Log(tt.description)
@@ -102,7 +149,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(tt.body))
 		request.Header.Set("Content-Type", "application/json")
-		httpapi.NewHandler(acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
+		newTestHandler(t, acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
 		if response.Code != tt.wantStatus {
 			t.Fatalf("Status = %d, want %d", response.Code, http.StatusAccepted)
 		}
@@ -229,7 +276,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				response := postBatch(tt.body, "application/json")
+				response := postBatch(t, tt.body, "application/json")
 				if response.Code != tt.wantStatus {
 					t.Fatalf("Status = %d, want 202; response: %s", response.Code, response.Body)
 				}
@@ -308,7 +355,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 								event[field.name] = nil
 							}
 						})
-						response := postBatch(body, "application/json")
+						response := postBatch(t, body, "application/json")
 						assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, field.wantErrorField)
 					})
 				}
@@ -490,7 +537,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				assertRequestError(t, postBatch(tt.body, "application/json"), tt.wantStatus, tt.wantErrorCode, tt.wantErrorField)
+				assertRequestError(t, postBatch(t, tt.body, "application/json"), tt.wantStatus, tt.wantErrorCode, tt.wantErrorField)
 			})
 		}
 	})
@@ -666,7 +713,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				assertRequestError(t, postBatch(tt.body, "application/json"), tt.wantStatus, tt.wantErrorCode, tt.wantErrorField)
+				assertRequestError(t, postBatch(t, tt.body, "application/json"), tt.wantStatus, tt.wantErrorCode, tt.wantErrorField)
 			})
 		}
 	})
@@ -704,7 +751,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				response := postBatch(tt.body, "application/json")
+				response := postBatch(t, tt.body, "application/json")
 				if tt.wantErrorCode != "" {
 					assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, tt.wantErrorField)
 					return
@@ -767,7 +814,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 				request.Header.Set("Content-Type", tt.mediaType)
 				request.Header.Set("Content-Encoding", tt.encoding)
 				response := httptest.NewRecorder()
-				httpapi.NewHandler(acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
+				newTestHandler(t, acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
 				if tt.wantErrorCode != "" {
 					assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, "")
 					return
@@ -793,7 +840,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, "/usage/batches", tt.body)
 		request.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
-		httpapi.NewHandler(acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
+		newTestHandler(t, acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
 		assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, "")
 	})
 	t.Run("usage batch configured deadline", func(t *testing.T) {
@@ -818,7 +865,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(tt.body))
 		request.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
-		httpapi.NewHandler(store, tt.ingestionTimeout, 32).ServeHTTP(response, request)
+		newTestHandler(t, store, tt.ingestionTimeout, 32).ServeHTTP(response, request)
 		assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, "")
 		if response.Header().Get("Retry-After") != tt.wantRetryAfter {
 			t.Error("Timed-out batch omitted retry guidance")
@@ -866,7 +913,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 
 			return nil
 		})
-		handler := httpapi.NewHandler(store, time.Second, tt.maxInFlight)
+		handler := newTestHandler(t, store, time.Second, tt.maxInFlight)
 		first := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(tt.body))
 		request.Header.Set("Content-Type", "application/json")
@@ -959,7 +1006,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
-		httpapi.NewHandler(store, 10*time.Second, 32).ServeHTTP(response, request)
+		newTestHandler(t, store, 10*time.Second, 32).ServeHTTP(response, request)
 		if response.Code != tt.wantStatus || calls != tt.wantCalls {
 			t.Errorf("Acceptance status = %d, store calls %d; want 202 and one call", response.Code, calls)
 		}
@@ -997,7 +1044,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
-		httpapi.NewHandler(store, 10*time.Second, 32).ServeHTTP(response, request)
+		newTestHandler(t, store, 10*time.Second, 32).ServeHTTP(response, request)
 		assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, tt.wantErrorField)
 		if calls != tt.wantCalls {
 			t.Errorf("Invalid batch invoked storage %d times", calls)
@@ -1031,7 +1078,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		request.Header.Set("Content-Type", "application/json")
 		done := make(chan struct{})
 		go func() {
-			httpapi.NewHandler(store, 10*time.Second, 32).ServeHTTP(response, request)
+			newTestHandler(t, store, 10*time.Second, 32).ServeHTTP(response, request)
 			close(done)
 		}()
 		select {
@@ -1069,7 +1116,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		}{
 			{
 				name:           "content conflict",
-				err:            fmt.Errorf("wrapped: %w", &inbox.ConflictError{Source: "platform-test", EventID: "test-event"}),
+				err:            fmt.Errorf("wrapped: %w", &postgres.ConflictError{Source: "platform-test", EventID: "test-event"}),
 				wantStatus:     409,
 				wantErrorCode:  "event_conflict",
 				wantSource:     "platform-test",
@@ -1109,7 +1156,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 				request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(validUsageBatch))
 				request.Header.Set("Content-Type", "application/json")
 				store := storeFunc(func(context.Context, []usage.Event, time.Time) error { return tt.err })
-				httpapi.NewHandler(store, 10*time.Second, 32).ServeHTTP(response, request)
+				newTestHandler(t, store, 10*time.Second, 32).ServeHTTP(response, request)
 				if strings.Contains(response.Body.String(), "secret") || strings.Contains(response.Body.String(), "accepted") {
 					t.Errorf("Failure response leaked details or acknowledged: %s", response.Body)
 				}
@@ -1136,8 +1183,9 @@ func TestHandlerServeHTTP(t *testing.T) {
 			})
 		}
 	})
-	t.Run("usage batch missing store", func(t *testing.T) {
+	t.Run("usage storage failure keeps health available", func(t *testing.T) {
 		tt := struct {
+			storeError          error
 			body                string
 			wantStatus          int
 			wantErrorCode       string
@@ -1149,9 +1197,10 @@ func TestHandlerServeHTTP(t *testing.T) {
 			wantErrorCode:       "inbox_unavailable",
 			wantHealthStatus:    200,
 			wantHealthBodyBytes: 0,
+			storeError:          errors.New("database unavailable"),
 		}
 
-		handler := httpapi.NewHandler(nil, 10*time.Second, 32)
+		handler := newTestHandler(t, storeFunc(func(context.Context, []usage.Event, time.Time) error { return tt.storeError }), 10*time.Second, 32)
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(tt.body))
 		request.Header.Set("Content-Type", "application/json")
@@ -1185,7 +1234,7 @@ func TestHandlerServeHTTP(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, "/usage/batches", strings.NewReader(tt.body)).WithContext(ctx)
 		request.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
-		httpapi.NewHandler(store, 10*time.Second, 32).ServeHTTP(response, request)
+		newTestHandler(t, store, 10*time.Second, 32).ServeHTTP(response, request)
 		assertRequestError(t, response, tt.wantStatus, tt.wantErrorCode, "")
 	})
 }
@@ -1201,11 +1250,11 @@ func (failingReader) Read(_ []byte) (int, error) {
 
 // postBatch exercises the public handler with an unknown-length body, ensuring
 // size enforcement reads the actual bytes rather than trusting Content-Length.
-func postBatch(body, mediaType string) *httptest.ResponseRecorder {
+func postBatch(t *testing.T, body, mediaType string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(http.MethodPost, "/usage/batches", io.NopCloser(strings.NewReader(body)))
 	request.Header.Set("Content-Type", mediaType)
 	response := httptest.NewRecorder()
-	httpapi.NewHandler(acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
+	newTestHandler(t, acceptingStore(), 10*time.Second, 32).ServeHTTP(response, request)
 
 	return response
 }
@@ -1311,4 +1360,61 @@ type observedResponse struct {
 func (response *observedResponse) WriteHeader(status int) {
 	response.statuses <- status
 	response.ResponseRecorder.WriteHeader(status)
+}
+
+// newTestHandler supplies one complete test store and fails on invalid setup.
+// Scenario inputs and expected transport outcomes remain explicit in each test.
+func newTestHandler(t *testing.T, store httpapi.Store, timeout time.Duration, maxInFlight int) http.Handler {
+	t.Helper()
+	handler, err := httpapi.NewHandler(store, timeout, maxInFlight)
+	if err != nil {
+		t.Fatalf("NewHandler(timeout=%s, maxInFlight=%d): %v", timeout, maxInFlight, err)
+	}
+
+	return handler
+}
+
+// CreatePrice rejects unexpected financial calls in usage transport scenarios.
+func (store storeFunc) CreatePrice(ctx context.Context, key string, input billing.PriceInput) (accounting.PriceVersion, error) {
+	return accounting.PriceVersion{}, errors.New("unexpected CreatePrice call")
+}
+
+// CreatePriceNow rejects unexpected financial calls in usage transport scenarios.
+func (store storeFunc) CreatePriceNow(ctx context.Context, key string, input billing.PriceInput) (accounting.PriceVersion, error) {
+	return accounting.PriceVersion{}, errors.New("unexpected CreatePriceNow call")
+}
+
+// Credit rejects unexpected financial calls in usage transport scenarios.
+func (store storeFunc) Credit(ctx context.Context, customer string) (billing.CreditSnapshot, error) {
+	return billing.CreditSnapshot{}, errors.New("unexpected Credit call")
+}
+
+// PurchaseAddon rejects unexpected financial calls in usage transport scenarios.
+func (store storeFunc) PurchaseAddon(ctx context.Context, customer, key string, purchase billing.AddonPurchase) (billing.Subscription, error) {
+	return billing.Subscription{}, errors.New("unexpected PurchaseAddon call")
+}
+
+// MonthlyLimitStatus rejects unexpected financial calls in usage transport scenarios.
+func (store storeFunc) MonthlyLimitStatus(ctx context.Context, customer, month string) (billing.LimitStatus, error) {
+	return billing.LimitStatus{}, errors.New("unexpected MonthlyLimitStatus call")
+}
+
+// CloseMonth rejects unexpected financial calls in usage transport scenarios.
+func (store storeFunc) CloseMonth(ctx context.Context, customer, month string) (billing.Invoice, error) {
+	return billing.Invoice{}, errors.New("unexpected CloseMonth call")
+}
+
+// Invoice rejects unexpected financial calls in usage transport scenarios.
+func (store storeFunc) Invoice(ctx context.Context, customer, month string) (billing.Invoice, error) {
+	return billing.Invoice{}, errors.New("unexpected Invoice call")
+}
+
+// GrantCredit rejects unexpected financial calls in usage transport scenarios.
+func (store storeFunc) GrantCredit(ctx context.Context, customer string, grant billing.CreditGrant) error {
+	return errors.New("unexpected GrantCredit call")
+}
+
+// SetSpendLimit rejects unexpected financial calls in usage transport scenarios.
+func (store storeFunc) SetSpendLimit(ctx context.Context, customer string, change billing.SpendLimitChange) error {
+	return errors.New("unexpected SetSpendLimit call")
 }

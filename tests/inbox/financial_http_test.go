@@ -11,9 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/httpapi"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 )
 
 // TestPriceAPI sends explicit wire commands through the real router and private
@@ -72,7 +70,7 @@ func TestPriceAPI(t *testing.T) {
 				serverTimeText = "2026-11-01T00:00:00Z"
 			}
 			serverTime := parseBillingTime(t, serverTimeText)
-			handler := httpapi.NewHandler(inbox.NewPostgres(pool, time.Second), 5*time.Second, 8, billing.NewStoreWithClock(pool, func() time.Time { return serverTime }))
+			handler := newBillingHandler(t, newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }}), 5*time.Second, 8)
 			response := financialRequest(t, handler, http.MethodPost, "/prices", tc.body, tc.key)
 			if response.Code != tc.wantStatus {
 				t.Fatalf("POST /prices(%s): status=%d body=%s want %d", tc.body, response.Code, response.Body, tc.wantStatus)
@@ -127,7 +125,7 @@ func TestPriceAPI(t *testing.T) {
 func financialHandler(t testing.TB) http.Handler {
 	t.Helper()
 	pool := billingDatabase(t)
-	return httpapi.NewHandler(inbox.NewPostgres(pool, time.Second), 5*time.Second, 8, billing.NewStore(pool))
+	return newBillingHandler(t, newPostgresStore(t, pool, postgres.Config{}), 5*time.Second, 8)
 }
 
 // financialRequest preserves explicit command parameters and inserts only the
@@ -208,7 +206,7 @@ func testPriceAutomaticRetries(t *testing.T) {
 			pool := billingDatabase(t)
 			ctx := context.Background()
 			var serverTime time.Time
-			handler := httpapi.NewHandler(inbox.NewPostgres(pool, time.Second), 5*time.Second, 8, billing.NewStoreWithClock(pool, func() time.Time { return serverTime }))
+			handler := newBillingHandler(t, newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }}), 5*time.Second, 8)
 			before, err := readPriceBoundaryState(ctx, pool, "cyberdyne")
 			if err != nil {
 				t.Fatal(err)

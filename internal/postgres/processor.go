@@ -1,7 +1,8 @@
-package billing
+package postgres
 
 import (
 	"context"
+	"e2b/billing-api/internal/billing"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -73,7 +74,7 @@ func (s *Store) accountReceipt(ctx context.Context, candidate receipt) error {
 // separately from transaction failure so its quarantine can commit without charges.
 func processReceipt(ctx context.Context, tx pgx.Tx, candidate receipt) (*accounting.MissingPriceError, error) {
 	credit, err := lockAccount(ctx, tx, candidate.event.CustomerID)
-	if errors.Is(err, ErrNotFound) {
+	if errors.Is(err, billing.ErrNotFound) {
 		return nil, quarantine(ctx, tx, candidate.event, "unknown customer")
 	}
 

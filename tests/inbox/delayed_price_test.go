@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 )
 
@@ -51,8 +51,8 @@ func testDelayedPriceProcessing(t *testing.T) {
 				t.Fatal(err)
 			}
 			serverTime := parseBillingTime(t, "2026-02-02T00:00:00Z")
-			store := billing.NewStoreWithClock(pool, func() time.Time { return serverTime })
-			transport := inbox.NewPostgres(pool, time.Second)
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }})
+			transport := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second})
 			var generatedPriceID string
 			for index, step := range steps {
 				if index == 1 {

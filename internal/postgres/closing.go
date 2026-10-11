@@ -1,9 +1,10 @@
-package billing
+package postgres
 
 import (
 	"context"
 	"time"
 
+	"e2b/billing-api/internal/billing"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -12,7 +13,7 @@ import (
 // invoice; subsequent invoices require a closed predecessor, without draining usage.
 func validateClosing(ctx context.Context, tx pgx.Tx, customer string, month, issuedAt time.Time) error {
 	if issuedAt.Before(month.AddDate(0, 1, 0)) {
-		return &ValidationError{Field: "month", Message: "Only completed UTC calendar months can be closed."}
+		return &billing.ValidationError{Field: "month", Message: "Only completed UTC calendar months can be closed."}
 	}
 
 	var conflict bool
@@ -33,7 +34,7 @@ func validateClosing(ctx context.Context, tx pgx.Tx, customer string, month, iss
 	}
 
 	if conflict {
-		return ErrConflict
+		return billing.ErrConflict
 	}
 
 	return nil

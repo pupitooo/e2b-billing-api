@@ -4,6 +4,7 @@ package inbox_test
 
 import (
 	"context"
+	"e2b/billing-api/internal/postgres"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -90,7 +91,7 @@ func testReadableAddonIdentities(t *testing.T) {
 			}
 			path := "/customers/" + url.PathEscape(tc.customer) + "/addons"
 
-			response := financialRequest(t, resourceHandler(pool), http.MethodPost, path, string(body))
+			response := financialRequest(t, resourceHandler(t, pool), http.MethodPost, path, string(body))
 
 			if response.Code != tc.wantStatus {
 				t.Fatalf("POST %s addon=%q: HTTP=%d body=%s; want %d", path, tc.addon, response.Code, response.Body, tc.wantStatus)
@@ -127,14 +128,14 @@ func testReadableAddonIdentities(t *testing.T) {
 				t.Fatalf("Stored subscription(customer=%q addon=%q)=%q; want %q", tc.customer, tc.addon, storedID, tc.wantID)
 			}
 
-			replay := financialRequest(t, resourceHandler(pool), http.MethodPost, path, string(body))
+			replay := financialRequest(t, resourceHandler(t, pool), http.MethodPost, path, string(body))
 
 			if replay.Code != tc.wantStatus || replay.Body.String() != response.Body.String() {
 				t.Fatalf("Replay POST %s: HTTP=%d body=%s; want HTTP=%d body=%s", path, replay.Code, replay.Body, tc.wantStatus, response.Body)
 			}
 			assertResourceState(t, pool, tc.wantState, tc.customer)
 
-			store := billing.NewStoreWithClock(pool, func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) })
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) }})
 			invoice, err := store.CloseMonth(ctx, tc.customer, "2026-10")
 			if err != nil {
 				t.Fatalf("CloseMonth(customer=%q): %v", tc.customer, err)
@@ -192,7 +193,7 @@ func testStoredAddonIdentities(t *testing.T) {
 			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET state_version=1 WHERE customer_id='acme'"); err != nil {
 				t.Fatal(err)
 			}
-			store := billing.NewStoreWithClock(pool, func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) })
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) }})
 			invoice, err := store.CloseMonth(ctx, original.CustomerID, "2026-10")
 			if err != nil {
 				t.Fatal(err)
@@ -202,7 +203,7 @@ func testStoredAddonIdentities(t *testing.T) {
 			}
 			purchase := billing.AddonPurchase{AddonName: original.AddonName, PurchasedAt: original.PurchasedAt}
 
-			replay, err := billing.NewStore(pool).PurchaseAddon(ctx, original.CustomerID, "earlier-purchase", purchase)
+			replay, err := newPostgresStore(t, pool, postgres.Config{}).PurchaseAddon(ctx, original.CustomerID, "earlier-purchase", purchase)
 
 			if err != nil {
 				t.Fatalf("Replay stored subscription_id=%q: %v", tc.storedID, err)

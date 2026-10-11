@@ -10,9 +10,9 @@ import (
 	"e2b/billing-api/internal/accounting"
 )
 
-// invoiceHeader freezes buyer details and the reserved number without reading
+// InvoiceHeader freezes buyer details and the reserved number without reading
 // storage. The caller holds the account lock until the complete invoice commits.
-func invoiceHeader(customer string, month, issuedAt time.Time, buyer invoiceBuyer) (Invoice, error) {
+func InvoiceHeader(customer string, month, issuedAt time.Time, buyer InvoiceBuyer) (Invoice, error) {
 	invoice := Invoice{
 		CustomerID: customer, Month: month.Format("2006-01"), Currency: "USD",
 		CustomerName: buyer.Name, Country: buyer.Country, BillingAddress: buyer.BillingAddress,
@@ -27,9 +27,9 @@ func invoiceHeader(customer string, month, issuedAt time.Time, buyer invoiceBuye
 	return invoice, nil
 }
 
-// assembleInvoice applies presentation rules to already loaded financial facts.
+// AssembleInvoice applies presentation rules to already loaded financial facts.
 // It neither reads storage nor allocates credit; the exact ledger is unchanged.
-func assembleInvoice(invoice Invoice, month time.Time, charges invoiceCharges) (Invoice, error) {
+func AssembleInvoice(invoice Invoice, month time.Time, charges InvoiceCharges) (Invoice, error) {
 	usage, err := invoiceUsageLines(month, charges.Usage)
 	if err != nil {
 		return invoice, err
@@ -62,7 +62,7 @@ type invoiceUsageSummary struct {
 
 // invoiceUsageLines preserves query order and rounds each price group separately.
 // Exact gross and credit totals remain available alongside the displayed cents.
-func invoiceUsageLines(month time.Time, groups []invoiceUsage) (invoiceUsageSummary, error) {
+func invoiceUsageLines(month time.Time, groups []InvoiceUsage) (invoiceUsageSummary, error) {
 	var summary invoiceUsageSummary
 	for _, group := range groups {
 		line, deduction, err := invoiceUsageLine(month, group)
@@ -83,7 +83,7 @@ func invoiceUsageLines(month time.Time, groups []invoiceUsage) (invoiceUsageSumm
 	return summary, nil
 }
 
-func invoiceUsageLine(month time.Time, group invoiceUsage) (InvoiceLine, int64, error) {
+func invoiceUsageLine(month time.Time, group InvoiceUsage) (InvoiceLine, int64, error) {
 	display, err := accounting.InvoiceAmounts(group.Gross, group.Credit)
 	if err != nil {
 		return InvoiceLine{}, 0, err

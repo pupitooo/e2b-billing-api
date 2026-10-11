@@ -9,8 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 )
 
@@ -45,7 +44,7 @@ func testQuarantinedClosing(t *testing.T) {
 			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=2000000 WHERE customer_id='cyberdyne'"); err != nil {
 				t.Fatal(err)
 			}
-			transport := inbox.NewPostgres(pool, time.Second)
+			transport := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second})
 			bad := usage.Event{Source: "quarantine-close", EventID: "bad", SchemaVersion: tc.schemaVersion, CustomerID: "cyberdyne", SandboxID: "sandbox", Metric: tc.metric, PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, tc.periodEnd), Units: 1_000_000}
 			good := usage.Event{Source: "quarantine-close", EventID: "good", SchemaVersion: 1, CustomerID: "cyberdyne", SandboxID: "sandbox", Metric: "cpu_seconds", PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, "2026-10-10T13:00:00Z"), Units: 1_000_000}
 			if err := transport.InsertBatch(ctx, []usage.Event{bad, good}, parseBillingTime(t, "2026-10-11T00:00:00Z")); err != nil {
@@ -57,7 +56,7 @@ func testQuarantinedClosing(t *testing.T) {
 				}
 			}
 			serverTime := parseBillingTime(t, "2026-12-01T00:00:00Z")
-			store := billing.NewStoreWithClock(pool, func() time.Time { return serverTime })
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }})
 			processUsageSteps(t, store, tc.workerSteps)
 
 			invoice, err := store.CloseMonth(ctx, "cyberdyne", "2026-10")
@@ -128,11 +127,11 @@ func testClosingExclusionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	event := usage.Event{Source: "closing-recovery", EventID: "one", SchemaVersion: 1, CustomerID: "cyberdyne", SandboxID: "sandbox", Metric: "unpriced", PeriodStart: parseBillingTime(t, scenario.periodStart), PeriodEnd: parseBillingTime(t, scenario.periodEnd), Units: 1_000_000}
-	if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, scenario.receivedAt)); err != nil {
+	if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, scenario.receivedAt)); err != nil {
 		t.Fatal(err)
 	}
 	serverTime := parseBillingTime(t, "2026-12-01T00:00:00Z")
-	store := billing.NewStoreWithClock(pool, func() time.Time { return serverTime })
+	store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }})
 	worked, err := store.ProcessBatch(ctx)
 	if err != nil {
 		t.Fatal(err)

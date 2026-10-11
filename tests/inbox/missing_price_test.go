@@ -12,8 +12,7 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/accounting"
-	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 )
 
@@ -143,11 +142,11 @@ func testMissingPriceProcessing(t *testing.T) {
 			}
 			event := usage.Event{Source: "catalog-test", EventID: "one", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox", Metric: tc.metric,
 				PeriodStart: parseBillingTime(t, tc.periodStart), PeriodEnd: parseBillingTime(t, tc.periodEnd), Units: tc.units}
-			if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receivedAt)); err != nil {
+			if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receivedAt)); err != nil {
 				t.Fatalf("Insert missing-price receipt %+v: %v", event, err)
 			}
 
-			store := billing.NewStore(pool)
+			store := newPostgresStore(t, pool, postgres.Config{})
 			worked, err := store.ProcessBatch(ctx)
 			if err != tc.wantError {
 				t.Fatalf("ProcessBatch(%+v) quarantine error=%v; want %v", event, err, tc.wantError)
@@ -263,11 +262,11 @@ func testMissingPriceProcessing(t *testing.T) {
 		}
 		event := usage.Event{Source: "catalog-test", EventID: "one", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox", Metric: scenario.metric,
 			PeriodStart: parseBillingTime(t, scenario.periodStart), PeriodEnd: parseBillingTime(t, scenario.periodEnd), Units: scenario.units}
-		if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
+		if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
 			t.Fatalf("Insert receipt before quarantine failure: %v", err)
 		}
 
-		worked, err := billing.NewStore(pool).ProcessBatch(ctx)
+		worked, err := newPostgresStore(t, pool, postgres.Config{}).ProcessBatch(ctx)
 		if (err != nil) != scenario.wantError {
 			t.Fatalf("ProcessBatch quarantine commit error=%v; wantError=%t", err, scenario.wantError)
 		}

@@ -5,7 +5,7 @@ package inbox_test
 import (
 	"context"
 	"crypto/rand"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 	"encoding/hex"
 	"errors"
@@ -43,7 +43,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		}
 
 		pool := testDatabase(t, nil)
-		store := inbox.NewPostgres(pool, 5*time.Second)
+		store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 		events := tt.events
 		maximum := events[0]
 		maximum.EventID = "maximum-values"
@@ -99,7 +99,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		}
 
 		pool := testDatabase(t, nil)
-		store := inbox.NewPostgres(pool, 5*time.Second)
+		store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 		events := tt.events
 		receipt := tt.receipt
 		if err := store.InsertBatch(context.Background(), events[:1], receipt); err != nil {
@@ -141,7 +141,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		}
 		events := fixtureEvents()
 		events[1].EventID = tt.rejectedEventID
-		err := inbox.NewPostgres(pool, 5*time.Second).InsertBatch(context.Background(), events, time.Now().UTC())
+		err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second}).InsertBatch(context.Background(), events, time.Now().UTC())
 		assertPostgresError(t, err, tt.wantSQLState)
 		if count := eventCount(t, pool); count != tt.wantCount {
 			t.Errorf("Partial failed batch persisted %d events", count)
@@ -149,7 +149,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 	})
 	t.Run("inbox invalid values", func(t *testing.T) {
 		pool := testDatabase(t, nil)
-		store := inbox.NewPostgres(pool, 5*time.Second)
+		store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 		events := fixtureEvents()
 		invalid := append([]usage.Event(nil), events...)
 		invalid[1].Units = -1
@@ -233,7 +233,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		event.PeriodStart = tt.periodStart
 		event.PeriodEnd = event.PeriodStart.Add(tt.periodDuration)
 		receipt := event.PeriodEnd.UTC()
-		if err := inbox.NewPostgres(pool, 5*time.Second).InsertBatch(context.Background(), []usage.Event{event}, receipt); err != nil {
+		if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second}).InsertBatch(context.Background(), []usage.Event{event}, receipt); err != nil {
 			t.Fatalf("Persist minimum-year event: %v", err)
 		}
 		var start, end, received time.Time
@@ -256,7 +256,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		}
 
 		pool := testDatabase(t, nil)
-		store := inbox.NewPostgres(pool, 5*time.Second)
+		store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		err := store.InsertBatch(ctx, tt.events, time.Now().UTC())
@@ -287,7 +287,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		if _, err := pool.Exec(context.Background(), tt.constraintSQL); err != nil {
 			t.Fatalf("Set durability verification constraint: %v", err)
 		}
-		if err := inbox.NewPostgres(pool, 5*time.Second).InsertBatch(context.Background(), tt.events, time.Now().UTC()); err != nil {
+		if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second}).InsertBatch(context.Background(), tt.events, time.Now().UTC()); err != nil {
 			t.Fatalf("Synchronous inbox commit: %v", err)
 		}
 		var setting string
@@ -339,7 +339,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				pool := testDatabase(t, nil)
-				store := inbox.NewPostgres(pool, 5*time.Second)
+				store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 				event := fixtureEvents()[0]
 				receipt := time.Date(2026, 11, 1, 0, 30, 0, 0, time.UTC)
 				if err := store.InsertBatch(context.Background(), []usage.Event{event}, receipt); err != nil {
@@ -425,7 +425,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				pool := testDatabase(t, nil)
-				store := inbox.NewPostgres(pool, 5*time.Second)
+				store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 				event := fixtureEvents()[0]
 				if err := store.InsertBatch(context.Background(), []usage.Event{event}, time.Now().UTC()); err != nil {
 					t.Fatalf("Seed original event: %v", err)
@@ -433,7 +433,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 				changed := event
 				tt.change(&changed)
 				err := store.InsertBatch(context.Background(), []usage.Event{changed}, time.Now().UTC())
-				var conflict *inbox.ConflictError
+				var conflict *postgres.ConflictError
 				if errors.As(err, &conflict) != tt.wantConflict {
 					t.Fatalf("InsertBatch error = %v; want conflict=%t", err, tt.wantConflict)
 				}
@@ -460,7 +460,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		}
 
 		pool := testDatabase(t, nil)
-		store := inbox.NewPostgres(pool, 5*time.Second)
+		store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 		events := tt.events
 		request := []usage.Event{events[1], events[0], events[0]}
 		if err := store.InsertBatch(context.Background(), request, time.Now().UTC()); err != nil {
@@ -496,7 +496,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		events := tt.events
 		changed := events[0]
 		changed.Units = tt.changedUnits
-		err := inbox.NewPostgres(pool, 5*time.Second).InsertBatch(context.Background(), []usage.Event{events[0], events[1], changed}, time.Now().UTC())
+		err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second}).InsertBatch(context.Background(), []usage.Event{events[0], events[1], changed}, time.Now().UTC())
 		assertConflict(t, err, changed)
 		if count := eventCount(t, pool); count != tt.wantCount {
 			t.Errorf("Conflicting batch persisted %d events", count)
@@ -514,7 +514,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		}
 
 		pool := testDatabase(t, nil)
-		store := inbox.NewPostgres(pool, 5*time.Second)
+		store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 		events := tt.events
 		writers := tt.writers
 		start := make(chan struct{})
@@ -559,7 +559,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 		}
 
 		pool := testDatabase(t, nil)
-		store := inbox.NewPostgres(pool, 5*time.Second)
+		store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 		original := tt.original
 		start := make(chan struct{})
 		results := make(chan error, 2)
@@ -656,7 +656,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				result := make(chan error, 1)
-				store := inbox.NewPostgres(pool, 5*time.Second)
+				store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 				go func() {
 					result <- store.InsertBatch(ctx, []usage.Event{extra, event}, originalReceipt.Add(time.Hour))
 				}()
@@ -708,7 +708,7 @@ func TestPostgresInsertBatch(t *testing.T) {
 // rather than exposing a generic primary-key error or silently replacing it.
 func assertConflict(t *testing.T, err error, event usage.Event) {
 	t.Helper()
-	var conflict *inbox.ConflictError
+	var conflict *postgres.ConflictError
 	if !errors.As(err, &conflict) || conflict.Source != event.Source || conflict.EventID != event.EventID {
 		t.Fatalf("Conflict = %v, want identity (%q, %q)", err, event.Source, event.EventID)
 	}
@@ -722,7 +722,7 @@ func testDatabase(t testing.TB, settings map[string]string) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	admin, err := inbox.OpenPool(ctx, os.Getenv("E2B_TEST_DATABASE_URL"))
+	admin, err := postgres.OpenPool(ctx, os.Getenv("E2B_TEST_DATABASE_URL"))
 	if err != nil {
 		t.Fatalf("Open test database (set PG variables or E2B_TEST_DATABASE_URL): %v", err)
 	}

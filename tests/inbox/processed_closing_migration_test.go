@@ -4,13 +4,13 @@ package inbox_test
 
 import (
 	"context"
+	"e2b/billing-api/internal/postgres"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/billing"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -82,7 +82,7 @@ func TestProcessedUsageClosingMigration(t *testing.T) {
 				}
 			}
 			invoiceTime := parseBillingTime(t, "2026-12-01T00:00:00Z")
-			store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return invoiceTime }})
 			if _, err := pool.Exec(ctx, tc.setupSQL); err != nil {
 				t.Fatal(err)
 			}

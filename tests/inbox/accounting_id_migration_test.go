@@ -4,13 +4,12 @@ package inbox_test
 
 import (
 	"context"
+	"e2b/billing-api/internal/postgres"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
-
-	"e2b/billing-api/internal/billing"
 )
 
 // TestAccountingIDSequencesMigration upgrades private pre-012 schemas with frozen
@@ -94,7 +93,7 @@ func TestAccountingIDSequencesMigration(t *testing.T) {
 			if _, err := pool.Exec(ctx, "INSERT INTO usage_ratings VALUES ('id-migration','earlier',$1)", tc.oldGroupID); err != nil {
 				t.Fatal(err)
 			}
-			store := billing.NewStoreWithClock(pool, func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) })
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) }})
 			original, err := store.CloseMonth(ctx, "acme", "2026-10")
 			if err != nil {
 				t.Fatal(err)

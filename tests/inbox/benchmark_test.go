@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -74,7 +74,7 @@ func BenchmarkPostgresInsertBatch(b *testing.B) {
 				b.Fatalf("Open benchmark pool: %v", err)
 			}
 			b.Cleanup(pool.Close)
-			store := inbox.NewPostgres(pool, 5*time.Second)
+			store := newPostgresStore(b, pool, postgres.Config{RollbackTimeout: 5 * time.Second})
 			fixture := fixtureEvents()[0]
 			receipt := time.Now().UTC()
 			durations := make([]time.Duration, b.N)

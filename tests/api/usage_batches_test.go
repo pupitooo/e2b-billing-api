@@ -5,7 +5,7 @@ package api_test
 import (
 	"context"
 	"crypto/rand"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 	"encoding/hex"
 	"encoding/json"
@@ -400,7 +400,7 @@ func openAPIDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pool, err := inbox.OpenPool(ctx, os.Getenv("E2B_TEST_DATABASE_URL"))
+	pool, err := postgres.OpenPool(ctx, os.Getenv("E2B_TEST_DATABASE_URL"))
 	if err != nil {
 		t.Fatalf("Open API verification database (set PG variables or E2B_TEST_DATABASE_URL): %v", err)
 	}

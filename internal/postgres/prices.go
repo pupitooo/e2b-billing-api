@@ -1,4 +1,4 @@
-package billing
+package postgres
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/accounting"
+	"e2b/billing-api/internal/billing"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -16,29 +17,20 @@ const (
 	priceIDPrefix       = "price_"
 )
 
-// PriceInput contains caller-owned price values; resource identities belong to billing.
-// An empty customer denotes the default price. CreatePriceNow resolves the timestamp.
-type PriceInput struct {
-	CustomerID           string    `json:"customer_id"`
-	Metric               string    `json:"metric"`
-	PricePerMillionCents int64     `json:"price_per_million_cents"`
-	EffectiveFrom        time.Time `json:"effective_from"`
-}
-
 // CreatePrice generates an identity and appends a version under the catalog lock.
 // The scoped request key replays the stored result even after activation.
-func (s *Store) CreatePrice(ctx context.Context, key string, input PriceInput) (accounting.PriceVersion, error) {
+func (s *Store) CreatePrice(ctx context.Context, key string, input billing.PriceInput) (accounting.PriceVersion, error) {
 	return s.createPrice(ctx, key, input, false)
 }
 
 // CreatePriceNow resolves activation under the catalog lock. Replays retain both
 // the server-generated identity and the original persisted activation instant.
-func (s *Store) CreatePriceNow(ctx context.Context, key string, input PriceInput) (accounting.PriceVersion, error) {
+func (s *Store) CreatePriceNow(ctx context.Context, key string, input billing.PriceInput) (accounting.PriceVersion, error) {
 	return s.createPrice(ctx, key, input, true)
 }
 
-func (s *Store) createPrice(ctx context.Context, key string, input PriceInput, useCurrentTime bool) (accounting.PriceVersion, error) {
-	if err := ValidateIdempotencyKey(key); err != nil {
+func (s *Store) createPrice(ctx context.Context, key string, input billing.PriceInput, useCurrentTime bool) (accounting.PriceVersion, error) {
+	if err := billing.ValidateIdempotencyKey(key); err != nil {
 		return accounting.PriceVersion{}, err
 	}
 
@@ -47,7 +39,7 @@ func (s *Store) createPrice(ctx context.Context, key string, input PriceInput, u
 	}
 
 	if !useCurrentTime {
-		if err := validateTime("effective_from", input.EffectiveFrom); err != nil {
+		if err := billing.ValidateTime("effective_from", input.EffectiveFrom); err != nil {
 			return accounting.PriceVersion{}, err
 		}
 	}
@@ -69,7 +61,7 @@ func (s *Store) createPrice(ctx context.Context, key string, input PriceInput, u
 			}
 
 			if !samePrice(existing, price) {
-				return ErrConflict
+				return billing.ErrConflict
 			}
 
 			price = existing
@@ -84,11 +76,11 @@ func (s *Store) createPrice(ctx context.Context, key string, input PriceInput, u
 		insertionTime := s.now().UTC()
 		if useCurrentTime {
 			price.EffectiveFrom = insertionTime.Truncate(time.Microsecond)
-			if err := validateTime("effective_from", price.EffectiveFrom); err != nil {
+			if err := billing.ValidateTime("effective_from", price.EffectiveFrom); err != nil {
 				return err
 			}
 		} else if price.EffectiveFrom.Before(insertionTime) {
-			return &ValidationError{Field: "effective_from", Message: "A new price must not start before its insertion time."}
+			return &billing.ValidationError{Field: "effective_from", Message: "A new price must not start before its insertion time."}
 		}
 
 		price.ID = priceIDPrefix + rand.Text()
@@ -101,8 +93,8 @@ func (s *Store) createPrice(ctx context.Context, key string, input PriceInput, u
 		}
 
 		request := struct {
-			Price          PriceInput `json:"price"`
-			UseCurrentTime bool       `json:"use_current_time"`
+			Price          billing.PriceInput `json:"price"`
+			UseCurrentTime bool               `json:"use_current_time"`
 		}{Price: input, UseCurrentTime: useCurrentTime}
 
 		return recordOperation(ctx, tx, priceOperationScope, key, request, price, insertionTime)
@@ -125,29 +117,29 @@ func insertPrice(ctx context.Context, tx pgx.Tx, price accounting.PriceVersion) 
 	var databaseError *pgconn.PgError
 	if errors.As(err, &databaseError) {
 		if databaseError.Code == "23505" {
-			return ErrConflict
+			return billing.ErrConflict
 		}
 
 		if databaseError.Code == "23503" {
-			return ErrNotFound
+			return billing.ErrNotFound
 		}
 	}
 
 	return err
 }
 
-func validatePriceValues(p PriceInput) error {
-	if err := ValidateIdentifier("metric", p.Metric); err != nil {
+func validatePriceValues(p billing.PriceInput) error {
+	if err := billing.ValidateIdentifier("metric", p.Metric); err != nil {
 		return err
 	}
 
 	if p.CustomerID != "" {
-		if err := ValidateIdentifier("customer_id", p.CustomerID); err != nil {
+		if err := billing.ValidateIdentifier("customer_id", p.CustomerID); err != nil {
 			return err
 		}
 	}
 
-	return validateCents("price_per_million_cents", p.PricePerMillionCents, false)
+	return billing.ValidateCents("price_per_million_cents", p.PricePerMillionCents, false)
 }
 
 func samePrice(a, b accounting.PriceVersion) bool {
@@ -199,7 +191,7 @@ func preserveRatedHistory(ctx context.Context, tx pgx.Tx, proposed accounting.Pr
 
 		rated, err := accounting.Rate(record.item.event, append(prices, proposed))
 		if err != nil || rated.Price.ID != record.priceID {
-			return ErrConflict
+			return billing.ErrConflict
 		}
 	}
 

@@ -53,6 +53,22 @@ The first use with installed Go downloads the pinned tool and its dependencies.
 Semantic grouping of preparation, calculation, persistence, and assertions still
 requires review. See the [wsl documentation](https://github.com/bombsimon/wsl).
 
+Keep endpoint input rules visible near the handler. Declare required JSON fields
+and fields that accept `null` in named lists, with one field per line. A required
+field may accept `null`; accepting `null` does not make the field optional.
+Separate HTTP/JSON checks, input conversion, domain validation, persistence, and
+response construction into readable steps. Use short guards with early returns.
+Extract substantial input conversion into a specifically named parsing function.
+Keep shared domain rules in `billing`; checks that depend on persisted state
+remain with the operation and its transaction.
+
+Prefer Go lines of at most 120 characters when a simple layout change improves
+readability. Split long argument lists, composite literals, and conditions at
+meaningful boundaries. Longer lines are acceptable when splitting would make
+the code harder to read, such as a URL or a cohesive regular expression. Keep
+descriptive names and avoid extracting functions solely to shorten lines.
+Review line length manually; no automated line-length rule is configured.
+
 Use named constants for values that encode domain rules, supported schema or
 checkpoint versions, protocol limits, retry policy, operational defaults, and
 parsing boundaries. Name each constant for its meaning and keep it near the

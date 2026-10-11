@@ -12,8 +12,7 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/httpapi"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 )
 
@@ -75,8 +74,8 @@ func TestCloseMonth(t *testing.T) {
 			pool := billingDatabase(t)
 			ctx := context.Background()
 			invoiceTime := parseBillingTime(t, tc.invoiceTime)
-			store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
-			transport := inbox.NewPostgres(pool, time.Second)
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return invoiceTime }})
+			transport := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second})
 			if tc.creditCents > 0 {
 				if err := store.GrantCredit(ctx, tc.customer, billing.CreditGrant{IdempotencyKey: "welcome", AmountCents: tc.creditCents, RecordedAt: parseBillingTime(t, "2026-10-01T00:00:00Z")}); err != nil {
 					t.Fatal(err)
@@ -211,12 +210,12 @@ func TestCloseMonth(t *testing.T) {
 					CustomerID: tc.customer, SandboxID: "sandbox", Metric: "cpu_seconds",
 					PeriodStart: parseBillingTime(t, tc.start), PeriodEnd: parseBillingTime(t, tc.end), Units: tc.units,
 				}
-				if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receiptTime)); err != nil {
+				if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receiptTime)); err != nil {
 					t.Fatalf("Insert closing receipt %+v at %s: %v", event, tc.receiptTime, err)
 				}
 
 				invoiceTime := parseBillingTime(t, tc.invoiceTime)
-				store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
+				store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return invoiceTime }})
 				processUsageSteps(t, store, []bool{true})
 				for step, month := range tc.closingMonths {
 					invoice, err := store.CloseMonth(ctx, tc.customer, month)
@@ -340,14 +339,14 @@ func TestCloseMonth(t *testing.T) {
 				pool := billingDatabase(t)
 				ctx := context.Background()
 				serverTime := parseBillingTime(t, tc.serverTime)
-				store := billing.NewStoreWithClock(pool, func() time.Time { return serverTime })
+				store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }})
 				if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric WHERE customer_id=$1", tc.customer, tc.initialCreditTicks); err != nil {
 					t.Fatalf("Set initial credit for %q to %s ticks: %v", tc.customer, tc.initialCreditTicks, err)
 				}
 
 				event := usage.Event{Source: "closing-clock-boundary", EventID: "one", SchemaVersion: 1, CustomerID: tc.customer, SandboxID: "sandbox", Metric: "cpu_seconds",
 					PeriodStart: parseBillingTime(t, tc.usageStart), PeriodEnd: parseBillingTime(t, tc.usageEnd), Units: tc.units}
-				if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receivedAt)); err != nil {
+				if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receivedAt)); err != nil {
 					t.Fatalf("Insert pending receipt %+v at %s: %v", event, tc.receivedAt, err)
 				}
 
@@ -414,7 +413,7 @@ func TestCloseMonth(t *testing.T) {
 		}{workers: 8, month: "2026-10", invoiceTime: "2026-11-01T00:00:00Z", wantNumber: "ACME-0001", wantCount: 1}
 		pool := billingDatabase(t)
 		invoiceTime := parseBillingTime(t, scenario.invoiceTime)
-		store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
+		store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return invoiceTime }})
 		var wg sync.WaitGroup
 		results := make(chan error, scenario.workers)
 		for range scenario.workers {
@@ -474,8 +473,8 @@ func TestCloseMonth(t *testing.T) {
 				ctx := context.Background()
 				logs := captureBillingLogs(t)
 				invoiceTime := parseBillingTime(t, scenario.invoiceTime)
-				store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
-				transport := inbox.NewPostgres(pool, time.Second)
+				store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return invoiceTime }})
+				transport := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second})
 				if _, err := pool.Exec(ctx, "INSERT INTO metrics VALUES ('unpriced')"); err != nil {
 					t.Fatal(err)
 				}
@@ -577,7 +576,7 @@ func TestCloseMonth(t *testing.T) {
 
 // insertMeasuredHours preserves all named usage inputs from the scenario; only
 // irrelevant transport identifiers and the declared one-hour end are supplied.
-func insertMeasuredHours(t testing.TB, transport *inbox.Postgres, customer string, hours []measuredHour, received string) {
+func insertMeasuredHours(t testing.TB, transport *postgres.Store, customer string, hours []measuredHour, received string) {
 	t.Helper()
 	for _, hour := range hours {
 		start := parseBillingTime(t, hour.start)
@@ -590,7 +589,7 @@ func insertMeasuredHours(t testing.TB, transport *inbox.Postgres, customer strin
 
 // assertInvoiceExpectation compares literal scenario outputs and then reads the
 // exact remaining credit; it never calculates expected financial amounts.
-func assertInvoiceExpectation(t testing.TB, store *billing.Store, actual billing.Invoice, want invoiceExpectation) {
+func assertInvoiceExpectation(t testing.TB, store *postgres.Store, actual billing.Invoice, want invoiceExpectation) {
 	t.Helper()
 	var lines []int64
 	for _, line := range actual.Lines {
@@ -698,13 +697,13 @@ func TestInvoiceAPI(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
-			store := billing.NewStore(pool)
+			store := newPostgresStore(t, pool, postgres.Config{})
 			if tc.serverTime != "" {
 				serverTime := parseBillingTime(t, tc.serverTime)
-				store = billing.NewStoreWithClock(pool, func() time.Time { return serverTime })
+				store = newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }})
 			}
 			if tc.pendingUsage {
-				insertMeasuredHours(t, inbox.NewPostgres(pool, time.Second), "acme", []measuredHour{{eventID: "pending", start: "2026-10-10T12:00:00Z", units: 1_000_000}}, "2026-10-11T00:00:00Z")
+				insertMeasuredHours(t, newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}), "acme", []measuredHour{{eventID: "pending", start: "2026-10-10T12:00:00Z", units: 1_000_000}}, "2026-10-11T00:00:00Z")
 				if _, err := pool.Exec(context.Background(), "UPDATE usage_inbox SET processing_error=$1", tc.processingError); err != nil {
 					t.Fatal(err)
 				}
@@ -714,7 +713,7 @@ func TestInvoiceAPI(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			handler := httpapi.NewHandler(inbox.NewPostgres(pool, time.Second), 5*time.Second, 8, store)
+			handler := newBillingHandler(t, store, 5*time.Second, 8)
 
 			response := financialRequest(t, handler, tc.method, tc.path, tc.body)
 

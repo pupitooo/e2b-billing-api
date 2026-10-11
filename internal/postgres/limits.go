@@ -1,4 +1,4 @@
-package billing
+package postgres
 
 import (
 	"context"
@@ -6,52 +6,23 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/accounting"
+	"e2b/billing-api/internal/billing"
 	"github.com/jackc/pgx/v5"
 )
 
-type SpendLimitChange struct {
-	IdempotencyKey string `json:"idempotency_key"`
-	LimitCents     *int64 `json:"limit_cents"`
-}
-
-type LimitStatus struct {
-	CustomerID       string `json:"customer_id"`
-	Month            string `json:"month"`
-	LimitCents       *int64 `json:"limit_cents"`
-	GrossChargeTicks string `json:"gross_charge_ticks"`
-	LimitReached     bool   `json:"limit_reached"`
-	StateVersion     int64  `json:"state_version"`
-	PendingEvents    int64  `json:"pending_events"`
-	ProcessingErrors int64  `json:"processing_errors"`
-}
-
-// ParseMonth requires a canonical UTC calendar month, including supported years.
-func ParseMonth(value string) (time.Time, error) {
-	month, err := time.Parse("2006-01", value)
-	if err != nil || month.Format("2006-01") != value {
-		return time.Time{}, &ValidationError{Field: "month", Message: "Use a UTC calendar month as YYYY-MM."}
-	}
-
-	if err := validateTime("month", month); err != nil {
-		return time.Time{}, err
-	}
-
-	return month, nil
-}
-
 // SetSpendLimit records each operation once. Replaying an old operation returns
 // its original result while preserving the limit set by any newer operation.
-func (s *Store) SetSpendLimit(ctx context.Context, customer string, change SpendLimitChange) error {
-	if err := ValidateIdentifier("customer_id", customer); err != nil {
+func (s *Store) SetSpendLimit(ctx context.Context, customer string, change billing.SpendLimitChange) error {
+	if err := billing.ValidateIdentifier("customer_id", customer); err != nil {
 		return err
 	}
 
-	if err := ValidateIdempotencyKey(change.IdempotencyKey); err != nil {
+	if err := billing.ValidateIdempotencyKey(change.IdempotencyKey); err != nil {
 		return err
 	}
 
 	if change.LimitCents != nil {
-		if err := validateCents("limit_cents", *change.LimitCents, false); err != nil {
+		if err := billing.ValidateCents("limit_cents", *change.LimitCents, false); err != nil {
 			return err
 		}
 	}
@@ -68,14 +39,14 @@ func (s *Store) SetSpendLimit(ctx context.Context, customer string, change Spend
 				return nil
 			}
 
-			return ErrConflict
+			return billing.ErrConflict
 		}
 
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
 
-		if _, err := tx.Exec(ctx, "INSERT INTO spend_limit_operations VALUES ($1,$2,$3,$4)", customer, change.IdempotencyKey, change.LimitCents, time.Now().UTC().Truncate(time.Microsecond)); err != nil {
+		if _, err := tx.Exec(ctx, "INSERT INTO spend_limit_operations VALUES ($1,$2,$3,$4)", customer, change.IdempotencyKey, change.LimitCents, s.now().UTC().Truncate(time.Microsecond)); err != nil {
 			return err
 		}
 
@@ -95,17 +66,17 @@ func equalLimit(a, b *int64) bool {
 
 // MonthlyLimitStatus uses original-month gross ticks. Credit, add-ons, and the
 // month on which late usage is invoiced cannot reduce this month's gross spend.
-func (s *Store) MonthlyLimitStatus(ctx context.Context, customer, monthValue string) (LimitStatus, error) {
-	if err := ValidateIdentifier("customer_id", customer); err != nil {
-		return LimitStatus{}, err
+func (s *Store) MonthlyLimitStatus(ctx context.Context, customer, monthValue string) (billing.LimitStatus, error) {
+	if err := billing.ValidateIdentifier("customer_id", customer); err != nil {
+		return billing.LimitStatus{}, err
 	}
 
-	month, err := ParseMonth(monthValue)
+	month, err := billing.ParseMonth(monthValue)
 	if err != nil {
-		return LimitStatus{}, err
+		return billing.LimitStatus{}, err
 	}
 
-	result := LimitStatus{CustomerID: customer, Month: monthValue}
+	result := billing.LimitStatus{CustomerID: customer, Month: monthValue}
 	err = s.pool.QueryRow(ctx, `SELECT spend_limit_cents,state_version,
         COALESCE((SELECT gross_charge_ticks::text FROM monthly_usage WHERE customer_id=$1 AND usage_month=$2),'0'),
         (SELECT count(*) FROM usage_inbox WHERE customer_id=$1 AND processed_at IS NULL AND processing_error IS NULL),
@@ -113,7 +84,7 @@ func (s *Store) MonthlyLimitStatus(ctx context.Context, customer, monthValue str
         FROM customer_billing_state WHERE customer_id=$1`, customer, month).
 		Scan(&result.LimitCents, &result.StateVersion, &result.GrossChargeTicks, &result.PendingEvents, &result.ProcessingErrors)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return result, ErrNotFound
+		return result, billing.ErrNotFound
 	}
 
 	if err != nil {

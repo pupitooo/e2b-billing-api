@@ -10,8 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -71,10 +70,10 @@ func TestProcessBatch(t *testing.T) {
 			for i, units := range tc.units {
 				events[i] = usage.Event{Source: "accounting-test", EventID: tc.name + string(rune('a'+i)), SchemaVersion: tc.schemaVersion, CustomerID: tc.customer, SandboxID: "sandbox", Metric: "cpu_seconds", PeriodStart: parseBillingTime(t, tc.start), PeriodEnd: parseBillingTime(t, tc.end), Units: units}
 			}
-			if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, events, parseBillingTime(t, tc.receiptTime)); err != nil {
+			if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, events, parseBillingTime(t, tc.receiptTime)); err != nil {
 				t.Fatal(err)
 			}
-			processor := billing.NewStore(pool)
+			processor := newPostgresStore(t, pool, postgres.Config{})
 			for range len(events) + 1 {
 				if _, err := processor.ProcessBatch(ctx); err != nil {
 					t.Fatalf("ProcessBatch(%s): %v", tc.name, err)
@@ -242,11 +241,11 @@ func TestProcessBatch(t *testing.T) {
 					CustomerID: tc.customer, SandboxID: "sandbox", Metric: "cpu_seconds",
 					PeriodStart: parseBillingTime(t, tc.start), PeriodEnd: parseBillingTime(t, tc.end), Units: tc.units,
 				}
-				if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receiptTime)); err != nil {
+				if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receiptTime)); err != nil {
 					t.Fatalf("Insert month-boundary receipt %+v at %s: %v", event, tc.receiptTime, err)
 				}
 
-				processor := billing.NewStore(pool)
+				processor := newPostgresStore(t, pool, postgres.Config{})
 				for step, wantProcessed := range tc.wantProcessResults {
 					gotProcessed, err := processor.ProcessBatch(ctx)
 					if (err != nil) != tc.wantError {
@@ -328,10 +327,10 @@ func TestProcessBatch(t *testing.T) {
 			t.Fatal(err)
 		}
 		event := usage.Event{Source: "rollback", EventID: "one", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox", Metric: "cpu_seconds", PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, "2026-10-10T13:00:00Z"), Units: scenario.units}
-		if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
+		if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
 			t.Fatal(err)
 		}
-		_, err := billing.NewStore(pool).ProcessBatch(ctx)
+		_, err := newPostgresStore(t, pool, postgres.Config{}).ProcessBatch(ctx)
 		if (err != nil) != scenario.wantError {
 			t.Fatalf("ProcessBatch with failed completion: error=%v wantError=%t", err, scenario.wantError)
 		}
@@ -361,7 +360,7 @@ func TestProcessBatch(t *testing.T) {
 		pool := billingDatabase(t)
 		ctx := context.Background()
 		event := usage.Event{Source: "concurrent", EventID: "one", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox", Metric: "cpu_seconds", PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, "2026-10-10T13:00:00Z"), Units: scenario.units}
-		store := inbox.NewPostgres(pool, time.Second)
+		store := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second})
 		if err := store.InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
 			t.Fatal(err)
 		}
@@ -369,7 +368,11 @@ func TestProcessBatch(t *testing.T) {
 		results := make(chan error, scenario.workers)
 		for range scenario.workers {
 			wg.Add(1)
-			go func() { defer wg.Done(); _, err := billing.NewStore(pool).ProcessBatch(ctx); results <- err }()
+			go func() {
+				defer wg.Done()
+				_, err := newPostgresStore(t, pool, postgres.Config{}).ProcessBatch(ctx)
+				results <- err
+			}()
 		}
 		wg.Wait()
 		close(results)
@@ -381,7 +384,7 @@ func TestProcessBatch(t *testing.T) {
 		if err := store.InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd.Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := billing.NewStore(pool).ProcessBatch(ctx); err != nil {
+		if _, err := newPostgresStore(t, pool, postgres.Config{}).ProcessBatch(ctx); err != nil {
 			t.Fatal(err)
 		}
 		var count int

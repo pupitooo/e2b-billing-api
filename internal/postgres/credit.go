@@ -1,4 +1,4 @@
-package billing
+package postgres
 
 import (
 	"context"
@@ -6,41 +6,26 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/accounting"
+	"e2b/billing-api/internal/billing"
 	"github.com/jackc/pgx/v5"
 )
 
-type CreditGrant struct {
-	IdempotencyKey string    `json:"idempotency_key"`
-	AmountCents    int64     `json:"amount_cents"`
-	RecordedAt     time.Time `json:"recorded_at"`
-}
-
-// CreditSnapshot reports exact balance and asynchronous accounting visibility.
-// Counts describe committed receipts in the same database statement snapshot.
-type CreditSnapshot struct {
-	CustomerID       string `json:"customer_id"`
-	BalanceTicks     string `json:"credit_balance_ticks"`
-	StateVersion     int64  `json:"state_version"`
-	PendingEvents    int64  `json:"pending_events"`
-	ProcessingErrors int64  `json:"processing_errors"`
-}
-
 // GrantCredit uses a stable caller operation identity. Replay returns the grant
 // result without increasing the balance or changing earlier usage allocations.
-func (s *Store) GrantCredit(ctx context.Context, customer string, grant CreditGrant) error {
-	if err := ValidateIdentifier("customer_id", customer); err != nil {
+func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.CreditGrant) error {
+	if err := billing.ValidateIdentifier("customer_id", customer); err != nil {
 		return err
 	}
 
-	if err := ValidateIdempotencyKey(grant.IdempotencyKey); err != nil {
+	if err := billing.ValidateIdempotencyKey(grant.IdempotencyKey); err != nil {
 		return err
 	}
 
-	if err := validateCents("amount_cents", grant.AmountCents, true); err != nil {
+	if err := billing.ValidateCents("amount_cents", grant.AmountCents, true); err != nil {
 		return err
 	}
 
-	if err := validateTime("recorded_at", grant.RecordedAt); err != nil {
+	if err := billing.ValidateTime("recorded_at", grant.RecordedAt); err != nil {
 		return err
 	}
 
@@ -61,7 +46,7 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant CreditGr
 				return nil
 			}
 
-			return ErrConflict
+			return billing.ErrConflict
 		}
 
 		if !errors.Is(err, pgx.ErrNoRows) {
@@ -88,19 +73,19 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant CreditGr
 	})
 }
 
-func (s *Store) Credit(ctx context.Context, customer string) (CreditSnapshot, error) {
-	if err := ValidateIdentifier("customer_id", customer); err != nil {
-		return CreditSnapshot{}, err
+func (s *Store) Credit(ctx context.Context, customer string) (billing.CreditSnapshot, error) {
+	if err := billing.ValidateIdentifier("customer_id", customer); err != nil {
+		return billing.CreditSnapshot{}, err
 	}
 
-	var snapshot CreditSnapshot
+	var snapshot billing.CreditSnapshot
 	err := s.pool.QueryRow(ctx, `SELECT customer_id,credit_balance_ticks::text,state_version,
         (SELECT count(*) FROM usage_inbox WHERE customer_id=$1 AND processed_at IS NULL AND processing_error IS NULL),
         (SELECT count(*) FROM usage_inbox WHERE customer_id=$1 AND processing_error IS NOT NULL)
         FROM customer_billing_state WHERE customer_id=$1`, customer).
 		Scan(&snapshot.CustomerID, &snapshot.BalanceTicks, &snapshot.StateVersion, &snapshot.PendingEvents, &snapshot.ProcessingErrors)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return snapshot, ErrNotFound
+		return snapshot, billing.ErrNotFound
 	}
 
 	return snapshot, err

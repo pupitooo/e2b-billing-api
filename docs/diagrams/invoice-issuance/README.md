@@ -21,9 +21,9 @@ Closing is explicitly invoked; document delivery and scheduling are separate.
 
 ## Processed usage cutoff and retries
 
-[`CloseMonth`](../../../internal/billing/invoices.go) calls `issueInvoice`, which
+[`CloseMonth`](../../../internal/postgres/invoices.go) calls `issueInvoice`, which
 locks `customer_billing_state` and reads an existing invoice before performing a
-new close. [`validateClosing`](../../../internal/billing/closing.go) requires an
+new close. [`validateClosing`](../../../internal/postgres/closing.go) requires an
 ended UTC month and compatible history: the first invoice cannot skip earlier
 existing usage, each later new invoice needs its immediately preceding month
 closed, and no target/later closed month or earlier unclosed rated group is allowed.
@@ -52,7 +52,7 @@ boundaries, as explained in the [closing contract](../../architecture/accounting
 
 ## Financial presentation and atomic publication
 
-[`buildInvoice`](../../../internal/billing/invoice_data.go) reads buyer details, the next customer sequence, exact rated groups and applicable add-on subscriptions while the account lock is held. Usage groups are selected by the **billing month** and ordered by original usage month, metric and price version. Add-ons use the stored subscription price for every month at or after `start_month`, including the purchase month; the current model has no cancellation end month or proration.
+[`buildInvoice`](../../../internal/postgres/invoice_data.go) reads buyer details, the next customer sequence, exact rated groups and applicable add-on subscriptions while the account lock is held. Usage groups are selected by the **billing month** and ordered by original usage month, metric and price version. Add-ons use the stored subscription price for every month at or after `start_month`, including the purchase month; the current model has no cancellation end month or proration.
 
 [`invoiceUsageLine`](../../../internal/billing/invoice_lines.go) calls [`InvoiceAmounts`](../../../internal/accounting/money.go) for each group:
 
@@ -65,7 +65,7 @@ The aggregate credit line is the negative sum of these derived deductions. Issua
 
 The number is built from the uppercase customer ID and the current sequence, padded to at least four digits, for example `ACME-0001`. The account lock reserves that value during construction; the counter advances only with successful publication. An exhausted sequence is rejected before any publication writes.
 
-[`freezeInvoice`](../../../internal/billing/invoice_snapshot.go) commits these effects together:
+[`freezeInvoice`](../../../internal/postgres/invoice_snapshot.go) commits these effects together:
 
 | Table | Change |
 | --- | --- |
@@ -80,7 +80,7 @@ After commit the API returns `200` with the stored document. Concurrent closers 
 
 The red failure nodes describe the HTTP mapping in [`writeFinancialError`](../../../internal/httpapi/financial.go). Invalid application inputs and unfinished months return `422`; a missing account returns `404`; financial-history conflicts return `409`. Other failures, including storage deadlines, presentation overflow and sequence exhaustion, currently map to `503` with `Retry-After: 1` when the connection permits a response. A persistent data or calculation problem requires investigation; repeating the request does not repair it.
 
-[`Store.transact`](../../../internal/billing/store.go) enables durable commit and attempts rollback with a cleanup context independent of request cancellation. Failure before commit rolls back that transaction's attempted writes. Previously committed worker accounting remains durable even if publication fails; there are no separately committed capture writes. The operation contains no automatic whole-closing retry loop; the caller retries the same customer/month to read a committed invoice or attempt publication again.
+[`Store.transact`](../../../internal/postgres/transactions.go) enables durable commit and attempts rollback with a cleanup context independent of request cancellation. Failure before commit rolls back that transaction's attempted writes. Previously committed worker accounting remains durable even if publication fails; there are no separately committed capture writes. The operation contains no automatic whole-closing retry loop; the caller retries the same customer/month to read a committed invoice or attempt publication again.
 
 A lost reply or commit error can leave the caller uncertain whether a transaction committed. Read the invoice or repeat closing with the same identity to resolve the outcome. A client disconnect can also prevent delivery of the mapped HTTP response. Dotted arrows illustrate failure handling; a database failure can occur at any database activity, rather than only at the four depicted origins.
 

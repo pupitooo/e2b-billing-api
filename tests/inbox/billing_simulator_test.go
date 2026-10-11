@@ -17,9 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/httpapi"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/worker"
 )
 
@@ -121,12 +119,12 @@ func TestBillingSimulatorExecutable(t *testing.T) {
 func billingSimulatorAPI(t *testing.T, unavailableRequests int32, invoiceTime time.Time, priceCommandTimes ...string) string {
 	t.Helper()
 	pool := billingDatabase(t)
-	store := billing.NewStoreWithClock(pool, func() time.Time { return invoiceTime })
-	handler := httpapi.NewHandler(inbox.NewPostgres(pool, time.Second), 5*time.Second, 8, store)
+	store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return invoiceTime }})
+	handler := newBillingHandler(t, store, 5*time.Second, 8)
 	var priceClock atomic.Value
 	priceClock.Store(invoiceTime)
-	priceStore := billing.NewStoreWithClock(pool, func() time.Time { return priceClock.Load().(time.Time) })
-	priceHandler := httpapi.NewHandler(inbox.NewPostgres(pool, time.Second), 5*time.Second, 8, priceStore)
+	priceStore := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return priceClock.Load().(time.Time) }})
+	priceHandler := newBillingHandler(t, priceStore, 5*time.Second, 8)
 	var priceCommands atomic.Int32
 	var remaining atomic.Int32
 	remaining.Store(unavailableRequests)

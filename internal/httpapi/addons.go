@@ -7,14 +7,20 @@ import (
 	"e2b/billing-api/internal/billing"
 )
 
-func registerAddonRoutes(mux *http.ServeMux, store *billing.Store, timeout time.Duration) {
+func registerAddonRoutes(mux *http.ServeMux, store Store, timeout time.Duration) {
 	mux.HandleFunc("POST /customers/{customer_id}/addons", func(w http.ResponseWriter, r *http.Request) {
+		requiredFields := []string{
+			"idempotency_key",
+			"addon_name",
+			"purchased_at",
+		}
+
 		var input struct {
 			IdempotencyKey string `json:"idempotency_key"`
 			AddonName      string `json:"addon_name"`
 			PurchasedAt    string `json:"purchased_at"`
 		}
-		if !commandJSON(w, r, &input, []string{"idempotency_key", "addon_name", "purchased_at"}) {
+		if !commandJSON(w, r, &input, requiredFields) {
 			return
 		}
 
@@ -24,9 +30,15 @@ func registerAddonRoutes(mux *http.ServeMux, store *billing.Store, timeout time.
 			return
 		}
 
+		purchase := billing.AddonPurchase{
+			AddonName:   input.AddonName,
+			PurchasedAt: purchased,
+		}
+
 		ctx, cancel := financialContext(r, timeout)
 		defer cancel()
-		subscription, err := store.PurchaseAddon(ctx, r.PathValue("customer_id"), input.IdempotencyKey, billing.AddonPurchase{AddonName: input.AddonName, PurchasedAt: purchased})
+
+		subscription, err := store.PurchaseAddon(ctx, r.PathValue("customer_id"), input.IdempotencyKey, purchase)
 		financialResult(w, subscription, err)
 	})
 }
