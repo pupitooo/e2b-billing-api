@@ -38,6 +38,8 @@ type invoiceExpectation struct {
 // Server-clock boundaries reject unfinished months before any financial effect.
 // Only already processed groups enter the invoice. Later worker processing
 // cannot reopen an issued month, even for usage received before closing.
+// Late October usage received in December stays outside the November invoice,
+// although its credit is already allocated during worker processing.
 func TestCloseMonth(t *testing.T) {
 	t.Run("shared business clock", testSharedBusinessClock)
 	t.Run("first closing checks existing usage in UTC", testClosingFirstMonthBoundary)
@@ -56,16 +58,22 @@ func TestCloseMonth(t *testing.T) {
 		purchaseTime     string
 		october          []measuredHour
 		later            []measuredHour
+		laterReceiptTime string
 		wantOctober      invoiceExpectation
 		wantNovember     *invoiceExpectation
 		wantOctoberWork  []bool
 		wantNovemberWork []bool
 	}{
-		{name: "Acme October and late November assignment", wantOctoberWork: []bool{true, true}, wantNovemberWork: []bool{true, true}, customer: "acme", invoiceTime: "2026-12-01T00:00:00Z", creditCents: 2500, purchaseTime: "2026-10-05T00:00:00Z",
+		{name: "Acme October and late November assignment", wantOctoberWork: []bool{true, true}, wantNovemberWork: []bool{true, true}, customer: "acme", invoiceTime: "2026-12-01T00:00:00Z", creditCents: 2500, purchaseTime: "2026-10-05T00:00:00Z", laterReceiptTime: "2026-11-04T00:00:00Z",
 			october:      []measuredHour{{eventID: "oct-first", start: "2026-10-10T12:00:00Z", units: 100_000_000}, {eventID: "oct-second", start: "2026-10-20T12:00:00Z", units: 200_000_000}},
 			later:        []measuredHour{{eventID: "late-oct", start: "2026-10-30T12:00:00Z", units: 50_000_000}, {eventID: "nov", start: "2026-11-03T12:00:00Z", units: 100_000_000}},
 			wantOctober:  invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 2000, lineCents: []int64{1200, 2000, -1200}, grossMicrocents: "1200000000", creditMicrocents: "1200000000", remainingCredit: "1300000000"},
 			wantNovember: &invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 2000, lineCents: []int64{200, 400, 2000, -600}, grossMicrocents: "600000000", creditMicrocents: "600000000", remainingCredit: "700000000"}},
+		{name: "Acme December receipt excludes late October from November invoice", wantOctoberWork: []bool{true, true}, wantNovemberWork: []bool{true, true}, customer: "acme", invoiceTime: "2026-12-01T00:00:00Z", creditCents: 2500, purchaseTime: "2026-10-05T00:00:00Z", laterReceiptTime: "2026-12-01T00:00:00Z",
+			october:      []measuredHour{{eventID: "oct-first", start: "2026-10-10T12:00:00Z", units: 100_000_000}, {eventID: "oct-second", start: "2026-10-20T12:00:00Z", units: 200_000_000}},
+			later:        []measuredHour{{eventID: "late-oct", start: "2026-10-30T12:00:00Z", units: 50_000_000}, {eventID: "nov", start: "2026-11-03T12:00:00Z", units: 100_000_000}},
+			wantOctober:  invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 2000, lineCents: []int64{1200, 2000, -1200}, grossMicrocents: "1200000000", creditMicrocents: "1200000000", remainingCredit: "1300000000"},
+			wantNovember: &invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 2000, lineCents: []int64{400, 2000, -400}, grossMicrocents: "400000000", creditMicrocents: "400000000", remainingCredit: "700000000"}},
 		{name: "Cyberdyne October historical prices", wantOctoberWork: []bool{true, true}, customer: "cyberdyne", invoiceTime: "2026-11-01T00:00:00Z",
 			october:     []measuredHour{{eventID: "oct-first", start: "2026-10-10T12:00:00Z", units: 123_456_789}, {eventID: "oct-second", start: "2026-10-20T12:00:00Z", units: 200_000_000}},
 			wantOctober: invoiceExpectation{month: "2026-10", number: "CYBERDYNE-0001", totalCents: 1817, lineCents: []int64{617, 1200, 0}, grossMicrocents: "1817283945", creditMicrocents: "0", remainingCredit: "0"}},
@@ -96,7 +104,7 @@ func TestCloseMonth(t *testing.T) {
 			assertInvoiceExpectation(t, store, october, tc.wantOctober)
 			before, _ := json.Marshal(october)
 			if tc.wantNovember != nil {
-				insertMeasuredHours(t, transport, tc.customer, tc.later, "2026-11-04T00:00:00Z")
+				insertMeasuredHours(t, transport, tc.customer, tc.later, tc.laterReceiptTime)
 				processUsageSteps(t, store, tc.wantNovemberWork)
 				november, err := store.CloseMonth(ctx, tc.customer, tc.wantNovember.month)
 				if err != nil {

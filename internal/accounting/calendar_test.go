@@ -235,6 +235,22 @@ func TestBillingMonth(t *testing.T) {
 			wantError:    false,
 		},
 		{
+			name:         "closed October receipt just before December bills in November",
+			usageMonth:   "2026-10-01T00:00:00Z",
+			receivedAt:   "2026-11-30T23:59:59.999999999Z",
+			closedMonths: []string{"2026-10-01T00:00:00Z"},
+			wantMonth:    "2026-11-01T00:00:00Z",
+			wantError:    false,
+		},
+		{
+			name:         "closed October receipt at December boundary skips open November",
+			usageMonth:   "2026-10-01T00:00:00Z",
+			receivedAt:   "2026-12-01T00:00:00Z",
+			closedMonths: []string{"2026-10-01T00:00:00Z"},
+			wantMonth:    "2026-12-01T00:00:00Z",
+			wantError:    false,
+		},
+		{
 			name:         "closed October and November route usage to December",
 			usageMonth:   "2026-10-01T00:00:00Z",
 			receivedAt:   "2026-11-01T01:00:00Z",
