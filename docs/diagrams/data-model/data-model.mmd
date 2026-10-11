@@ -57,7 +57,7 @@ erDiagram
         string metric
         date usage_month_utc
         date billing_month_utc
-        numeric exact_charge_ticks
+        numeric exact_charge_microcents
         bigint booked_charge_cents
         bigint allocated_credit_cents
         boolean frozen
@@ -65,7 +65,7 @@ erDiagram
     MonthlyUsage {
         string customer_id PK,FK
         date usage_month_utc PK
-        numeric gross_charge_ticks
+        numeric gross_charge_microcents
     }
     CreditEntry {
         string credit_entry_id PK

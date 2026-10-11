@@ -62,7 +62,7 @@ func TestGrantCredit(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if snapshot.BalanceTicks != tc.wantBalance || snapshot.StateVersion != tc.wantVersion {
+				if snapshot.BalanceMicrocents != tc.wantBalance || snapshot.StateVersion != tc.wantVersion {
 					t.Fatalf("Credit(%s)=%+v want balance=%s version=%d", tc.customer, snapshot, tc.wantBalance, tc.wantVersion)
 				}
 			}
@@ -79,7 +79,7 @@ func TestCreditAPI(t *testing.T) {
 			path:        "/customers/acme/credits",
 			body:        `{"amount_cents":1}`,
 			legacyBody:  `{"operation_id":"legacy","amount_cents":1}`,
-			wantSuccess: commandKeyState{creditEntries: 1, creditTicks: "1000000", version: 1},
+			wantSuccess: commandKeyState{creditEntries: 1, creditMicrocents: "1000000", version: 1},
 		})
 	})
 	cases := []struct {
@@ -90,7 +90,7 @@ func TestCreditAPI(t *testing.T) {
 		wantStatus int
 		wantBody   string
 	}{
-		{name: "empty account", method: "GET", path: "/customers/acme/credit", wantStatus: 200, wantBody: `{"customer_id":"acme","credit_balance_ticks":"0","state_version":0,"pending_events":0,"processing_errors":0}`},
+		{name: "empty account", method: "GET", path: "/customers/acme/credit", wantStatus: 200, wantBody: `{"customer_id":"acme","credit_balance_microcents":"0","state_version":0,"pending_events":0,"processing_errors":0}`},
 		{name: "missing account", method: "GET", path: "/customers/missing/credit", wantStatus: 404},
 		{name: "explicit grant", method: "POST", path: "/customers/acme/credits", body: `{"idempotency_key":"welcome","amount_cents":2500}`, wantStatus: 200, wantBody: `{"idempotency_key":"welcome","amount_cents":2500}`},
 		{name: "caller audit timestamp is an unknown field", method: "POST", path: "/customers/acme/credits", body: `{"idempotency_key":"welcome","amount_cents":2500,"recorded_at":"2026-10-01T00:00:00Z"}`, wantStatus: 400},
@@ -151,7 +151,7 @@ func testCreditServerClock(t *testing.T) {
 			var balance string
 			var version int64
 			if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM credit_entries),
-        (SELECT count(*) FROM api_idempotency_operations),credit_balance_ticks::text,state_version
+        (SELECT count(*) FROM api_idempotency_operations),credit_balance_microcents::text,state_version
         FROM customer_billing_state WHERE customer_id='acme'`).Scan(&entries, &commands, &balance, &version); err != nil {
 				t.Fatal(err)
 			}

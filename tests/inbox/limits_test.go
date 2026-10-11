@@ -45,7 +45,7 @@ func TestMonthlyLimitStatus(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if actual.LimitReached != tc.wantReached || actual.GrossChargeTicks != tc.wantGross {
+			if actual.LimitReached != tc.wantReached || actual.GrossChargeMicrocents != tc.wantGross {
 				t.Fatalf("MonthlyLimitStatus(month=%s limit=%v gross=%s): %+v want reached=%t gross=%s", tc.month, tc.limit, tc.gross, actual, tc.wantReached, tc.wantGross)
 			}
 		})
@@ -199,7 +199,7 @@ func TestSpendLimitAPI(t *testing.T) {
 			path:        "/customers/acme/spend-limit",
 			body:        `{"limit_cents":1500}`,
 			legacyBody:  `{"operation_id":"legacy","limit_cents":1500}`,
-			wantSuccess: commandKeyState{limitOperations: 1, creditTicks: "0", version: 1, limit: limitValue(1500)},
+			wantSuccess: commandKeyState{limitOperations: 1, creditMicrocents: "0", version: 1, limit: limitValue(1500)},
 		})
 	})
 	cases := []struct {

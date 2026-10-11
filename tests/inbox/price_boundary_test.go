@@ -14,21 +14,21 @@ import (
 )
 
 type priceBoundaryState struct {
-	Groups               int
-	Units                string
-	PriceVersionID       string
-	UsageMonth           string
-	BillingMonth         string
-	GrossTicks           string
-	AllocatedCreditTicks string
-	BookedCents          int64
-	Ratings              int
-	MonthlyRows          int
-	MonthlyGrossTicks    string
-	CreditDebits         int
-	CreditDebitTicks     string
-	CreditBalanceTicks   string
-	StateVersion         int64
+	Groups                    int
+	Units                     string
+	PriceVersionID            string
+	UsageMonth                string
+	BillingMonth              string
+	GrossMicrocents           string
+	AllocatedCreditMicrocents string
+	BookedCents               int64
+	Ratings                   int
+	MonthlyRows               int
+	MonthlyGrossMicrocents    string
+	CreditDebits              int
+	CreditDebitMicrocents     string
+	CreditBalanceMicrocents   string
+	StateVersion              int64
 }
 
 // testPriceBoundaryProcessing adds isolated ProcessBatch scenarios for the exact
@@ -39,78 +39,78 @@ func testPriceBoundaryProcessing(t *testing.T) {
 	t.Helper()
 
 	cases := []struct {
-		name                string
-		customerID          string
-		periodStart         string
-		periodEnd           string
-		receivedAt          string
-		units               int64
-		initialCreditTicks  string
-		wantError           error
-		wantWork            bool
-		wantProcessed       bool
-		wantProcessingError string
-		wantNextWork        bool
-		wantState           priceBoundaryState
+		name                    string
+		customerID              string
+		periodStart             string
+		periodEnd               string
+		receivedAt              string
+		units                   int64
+		initialCreditMicrocents string
+		wantError               error
+		wantWork                bool
+		wantProcessed           bool
+		wantProcessingError     string
+		wantNextWork            bool
+		wantState               priceBoundaryState
 	}{
 		{
-			name:               "price change at excluded end preserves historical rating",
-			customerID:         "cyberdyne",
-			periodStart:        "2026-10-14T23:59:00Z",
-			periodEnd:          "2026-10-15T00:00:00Z",
-			receivedAt:         "2026-11-01T00:00:00Z",
-			units:              1_000_000,
-			initialCreditTicks: "2000000",
-			wantError:          nil,
-			wantWork:           true,
-			wantProcessed:      true,
-			wantNextWork:       false,
+			name:                    "price change at excluded end preserves historical rating",
+			customerID:              "cyberdyne",
+			periodStart:             "2026-10-14T23:59:00Z",
+			periodEnd:               "2026-10-15T00:00:00Z",
+			receivedAt:              "2026-11-01T00:00:00Z",
+			units:                   1_000_000,
+			initialCreditMicrocents: "2000000",
+			wantError:               nil,
+			wantWork:                true,
+			wantProcessed:           true,
+			wantNextWork:            false,
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "cpu-default-2026-10-01",
 				UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossTicks: "5000000", AllocatedCreditTicks: "2000000", BookedCents: 5,
-				Ratings: 1, MonthlyRows: 1, MonthlyGrossTicks: "5000000",
-				CreditDebits: 1, CreditDebitTicks: "-2000000", CreditBalanceTicks: "0", StateVersion: 1,
+				GrossMicrocents: "5000000", AllocatedCreditMicrocents: "2000000", BookedCents: 5,
+				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "5000000",
+				CreditDebits: 1, CreditDebitMicrocents: "-2000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
 		},
 		{
-			name:               "price change at included start selects new rating",
-			customerID:         "cyberdyne",
-			periodStart:        "2026-10-15T00:00:00Z",
-			periodEnd:          "2026-10-15T00:01:00Z",
-			receivedAt:         "2026-11-01T00:00:00Z",
-			units:              1_000_000,
-			initialCreditTicks: "2000000",
-			wantError:          nil,
-			wantWork:           true,
-			wantProcessed:      true,
-			wantNextWork:       false,
+			name:                    "price change at included start selects new rating",
+			customerID:              "cyberdyne",
+			periodStart:             "2026-10-15T00:00:00Z",
+			periodEnd:               "2026-10-15T00:01:00Z",
+			receivedAt:              "2026-11-01T00:00:00Z",
+			units:                   1_000_000,
+			initialCreditMicrocents: "2000000",
+			wantError:               nil,
+			wantWork:                true,
+			wantProcessed:           true,
+			wantNextWork:            false,
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "cpu-default-2026-10-15",
 				UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossTicks: "6000000", AllocatedCreditTicks: "2000000", BookedCents: 6,
-				Ratings: 1, MonthlyRows: 1, MonthlyGrossTicks: "6000000",
-				CreditDebits: 1, CreditDebitTicks: "-2000000", CreditBalanceTicks: "0", StateVersion: 1,
+				GrossMicrocents: "6000000", AllocatedCreditMicrocents: "2000000", BookedCents: 6,
+				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "6000000",
+				CreditDebits: 1, CreditDebitMicrocents: "-2000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
 		},
 		{
-			name:                "one microsecond across price change quarantines without financial effects",
-			customerID:          "cyberdyne",
-			periodStart:         "2026-10-14T23:59:00Z",
-			periodEnd:           "2026-10-15T00:00:00.000001Z",
-			receivedAt:          "2026-11-01T00:00:00Z",
-			units:               1_000_000,
-			initialCreditTicks:  "2000000",
-			wantError:           nil,
-			wantWork:            true,
-			wantProcessed:       false,
-			wantProcessingError: "usage interval crosses a price version boundary",
-			wantNextWork:        false,
+			name:                    "one microsecond across price change quarantines without financial effects",
+			customerID:              "cyberdyne",
+			periodStart:             "2026-10-14T23:59:00Z",
+			periodEnd:               "2026-10-15T00:00:00.000001Z",
+			receivedAt:              "2026-11-01T00:00:00Z",
+			units:                   1_000_000,
+			initialCreditMicrocents: "2000000",
+			wantError:               nil,
+			wantWork:                true,
+			wantProcessed:           false,
+			wantProcessingError:     "usage interval crosses a price version boundary",
+			wantNextWork:            false,
 			wantState: priceBoundaryState{
 				Groups: 0, Units: "0", PriceVersionID: "", UsageMonth: "", BillingMonth: "",
-				GrossTicks: "0", AllocatedCreditTicks: "0", BookedCents: 0,
-				Ratings: 0, MonthlyRows: 0, MonthlyGrossTicks: "0",
-				CreditDebits: 0, CreditDebitTicks: "0", CreditBalanceTicks: "2000000", StateVersion: 0,
+				GrossMicrocents: "0", AllocatedCreditMicrocents: "0", BookedCents: 0,
+				Ratings: 0, MonthlyRows: 0, MonthlyGrossMicrocents: "0",
+				CreditDebits: 0, CreditDebitMicrocents: "0", CreditBalanceMicrocents: "2000000", StateVersion: 0,
 			},
 		},
 	}
@@ -119,8 +119,8 @@ func testPriceBoundaryProcessing(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
 			ctx := context.Background()
-			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric WHERE customer_id=$1", tc.customerID, tc.initialCreditTicks); err != nil {
-				t.Fatalf("Prepare credit for customer=%s ticks=%s: %v", tc.customerID, tc.initialCreditTicks, err)
+			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=$2::numeric WHERE customer_id=$1", tc.customerID, tc.initialCreditMicrocents); err != nil {
+				t.Fatalf("Prepare credit for customer=%s microcents=%s: %v", tc.customerID, tc.initialCreditMicrocents, err)
 			}
 
 			event := usage.Event{
@@ -178,18 +178,18 @@ func readPriceBoundaryState(ctx context.Context, pool *pgxpool.Pool, customer st
 	var state priceBoundaryState
 	err := pool.QueryRow(ctx, `SELECT count(*),COALESCE(sum(total_units),0)::text,
         COALESCE(min(price_version_id),''),COALESCE(min(usage_month)::text,''),COALESCE(min(billing_month)::text,''),
-        COALESCE(sum(exact_charge_ticks),0)::text,COALESCE(sum(allocated_credit_ticks),0)::text,
+        COALESCE(sum(exact_charge_microcents),0)::text,COALESCE(sum(allocated_credit_microcents),0)::text,
         COALESCE(sum(booked_charge_cents),0)::bigint,
         (SELECT count(*) FROM usage_ratings),
         (SELECT count(*) FROM monthly_usage),
-        (SELECT COALESCE(sum(gross_charge_ticks),0)::text FROM monthly_usage),
+        (SELECT COALESCE(sum(gross_charge_microcents),0)::text FROM monthly_usage),
         (SELECT count(*) FROM credit_entries WHERE group_id IS NOT NULL),
-        (SELECT COALESCE(sum(amount_ticks),0)::text FROM credit_entries WHERE group_id IS NOT NULL),
-        (SELECT credit_balance_ticks::text FROM customer_billing_state WHERE customer_id=$1),
+        (SELECT COALESCE(sum(amount_microcents),0)::text FROM credit_entries WHERE group_id IS NOT NULL),
+        (SELECT credit_balance_microcents::text FROM customer_billing_state WHERE customer_id=$1),
         (SELECT state_version FROM customer_billing_state WHERE customer_id=$1)
         FROM rated_usage_groups`, customer).Scan(&state.Groups, &state.Units, &state.PriceVersionID,
-		&state.UsageMonth, &state.BillingMonth, &state.GrossTicks, &state.AllocatedCreditTicks,
-		&state.BookedCents, &state.Ratings, &state.MonthlyRows, &state.MonthlyGrossTicks,
-		&state.CreditDebits, &state.CreditDebitTicks, &state.CreditBalanceTicks, &state.StateVersion)
+		&state.UsageMonth, &state.BillingMonth, &state.GrossMicrocents, &state.AllocatedCreditMicrocents,
+		&state.BookedCents, &state.Ratings, &state.MonthlyRows, &state.MonthlyGrossMicrocents,
+		&state.CreditDebits, &state.CreditDebitMicrocents, &state.CreditBalanceMicrocents, &state.StateVersion)
 	return state, err
 }

@@ -10,7 +10,7 @@ config:
 ---
 %% One durable transaction. The account lock serializes worker processing and closing.
 %% Numbered boxes are logical activities, not separate transactions.
-%% Money amounts in *_ticks fields are microcents; 1 cent = 1_000_000 microcents.
+%% Money amounts in *_microcents fields are microcents; 1 cent = 1_000_000 microcents.
 flowchart TB
     request["<b>1. Validate the closing input</b><br/>POST /customers/{customer_id}/invoices<br/>Input: customer_id and YYYY-MM month"]
     subgraph issue["One atomic publication transaction - no pending usage processing"]

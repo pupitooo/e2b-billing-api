@@ -14,6 +14,12 @@ for review. Its source and test hashes are recorded in the
 [mutation evidence](test-mutation-audit.json), together with every exact edit,
 before/after result, killing test name, SQL error and equivalent-mutant rationale.
 
+Recorded mutation edits and process output remain verbatim in the JSON evidence.
+The financial identifiers `ticks`, `Ticks` and `TICKS` in that evidence correspond
+to `microcents`, `Microcents` and `MICROCENTS` in the application; the monetary
+unit and numerical expectations are identical. Current test filters use the
+microcent names. Renaming does not constitute a new mutation audit.
+
 The idempotency refactor replaces the old credit operation
 uniqueness and separate limit history with shared API command history. This audit
 remains evidence for its stated baseline; the retired ledger constraint mutation
@@ -58,7 +64,7 @@ constraints and every concurrency interleaving were not exhaustively mutated.
 
 | Responsibility | Demonstrated gap | Added verification |
 | --- | --- | --- |
-| Immutable money | Replacing `Ticks()`'s defensive copy with a pointer survived. Setting the returned integer to zero replaces its slice header and can miss shared nonzero storage. | Overwrite it with one and check both the original amount and a value copy. |
+| Immutable money | Replacing `Microcents()`'s defensive copy with a pointer survived. Setting the returned integer to zero replaces its slice header and can miss shared nonzero storage. | Overwrite it with one and check both the original amount and a value copy. |
 | Calendar routing | Routing late November usage into December of year 9999 had no adjacent valid test. | Literal December result in the domain and a real processor scenario checking every financial projection; existing exhaustion/quarantine cases remain. |
 | Financial validation | Direct tests covered identifier size but omitted malformed Unicode, blank/NUL identifiers, timestamp precision and zero-versus-positive cents. | Exact validation fields/messages, valid offset/year neighbors, zero price/limit and rejected zero grant. |
 | Invoice addition | Rejecting the valid maximum sum could pass, as could rejecting the valid negative minimum in the signed helper. | Both inclusive limits and their immediately overflowing neighbors. |

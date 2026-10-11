@@ -47,13 +47,13 @@ func testInvoiceAPIPending(t *testing.T) {
 		wantNextNumber, wantVersion           int64
 	}{
 		{name: "valid pending usage", metric: "cpu_seconds", wantStatus: 200,
-			wantInvoice:   invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossTicks: "0", creditTicks: "0", remainingCredit: "0"},
+			wantInvoice:   invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossMicrocents: "0", creditMicrocents: "0", remainingCredit: "0"},
 			wantProcessed: false, wantRatings: 0, wantInvoices: 1, wantClosed: 1, wantNextNumber: 2, wantVersion: 1},
 		{name: "pending usage with no valid price", metric: "unpriced", wantStatus: 200,
-			wantInvoice:   invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossTicks: "0", creditTicks: "0", remainingCredit: "0"},
+			wantInvoice:   invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossMicrocents: "0", creditMicrocents: "0", remainingCredit: "0"},
 			wantProcessed: false, wantRatings: 0, wantInvoices: 1, wantClosed: 1, wantNextNumber: 2, wantVersion: 1},
 		{name: "quarantined usage", metric: "cpu_seconds", processingError: stringPointer("investigated failure"), wantStatus: 200,
-			wantInvoice:   invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossTicks: "0", creditTicks: "0", remainingCredit: "0"},
+			wantInvoice:   invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossMicrocents: "0", creditMicrocents: "0", remainingCredit: "0"},
 			wantProcessed: false, wantRatings: 0, wantInvoices: 1, wantClosed: 1, wantNextNumber: 2, wantVersion: 1},
 	}
 	steps := []struct{ method, path, body string }{
@@ -117,52 +117,52 @@ func testInvoiceAPIPending(t *testing.T) {
 // month, and consumes credit exactly once when the worker processes it later.
 func testProcessedClosing(t *testing.T) {
 	cases := []struct {
-		name                  string
-		units                 int64
-		initialCreditTicks    string
-		beforeClosingWork     []bool
-		afterClosingWork      []bool
-		wantPendingAtClosing  int64
-		wantOctober           invoiceExpectation
-		wantNovember          invoiceExpectation
-		wantOriginalMonth     string
-		wantFinalRatings      int
-		wantFinalMonthlyGross string
-		wantNextNumber        int64
+		name                    string
+		units                   int64
+		initialCreditMicrocents string
+		beforeClosingWork       []bool
+		afterClosingWork        []bool
+		wantPendingAtClosing    int64
+		wantOctober             invoiceExpectation
+		wantNovember            invoiceExpectation
+		wantOriginalMonth       string
+		wantFinalRatings        int
+		wantFinalMonthlyGross   string
+		wantNextNumber          int64
 	}{
 		{
-			name: "all accepted usage is still pending", units: 100_000_000, initialCreditTicks: "600000000",
+			name: "all accepted usage is still pending", units: 100_000_000, initialCreditMicrocents: "600000000",
 			beforeClosingWork: []bool{}, afterClosingWork: []bool{true, true, false}, wantPendingAtClosing: 2,
-			wantOctober:       invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossTicks: "0", creditTicks: "0", remainingCredit: "600000000"},
-			wantNovember:      invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 200, lineCents: []int64{800, -600}, grossTicks: "800000000", creditTicks: "600000000", remainingCredit: "0"},
+			wantOctober:       invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossMicrocents: "0", creditMicrocents: "0", remainingCredit: "600000000"},
+			wantNovember:      invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 200, lineCents: []int64{800, -600}, grossMicrocents: "800000000", creditMicrocents: "600000000", remainingCredit: "0"},
 			wantOriginalMonth: "2026-10", wantFinalRatings: 2, wantFinalMonthlyGross: "800000000", wantNextNumber: 3,
 		},
 		{
-			name: "one processed usage and one pending usage share the original price", units: 100_000_000, initialCreditTicks: "600000000",
+			name: "one processed usage and one pending usage share the original price", units: 100_000_000, initialCreditMicrocents: "600000000",
 			beforeClosingWork: []bool{true}, afterClosingWork: []bool{true, false}, wantPendingAtClosing: 1,
-			wantOctober:       invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{400, -400}, grossTicks: "400000000", creditTicks: "400000000", remainingCredit: "200000000"},
-			wantNovember:      invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 200, lineCents: []int64{400, -200}, grossTicks: "400000000", creditTicks: "200000000", remainingCredit: "0"},
+			wantOctober:       invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{400, -400}, grossMicrocents: "400000000", creditMicrocents: "400000000", remainingCredit: "200000000"},
+			wantNovember:      invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 200, lineCents: []int64{400, -200}, grossMicrocents: "400000000", creditMicrocents: "200000000", remainingCredit: "0"},
 			wantOriginalMonth: "2026-10", wantFinalRatings: 2, wantFinalMonthlyGross: "800000000", wantNextNumber: 3,
 		},
 		{
-			name: "all usage was processed before closing", units: 100_000_000, initialCreditTicks: "600000000",
+			name: "all usage was processed before closing", units: 100_000_000, initialCreditMicrocents: "600000000",
 			beforeClosingWork: []bool{true, true}, afterClosingWork: []bool{false}, wantPendingAtClosing: 0,
-			wantOctober:       invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 200, lineCents: []int64{800, -600}, grossTicks: "800000000", creditTicks: "600000000", remainingCredit: "0"},
-			wantNovember:      invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 0, lineCents: []int64{0}, grossTicks: "0", creditTicks: "0", remainingCredit: "0"},
+			wantOctober:       invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 200, lineCents: []int64{800, -600}, grossMicrocents: "800000000", creditMicrocents: "600000000", remainingCredit: "0"},
+			wantNovember:      invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 0, lineCents: []int64{0}, grossMicrocents: "0", creditMicrocents: "0", remainingCredit: "0"},
 			wantOriginalMonth: "2026-10", wantFinalRatings: 2, wantFinalMonthlyGross: "800000000", wantNextNumber: 3,
 		},
 		{
-			name: "two half-cent charges split between invoices round separately", units: 125_000, initialCreditTicks: "0",
+			name: "two half-cent charges split between invoices round separately", units: 125_000, initialCreditMicrocents: "0",
 			beforeClosingWork: []bool{true}, afterClosingWork: []bool{true, false}, wantPendingAtClosing: 1,
-			wantOctober:       invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 1, lineCents: []int64{1, 0}, grossTicks: "500000", creditTicks: "0", remainingCredit: "0"},
-			wantNovember:      invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 1, lineCents: []int64{1, 0}, grossTicks: "500000", creditTicks: "0", remainingCredit: "0"},
+			wantOctober:       invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 1, lineCents: []int64{1, 0}, grossMicrocents: "500000", creditMicrocents: "0", remainingCredit: "0"},
+			wantNovember:      invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 1, lineCents: []int64{1, 0}, grossMicrocents: "500000", creditMicrocents: "0", remainingCredit: "0"},
 			wantOriginalMonth: "2026-10", wantFinalRatings: 2, wantFinalMonthlyGross: "1000000", wantNextNumber: 3,
 		},
 		{
-			name: "two half-cent charges processed before closing round together", units: 125_000, initialCreditTicks: "0",
+			name: "two half-cent charges processed before closing round together", units: 125_000, initialCreditMicrocents: "0",
 			beforeClosingWork: []bool{true, true}, afterClosingWork: []bool{false}, wantPendingAtClosing: 0,
-			wantOctober:       invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 1, lineCents: []int64{1, 0}, grossTicks: "1000000", creditTicks: "0", remainingCredit: "0"},
-			wantNovember:      invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 0, lineCents: []int64{0}, grossTicks: "0", creditTicks: "0", remainingCredit: "0"},
+			wantOctober:       invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 1, lineCents: []int64{1, 0}, grossMicrocents: "1000000", creditMicrocents: "0", remainingCredit: "0"},
+			wantNovember:      invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 0, lineCents: []int64{0}, grossMicrocents: "0", creditMicrocents: "0", remainingCredit: "0"},
 			wantOriginalMonth: "2026-10", wantFinalRatings: 2, wantFinalMonthlyGross: "1000000", wantNextNumber: 3,
 		},
 	}
@@ -170,7 +170,7 @@ func testProcessedClosing(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
 			ctx := context.Background()
-			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$1::numeric WHERE customer_id='acme'", tc.initialCreditTicks); err != nil {
+			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=$1::numeric WHERE customer_id='acme'", tc.initialCreditMicrocents); err != nil {
 				t.Fatal(err)
 			}
 			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return parseBillingTime(t, "2026-12-01T00:00:00Z") }})
@@ -214,7 +214,7 @@ func testProcessedClosing(t *testing.T) {
 			var ratings int
 			var originalMonth, gross string
 			var nextNumber int64
-			if err := pool.QueryRow(ctx, `SELECT to_char(usage_month,'YYYY-MM'),gross_charge_ticks::text,
+			if err := pool.QueryRow(ctx, `SELECT to_char(usage_month,'YYYY-MM'),gross_charge_microcents::text,
                 (SELECT count(*) FROM usage_ratings),
                 (SELECT next_invoice_number FROM customer_billing_state WHERE customer_id='acme')
                 FROM monthly_usage WHERE customer_id='acme'`).Scan(&originalMonth, &gross, &ratings, &nextNumber); err != nil {
@@ -360,7 +360,7 @@ func waitForClosingLock(t *testing.T, ctx context.Context, pool *pgxpool.Pool, k
 		err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
             WHERE application_name=current_setting('application_name') AND wait_event_type='Lock'
             AND (($1='advisory' AND wait_event='advisory') OR
-                ($1='account' AND query LIKE 'SELECT credit_balance_ticks::text FROM customer_billing_state%')))`, kind).Scan(&blocked)
+                ($1='account' AND query LIKE 'SELECT credit_balance_microcents::text FROM customer_billing_state%')))`, kind).Scan(&blocked)
 		if err != nil {
 			t.Fatalf("Observe blocked %s lock: %v", kind, err)
 		}
@@ -384,20 +384,20 @@ func testClosingRollback(t *testing.T) {
 	scenario := struct {
 		units                                  int64
 		afterFailureUnits                      int64
-		initialCreditTicks                     string
+		initialCreditMicrocents                string
 		wantFailure                            bool
 		wantSQLState                           string
 		wantInvoices, wantClosures, wantFrozen int
 		wantNextNumber, wantVersion            int64
 		wantCredit                             string
 		wantRetry                              invoiceExpectation
-	}{units: 100_000_000, initialCreditTicks: "600000000", afterFailureUnits: 100_000_000, wantFailure: true, wantSQLState: "P0001",
+	}{units: 100_000_000, initialCreditMicrocents: "600000000", afterFailureUnits: 100_000_000, wantFailure: true, wantSQLState: "P0001",
 		wantInvoices: 0, wantClosures: 0, wantFrozen: 0, wantNextNumber: 1, wantVersion: 1, wantCredit: "200000000",
-		wantRetry: invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 200, lineCents: []int64{800, -600}, grossTicks: "800000000", creditTicks: "600000000", remainingCredit: "0"}}
+		wantRetry: invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 200, lineCents: []int64{800, -600}, grossMicrocents: "800000000", creditMicrocents: "600000000", remainingCredit: "0"}}
 	pool := billingDatabase(t)
 	ctx := context.Background()
 	store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return parseBillingTime(t, "2026-11-01T00:00:00Z") }})
-	if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$1::numeric WHERE customer_id='acme'", scenario.initialCreditTicks); err != nil {
+	if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=$1::numeric WHERE customer_id='acme'", scenario.initialCreditMicrocents); err != nil {
 		t.Fatal(err)
 	}
 	insertMeasuredHours(t, newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}), "acme", []measuredHour{{eventID: "one", start: "2026-10-10T12:00:00Z", units: scenario.units}}, "2026-10-11T00:00:00Z")
@@ -421,7 +421,7 @@ func testClosingRollback(t *testing.T) {
 	var next, version int64
 	var credit string
 	if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM invoices),(SELECT count(*) FROM closed_billing_months),
-        (SELECT count(*) FROM invoiced_usage_groups),next_invoice_number,state_version,credit_balance_ticks::text
+        (SELECT count(*) FROM invoiced_usage_groups),next_invoice_number,state_version,credit_balance_microcents::text
         FROM customer_billing_state WHERE customer_id='acme'`).Scan(&invoices, &closures, &frozen, &next, &version, &credit); err != nil {
 		t.Fatal(err)
 	}
@@ -519,13 +519,13 @@ func testClosingSkippedMonths(t *testing.T) {
 		wantNextNumber            int64
 	}{
 		{name: "late October follows the first invoice in November", closeFirst: []string{"2026-11"}, receivedAt: "2026-10-11T00:00:00Z", wantBillingMonth: "2026-12",
-			wantInvoice:       invoiceExpectation{month: "2026-12", number: "ACME-0002", totalCents: 4, lineCents: []int64{4, 0}, grossTicks: "4000000", creditTicks: "0", remainingCredit: "0"},
+			wantInvoice:       invoiceExpectation{month: "2026-12", number: "ACME-0002", totalCents: 4, lineCents: []int64{4, 0}, grossMicrocents: "4000000", creditMicrocents: "0", remainingCredit: "0"},
 			wantBackwardError: billing.ErrConflict, wantUsageMonth: "2026-10", wantGross: "4000000", wantRatings: 1, wantNextNumber: 3},
 		{name: "pending October survives two successful closures", acceptBeforeClosing: true, closeFirst: []string{"2026-10", "2026-11"}, receivedAt: "2026-10-11T00:00:00Z", wantBillingMonth: "2026-12",
-			wantInvoice:       invoiceExpectation{month: "2026-12", number: "ACME-0003", totalCents: 4, lineCents: []int64{4, 0}, grossTicks: "4000000", creditTicks: "0", remainingCredit: "0"},
+			wantInvoice:       invoiceExpectation{month: "2026-12", number: "ACME-0003", totalCents: 4, lineCents: []int64{4, 0}, grossMicrocents: "4000000", creditMicrocents: "0", remainingCredit: "0"},
 			wantBackwardError: nil, wantUsageMonth: "2026-10", wantGross: "4000000", wantRatings: 1, wantNextNumber: 4},
 		{name: "receipt month after latest closure bounds the next invoice", closeFirst: []string{"2026-11", "2026-12"}, receivedAt: "2027-01-10T00:00:00Z", wantBillingMonth: "2027-01",
-			wantInvoice:       invoiceExpectation{month: "2027-01", number: "ACME-0003", totalCents: 4, lineCents: []int64{4, 0}, grossTicks: "4000000", creditTicks: "0", remainingCredit: "0"},
+			wantInvoice:       invoiceExpectation{month: "2027-01", number: "ACME-0003", totalCents: 4, lineCents: []int64{4, 0}, grossMicrocents: "4000000", creditMicrocents: "0", remainingCredit: "0"},
 			wantBackwardError: billing.ErrConflict, wantUsageMonth: "2026-10", wantGross: "4000000", wantRatings: 1, wantNextNumber: 4},
 	}
 	for _, tc := range cases {
@@ -542,7 +542,7 @@ func testClosingSkippedMonths(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if invoice.TotalCents != 0 || invoice.GrossUsageTicks != "0" {
+				if invoice.TotalCents != 0 || invoice.GrossUsageMicrocents != "0" {
 					t.Fatalf("CloseMonth(%s) before worker=%+v; want zero usage and total", month, invoice)
 				}
 				original = append(original, invoice)
@@ -576,7 +576,7 @@ func testClosingSkippedMonths(t *testing.T) {
 			var ratings int
 			var next int64
 			if err := pool.QueryRow(ctx, `SELECT to_char(g.usage_month,'YYYY-MM'),to_char(g.billing_month,'YYYY-MM'),
-                to_char(m.usage_month,'YYYY-MM'),m.gross_charge_ticks::text,
+                to_char(m.usage_month,'YYYY-MM'),m.gross_charge_microcents::text,
                 (SELECT count(*) FROM usage_ratings),(SELECT next_invoice_number FROM customer_billing_state WHERE customer_id='acme')
                 FROM rated_usage_groups g JOIN monthly_usage m USING(customer_id,usage_month)`).Scan(&usageMonth, &billingMonth, &spendMonth, &gross, &ratings, &next); err != nil {
 				t.Fatal(err)

@@ -352,12 +352,12 @@ FROM usage_ratings r JOIN usage_inbox i USING (source, event_id)
 JOIN rated_usage_groups g USING (group_id)
 WHERE r.source = 'acceptance-assignment' ORDER BY i.event_id;
 SELECT customer_id, price_version_id, usage_month, billing_month, total_units,
-       exact_charge_ticks, allocated_credit_ticks, booked_charge_cents
+       exact_charge_microcents, allocated_credit_microcents, booked_charge_cents
 FROM rated_usage_groups ORDER BY customer_id, billing_month, usage_month, price_version_id;
-SELECT customer_id, usage_month, gross_charge_ticks
+SELECT customer_id, usage_month, gross_charge_microcents
 FROM monthly_usage ORDER BY customer_id, usage_month;
-SELECT s.customer_id, s.credit_balance_ticks, s.spend_limit_cents, s.state_version,
-       s.next_invoice_number, COALESCE(sum(e.amount_ticks), 0) AS ledger_balance
+SELECT s.customer_id, s.credit_balance_microcents, s.spend_limit_cents, s.state_version,
+       s.next_invoice_number, COALESCE(sum(e.amount_microcents), 0) AS ledger_balance
 FROM customer_billing_state s LEFT JOIN credit_entries e USING (customer_id)
 GROUP BY s.customer_id ORDER BY s.customer_id;
 SELECT customer_id, subscription_id, addon_name, monthly_price_cents, start_month

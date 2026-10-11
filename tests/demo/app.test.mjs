@@ -15,7 +15,7 @@ test("invoice workflow", async (t) => {
       inputFormMonth: "2026-09",
       inputResponse: {
         customer_id: "cyberdyne", month: "2026-09", number: "CYBERDYNE-0001",
-        lines: [], total_cents: 0, gross_usage_ticks: "0", credit_used_ticks: "0",
+        lines: [], total_cents: 0, gross_usage_microcents: "0", credit_used_microcents: "0",
       },
       inputResponseStatus: 200,
       inputSteps: ["issue", "load"],
@@ -42,7 +42,7 @@ test("invoice workflow", async (t) => {
       inputFormMonth: "2026-09",
       inputResponse: {
         customer_id: "acme", month: "2026-09", number: "ACME-0001",
-        lines: [], total_cents: 0, gross_usage_ticks: "0", credit_used_ticks: "0",
+        lines: [], total_cents: 0, gross_usage_microcents: "0", credit_used_microcents: "0",
       },
       inputResponseStatus: 200,
       inputSteps: ["load"],
@@ -69,10 +69,10 @@ test("invoice workflow", async (t) => {
       inputResponse: {
         customer_id: "acme", month: "2026-10", number: "ACME-0001",
         lines: [
-          { kind: "usage", description: "Usage", usage_month: "2026-10", units: "50000", amount_cents: 0, gross_ticks: "200000", credit_ticks: "0" },
+          { kind: "usage", description: "Usage", usage_month: "2026-10", units: "50000", amount_cents: 0, gross_microcents: "200000", credit_microcents: "0" },
           { kind: "credit", description: "Used credit", amount_cents: 0 },
         ],
-        total_cents: 0, gross_usage_ticks: "200000", credit_used_ticks: "0",
+        total_cents: 0, gross_usage_microcents: "200000", credit_used_microcents: "0",
       },
       inputResponseStatus: 200,
       inputSteps: ["issue", "load"],
@@ -269,7 +269,7 @@ test("walkthrough runtime", async (t) => {
         if (path === "/demo/runtime.json") return new Response(JSON.stringify(c.inputRuntime), { status: c.inputRuntimeStatus });
         if (path.startsWith("/simulator/")) return new Response(JSON.stringify(plans[path.split("/").pop().replace(".json", "")]), { status: 200 });
         requests.push({ path, method: options.method });
-        return new Response('{"customer_id":"cyberdyne","credit_balance_ticks":"0","pending_events":0,"processing_errors":0,"state_version":0}', { status: 200 });
+        return new Response('{"customer_id":"cyberdyne","credit_balance_microcents":"0","pending_events":0,"processing_errors":0,"state_version":0}', { status: 200 });
       });
       await import(`../../demo/app.mjs?clock=${encodeURIComponent(c.scenario)}`);
       await new Promise((resolve) => setImmediate(resolve));

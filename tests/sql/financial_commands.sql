@@ -4,7 +4,7 @@ SET LOCAL TIME ZONE :'test_timezone';
 
 -- Private transaction-owned identities avoid assumptions about application state.
 INSERT INTO customers VALUES ('sql-financial-test','SQL financial test','US','Test address');
-INSERT INTO customer_billing_state (customer_id,credit_balance_ticks,spend_limit_cents,state_version)
+INSERT INTO customer_billing_state (customer_id,credit_balance_microcents,spend_limit_cents,state_version)
 VALUES ('sql-financial-test',0,NULL,0);
 INSERT INTO api_idempotency_operations VALUES ('spend-limit/sql-financial-test','original','{"limit_cents":1500}','{"limit_cents":1500}','2026-10-01T00:00:00Z');
 INSERT INTO closed_billing_months VALUES ('sql-financial-test','2026-10-01','2026-11-01T00:00:00Z');

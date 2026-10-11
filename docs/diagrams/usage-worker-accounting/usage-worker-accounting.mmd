@@ -15,7 +15,7 @@ config:
 %% Missing valid prices commit a P0 catalog incident before operational reporting.
 %% Bold numbered titles identify activities. Other lines describe rules or results.
 %% The numbers show logical activities, not separate transactions or SQL statements.
-%% Money amounts in *_ticks fields are microcents; 1 cent = 1_000_000 microcents.
+%% Money amounts in *_microcents fields are microcents; 1 cent = 1_000_000 microcents.
 flowchart TB
     select["<b>1. Select one pending receipt</b><br/>Table: usage_inbox<br/>Filter: processed_at IS NULL; processing_error IS NULL<br/>Order: received_at, source, event_id"]
     idle["<b>Return no work</b><br/>Reason: no pending receipt"]

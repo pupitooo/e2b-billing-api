@@ -75,7 +75,7 @@ See [clock configuration](../guides/runtime-configuration.md#shared-business-clo
 
 All amounts are USD. Usage charges and credit are stored as **whole microcents**:
 one microcent is one millionth of a cent. Code, database domains, and API fields
-call this unit `ticks`; `*_ticks` values are amounts in microcents.
+call this unit `microcents`; `*_microcents` values are amounts in microcents.
 
 ```text
 1 cent = 1_000_000 microcents
@@ -424,10 +424,10 @@ charge_usd = 617_283_945 / 100_000_000 = USD 6.172_839_45
 booked_gross_cents = floor((617_283_945 + 500_000) / 1_000_000) = 617
 ```
 
-The group retains 617_283_945 microcents in `exact_charge_ticks` and 617 cents in
+The group retains 617_283_945 microcents in `exact_charge_microcents` and 617 cents in
 `booked_charge_cents`. New usage adds to the microcent total before the gross
 projection is rounded again. Credit uses the exact new charge before rounding;
-`allocated_credit_ticks` cannot exceed `exact_charge_ticks`. Migrations define
+`allocated_credit_microcents` cannot exceed `exact_charge_microcents`. Migrations define
 storage and constraints; the application performs these calculations.
 
 `usage_month` and `billing_month` are finite first-of-month `date` values. Application code derives them in UTC. Late October usage billed in November retains `usage_month = 2026-10-01` and `billing_month = 2026-11-01`; its gross spend belongs to October. Billing months cannot precede usage months. Timestamps are finite `timestamptz` values. Subscription start months are checked against the purchase timestamp in UTC, independently of the SQL session's time zone.

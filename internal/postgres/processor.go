@@ -227,15 +227,15 @@ func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounti
 func updateMonthlyUsage(ctx context.Context, tx pgx.Tx, customer string, month time.Time, charge accounting.Amount) error {
 	_, err := tx.Exec(ctx, `INSERT INTO monthly_usage VALUES ($1,$2,$3::numeric)
         ON CONFLICT (customer_id,usage_month) DO UPDATE
-        SET gross_charge_ticks=monthly_usage.gross_charge_ticks+EXCLUDED.gross_charge_ticks`,
-		customer, month, charge.Ticks().String())
+        SET gross_charge_microcents=monthly_usage.gross_charge_microcents+EXCLUDED.gross_charge_microcents`,
+		customer, month, charge.Microcents().String())
 
 	return err
 }
 
 func updateAccountCredit(ctx context.Context, tx pgx.Tx, customer string, remaining accounting.Amount) error {
-	_, err := tx.Exec(ctx, `UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric,
-		state_version=state_version+1 WHERE customer_id=$1`, customer, remaining.Ticks().String())
+	_, err := tx.Exec(ctx, `UPDATE customer_billing_state SET credit_balance_microcents=$2::numeric,
+		state_version=state_version+1 WHERE customer_id=$1`, customer, remaining.Microcents().String())
 
 	return err
 }
@@ -248,13 +248,13 @@ func completeReceipt(ctx context.Context, tx pgx.Tx, event usage.Event, processe
 }
 
 // cumulativeGross finds the stored group by its financial identity, preserving
-// earlier IDs while accumulating exact ticks before rounding.
+// earlier IDs while accumulating exact microcents before rounding.
 func cumulativeGross(ctx context.Context, tx pgx.Tx, customer string, price accounting.PriceVersion, usageMonth, billingMonth time.Time, charge accounting.Amount) (string, accounting.Amount, error) {
 	var group string
-	var ticks string
-	err := tx.QueryRow(ctx, `SELECT group_id,exact_charge_ticks::text FROM rated_usage_groups
+	var microcents string
+	err := tx.QueryRow(ctx, `SELECT group_id,exact_charge_microcents::text FROM rated_usage_groups
         WHERE customer_id=$1 AND price_version_id=$2 AND usage_month=$3 AND billing_month=$4`,
-		customer, price.ID, usageMonth, billingMonth).Scan(&group, &ticks)
+		customer, price.ID, usageMonth, billingMonth).Scan(&group, &microcents)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", charge, nil
 	}
@@ -263,7 +263,7 @@ func cumulativeGross(ctx context.Context, tx pgx.Tx, customer string, price acco
 		return "", accounting.Amount{}, err
 	}
 
-	previous, err := amount(ticks)
+	previous, err := amount(microcents)
 	if err != nil {
 		return "", accounting.Amount{}, err
 	}
@@ -275,15 +275,15 @@ func updateGroup(ctx context.Context, tx pgx.Tx, group string, item receipt, rat
 	e := item.event
 	_, err := tx.Exec(ctx, `INSERT INTO rated_usage_groups
         (group_id,customer_id,price_version_id,metric,usage_month,billing_month,total_units,
-         exact_charge_ticks,booked_charge_cents,allocated_credit_ticks)
+         exact_charge_microcents,booked_charge_cents,allocated_credit_microcents)
         VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8::numeric,$9,$10::numeric)
         ON CONFLICT (customer_id,price_version_id,usage_month,billing_month) DO UPDATE SET
         total_units=rated_usage_groups.total_units+EXCLUDED.total_units,
-        exact_charge_ticks=rated_usage_groups.exact_charge_ticks+EXCLUDED.exact_charge_ticks,
+        exact_charge_microcents=rated_usage_groups.exact_charge_microcents+EXCLUDED.exact_charge_microcents,
         booked_charge_cents=$9,
-        allocated_credit_ticks=rated_usage_groups.allocated_credit_ticks+EXCLUDED.allocated_credit_ticks`,
+        allocated_credit_microcents=rated_usage_groups.allocated_credit_microcents+EXCLUDED.allocated_credit_microcents`,
 		group, e.CustomerID, rating.Price.ID, e.Metric, rating.UsageMonth, month, fmt.Sprint(e.Units),
-		rating.Charge.Ticks().String(), cents, used.Ticks().String())
+		rating.Charge.Microcents().String(), cents, used.Microcents().String())
 	if err != nil {
 		return err
 	}
@@ -294,7 +294,7 @@ func updateGroup(ctx context.Context, tx pgx.Tx, group string, item receipt, rat
 }
 
 func recordCreditDebit(ctx context.Context, tx pgx.Tx, e usage.Event, group string, used accounting.Amount, recordedAt time.Time) error {
-	if used.Ticks().Sign() == 0 {
+	if used.Microcents().Sign() == 0 {
 		return nil
 	}
 
@@ -304,9 +304,9 @@ func recordCreditDebit(ctx context.Context, tx pgx.Tx, e usage.Event, group stri
 	}
 
 	_, err = tx.Exec(ctx, `INSERT INTO credit_entries
-		(credit_entry_id,customer_id,group_id,amount_ticks,recorded_at)
+		(credit_entry_id,customer_id,group_id,amount_microcents,recorded_at)
 		VALUES ($1,$2,$3,$4::numeric,$5)`, entryID, e.CustomerID, group,
-		"-"+used.Ticks().String(), recordedAt)
+		"-"+used.Microcents().String(), recordedAt)
 
 	return err
 }

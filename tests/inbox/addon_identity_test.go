@@ -36,35 +36,35 @@ func testReadableAddonIdentities(t *testing.T) {
 		{
 			name: "separator in customer", customer: "acme/ops", addon: "concurrency_pack", catalogPrice: 2000,
 			wantStatus: 200, wantID: "subscription/acme%2Fops/concurrency_pack", wantInvoiceCents: 2000, wantInvoiceLines: 2,
-			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 1, creditTicks: "0"},
+			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 1, creditMicrocents: "0"},
 		},
 		{
 			name: "separator in addon", customer: "acme", addon: "ops/concurrency_pack", catalogPrice: 2000,
 			wantStatus: 200, wantID: "subscription/acme/ops%2Fconcurrency_pack", wantInvoiceCents: 2000, wantInvoiceLines: 2,
-			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 1, creditTicks: "0"},
+			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 1, creditMicrocents: "0"},
 		},
 		{
 			name: "literal escape remains distinct", customer: "acme%2Fops", addon: "concurrency_pack", catalogPrice: 2000,
 			wantStatus: 200, wantID: "subscription/acme%252Fops/concurrency_pack", wantInvoiceCents: 2000, wantInvoiceLines: 2,
-			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 1, creditTicks: "0"},
+			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 1, creditMicrocents: "0"},
 		},
 		{
 			name: "Unicode identifiers", customer: "客户", addon: "測定", catalogPrice: 2000,
 			wantStatus: 200, wantID: "subscription/%E5%AE%A2%E6%88%B7/%E6%B8%AC%E5%AE%9A", wantInvoiceCents: 2000, wantInvoiceLines: 2,
-			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 1, creditTicks: "0"},
+			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 1, creditMicrocents: "0"},
 		},
 		{
 			name: "maximum escaped input lengths", customer: strings.Repeat("/", 256), addon: strings.Repeat("/", 256), catalogPrice: 2000,
 			wantStatus: 200, wantID: "subscription/" + strings.Repeat("%2F", 256) + "/" + strings.Repeat("%2F", 256), wantInvoiceCents: 2000, wantInvoiceLines: 2,
-			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 1, creditTicks: "0"},
+			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 1, creditMicrocents: "0"},
 		},
 		{
 			name: "customer above byte limit", customer: strings.Repeat("/", 257), addon: "concurrency_pack", catalogPrice: 2000,
-			wantStatus: 422, wantField: "customer_id", wantState: resourceState{prices: 3, creditTicks: "0"},
+			wantStatus: 422, wantField: "customer_id", wantState: resourceState{prices: 3, creditMicrocents: "0"},
 		},
 		{
 			name: "addon above byte limit", customer: "acme", addon: strings.Repeat("/", 257), catalogPrice: 2000,
-			wantStatus: 422, wantField: "addon_name", wantState: resourceState{prices: 3, creditTicks: "0"},
+			wantStatus: 422, wantField: "addon_name", wantState: resourceState{prices: 3, creditMicrocents: "0"},
 		},
 	}
 	for _, tc := range cases {
@@ -74,7 +74,7 @@ func testReadableAddonIdentities(t *testing.T) {
 			if _, err := pool.Exec(ctx, "INSERT INTO customers VALUES ($1,'Identity test','CZ','Test address') ON CONFLICT DO NOTHING", tc.customer); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := pool.Exec(ctx, "INSERT INTO customer_billing_state (customer_id,credit_balance_ticks,spend_limit_cents) VALUES ($1,0,NULL) ON CONFLICT DO NOTHING", tc.customer); err != nil {
+			if _, err := pool.Exec(ctx, "INSERT INTO customer_billing_state (customer_id,credit_balance_microcents,spend_limit_cents) VALUES ($1,0,NULL) ON CONFLICT DO NOTHING", tc.customer); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := pool.Exec(ctx, "INSERT INTO addons VALUES ($1,$2) ON CONFLICT DO NOTHING", tc.addon, tc.catalogPrice); err != nil {
@@ -165,12 +165,12 @@ func testStoredAddonIdentities(t *testing.T) {
 	}{
 		{
 			name: "earlier caller ID", storedID: "acme-pack", wantID: "acme-pack", wantInvoiceCents: 2000, wantInvoiceLines: 2, wantConflict: billing.ErrConflict,
-			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 2, creditTicks: "0"},
+			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 2, creditMicrocents: "0"},
 		},
 		{
 			name: "earlier generated hash", storedID: "subscription/fb825258fbc40ba90cc30768910b4290b44251059999cba11a7a6c6efc2c5343",
 			wantID: "subscription/fb825258fbc40ba90cc30768910b4290b44251059999cba11a7a6c6efc2c5343", wantInvoiceCents: 2000, wantInvoiceLines: 2, wantConflict: billing.ErrConflict,
-			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 2, creditTicks: "0"},
+			wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 2, creditMicrocents: "0"},
 		},
 	}
 	for _, tc := range cases {

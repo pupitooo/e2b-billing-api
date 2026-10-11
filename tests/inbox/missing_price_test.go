@@ -34,59 +34,59 @@ func testMissingPriceProcessing(t *testing.T) {
 	t.Helper()
 
 	cases := []struct {
-		name                   string
-		catalogSQL             string
-		metric                 string
-		periodStart            string
-		periodEnd              string
-		receivedAt             string
-		units                  int64
-		initialCreditTicks     string
-		recoveryEffective      string
-		recoveryPriceCents     int64
-		wantError              error
-		wantQuarantineWork     bool
-		wantProcessed          bool
-		wantIdleWork           bool
-		wantRecoveredWork      bool
-		wantRecoveredProcessed bool
-		wantRecoveredError     string
-		wantProcessingError    string
-		wantLog                missingPriceLog
-		wantQuarantineState    priceBoundaryState
-		wantRecoveredState     priceBoundaryState
+		name                    string
+		catalogSQL              string
+		metric                  string
+		periodStart             string
+		periodEnd               string
+		receivedAt              string
+		units                   int64
+		initialCreditMicrocents string
+		recoveryEffective       string
+		recoveryPriceCents      int64
+		wantError               error
+		wantQuarantineWork      bool
+		wantProcessed           bool
+		wantIdleWork            bool
+		wantRecoveredWork       bool
+		wantRecoveredProcessed  bool
+		wantRecoveredError      string
+		wantProcessingError     string
+		wantLog                 missingPriceLog
+		wantQuarantineState     priceBoundaryState
+		wantRecoveredState      priceBoundaryState
 	}{
 		{
 			name:       "new metric without a provisioned price is a P0 incident",
 			catalogSQL: "INSERT INTO metrics VALUES ('memory_seconds')",
 			metric:     "memory_seconds", periodStart: "2026-10-10T12:00:00Z", periodEnd: "2026-10-10T13:00:00Z",
-			receivedAt: "2026-10-11T00:00:00Z", units: 100_000_000, initialCreditTicks: "500000000",
+			receivedAt: "2026-10-11T00:00:00Z", units: 100_000_000, initialCreditMicrocents: "500000000",
 			recoveryEffective: "2026-10-01T00:00:00Z", recoveryPriceCents: 4,
 			wantError: nil, wantQuarantineWork: true, wantProcessed: false, wantIdleWork: false,
 			wantRecoveredWork: true, wantRecoveredProcessed: true, wantRecoveredError: "",
 			wantProcessingError: "P0 missing_valid_price: no valid price for customer acme and metric memory_seconds at 2026-10-10T12:00:00Z",
 			wantLog:             missingPriceLog{Level: "ERROR", Priority: "P0", ErrorCode: "missing_valid_price", Source: "catalog-test", EventID: "one", CustomerID: "acme", Metric: "memory_seconds", PeriodStart: "2026-10-10T12:00:00Z"},
-			wantQuarantineState: priceBoundaryState{Units: "0", GrossTicks: "0", AllocatedCreditTicks: "0", MonthlyGrossTicks: "0", CreditDebitTicks: "0", CreditBalanceTicks: "500000000"},
+			wantQuarantineState: priceBoundaryState{Units: "0", GrossMicrocents: "0", AllocatedCreditMicrocents: "0", MonthlyGrossMicrocents: "0", CreditDebitMicrocents: "0", CreditBalanceMicrocents: "500000000"},
 			wantRecoveredState: priceBoundaryState{
 				Groups: 1, Units: "100000000", PriceVersionID: "catalog-recovery", UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossTicks: "400000000", AllocatedCreditTicks: "400000000", BookedCents: 400,
-				Ratings: 1, MonthlyRows: 1, MonthlyGrossTicks: "400000000", CreditDebits: 1, CreditDebitTicks: "-400000000", CreditBalanceTicks: "100000000", StateVersion: 1,
+				GrossMicrocents: "400000000", AllocatedCreditMicrocents: "400000000", BookedCents: 400,
+				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "400000000", CreditDebits: 1, CreditDebitMicrocents: "-400000000", CreditBalanceMicrocents: "100000000", StateVersion: 1,
 			},
 		},
 		{
 			name:   "usage before the seed's first effective instant is a P0 incident",
 			metric: "cpu_seconds", periodStart: "2026-09-30T12:00:00Z", periodEnd: "2026-09-30T13:00:00Z",
-			receivedAt: "2026-10-01T00:00:00Z", units: 100_000_000, initialCreditTicks: "500000000",
+			receivedAt: "2026-10-01T00:00:00Z", units: 100_000_000, initialCreditMicrocents: "500000000",
 			recoveryEffective: "2026-09-01T00:00:00Z", recoveryPriceCents: 5,
 			wantError: nil, wantQuarantineWork: true, wantProcessed: false, wantIdleWork: false,
 			wantRecoveredWork: true, wantRecoveredProcessed: true, wantRecoveredError: "",
 			wantProcessingError: "P0 missing_valid_price: no valid price for customer acme and metric cpu_seconds at 2026-09-30T12:00:00Z",
 			wantLog:             missingPriceLog{Level: "ERROR", Priority: "P0", ErrorCode: "missing_valid_price", Source: "catalog-test", EventID: "one", CustomerID: "acme", Metric: "cpu_seconds", PeriodStart: "2026-09-30T12:00:00Z"},
-			wantQuarantineState: priceBoundaryState{Units: "0", GrossTicks: "0", AllocatedCreditTicks: "0", MonthlyGrossTicks: "0", CreditDebitTicks: "0", CreditBalanceTicks: "500000000"},
+			wantQuarantineState: priceBoundaryState{Units: "0", GrossMicrocents: "0", AllocatedCreditMicrocents: "0", MonthlyGrossMicrocents: "0", CreditDebitMicrocents: "0", CreditBalanceMicrocents: "500000000"},
 			wantRecoveredState: priceBoundaryState{
 				Groups: 1, Units: "100000000", PriceVersionID: "catalog-recovery", UsageMonth: "2026-09-01", BillingMonth: "2026-09-01",
-				GrossTicks: "500000000", AllocatedCreditTicks: "500000000", BookedCents: 500,
-				Ratings: 1, MonthlyRows: 1, MonthlyGrossTicks: "500000000", CreditDebits: 1, CreditDebitTicks: "-500000000", CreditBalanceTicks: "0", StateVersion: 1,
+				GrossMicrocents: "500000000", AllocatedCreditMicrocents: "500000000", BookedCents: 500,
+				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "500000000", CreditDebits: 1, CreditDebitMicrocents: "-500000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
 		},
 		{
@@ -94,17 +94,17 @@ func testMissingPriceProcessing(t *testing.T) {
 			catalogSQL: `INSERT INTO metrics VALUES ('memory_seconds');
 				INSERT INTO price_versions VALUES ('future-price',NULL,'memory_seconds',6,'2026-11-01T00:00:00Z')`,
 			metric: "memory_seconds", periodStart: "2026-10-10T12:00:00Z", periodEnd: "2026-10-10T13:00:00Z",
-			receivedAt: "2026-10-11T00:00:00Z", units: 100_000_000, initialCreditTicks: "500000000",
+			receivedAt: "2026-10-11T00:00:00Z", units: 100_000_000, initialCreditMicrocents: "500000000",
 			recoveryEffective: "2026-10-01T00:00:00Z", recoveryPriceCents: 4,
 			wantError: nil, wantQuarantineWork: true, wantProcessed: false, wantIdleWork: false,
 			wantRecoveredWork: true, wantRecoveredProcessed: true, wantRecoveredError: "",
 			wantProcessingError: "P0 missing_valid_price: no valid price for customer acme and metric memory_seconds at 2026-10-10T12:00:00Z",
 			wantLog:             missingPriceLog{Level: "ERROR", Priority: "P0", ErrorCode: "missing_valid_price", Source: "catalog-test", EventID: "one", CustomerID: "acme", Metric: "memory_seconds", PeriodStart: "2026-10-10T12:00:00Z"},
-			wantQuarantineState: priceBoundaryState{Units: "0", GrossTicks: "0", AllocatedCreditTicks: "0", MonthlyGrossTicks: "0", CreditDebitTicks: "0", CreditBalanceTicks: "500000000"},
+			wantQuarantineState: priceBoundaryState{Units: "0", GrossMicrocents: "0", AllocatedCreditMicrocents: "0", MonthlyGrossMicrocents: "0", CreditDebitMicrocents: "0", CreditBalanceMicrocents: "500000000"},
 			wantRecoveredState: priceBoundaryState{
 				Groups: 1, Units: "100000000", PriceVersionID: "catalog-recovery", UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossTicks: "400000000", AllocatedCreditTicks: "400000000", BookedCents: 400,
-				Ratings: 1, MonthlyRows: 1, MonthlyGrossTicks: "400000000", CreditDebits: 1, CreditDebitTicks: "-400000000", CreditBalanceTicks: "100000000", StateVersion: 1,
+				GrossMicrocents: "400000000", AllocatedCreditMicrocents: "400000000", BookedCents: 400,
+				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "400000000", CreditDebits: 1, CreditDebitMicrocents: "-400000000", CreditBalanceMicrocents: "100000000", StateVersion: 1,
 			},
 		},
 		{
@@ -112,17 +112,17 @@ func testMissingPriceProcessing(t *testing.T) {
 			catalogSQL: `INSERT INTO metrics VALUES ('memory_seconds');
 				INSERT INTO price_versions VALUES ('other-customer-price','cyberdyne','memory_seconds',4,'2026-10-01T00:00:00Z')`,
 			metric: "memory_seconds", periodStart: "2026-10-10T12:00:00Z", periodEnd: "2026-10-10T13:00:00Z",
-			receivedAt: "2026-10-11T00:00:00Z", units: 100_000_000, initialCreditTicks: "500000000",
+			receivedAt: "2026-10-11T00:00:00Z", units: 100_000_000, initialCreditMicrocents: "500000000",
 			recoveryEffective: "2026-10-01T00:00:00Z", recoveryPriceCents: 4,
 			wantError: nil, wantQuarantineWork: true, wantProcessed: false, wantIdleWork: false,
 			wantRecoveredWork: true, wantRecoveredProcessed: true, wantRecoveredError: "",
 			wantProcessingError: "P0 missing_valid_price: no valid price for customer acme and metric memory_seconds at 2026-10-10T12:00:00Z",
 			wantLog:             missingPriceLog{Level: "ERROR", Priority: "P0", ErrorCode: "missing_valid_price", Source: "catalog-test", EventID: "one", CustomerID: "acme", Metric: "memory_seconds", PeriodStart: "2026-10-10T12:00:00Z"},
-			wantQuarantineState: priceBoundaryState{Units: "0", GrossTicks: "0", AllocatedCreditTicks: "0", MonthlyGrossTicks: "0", CreditDebitTicks: "0", CreditBalanceTicks: "500000000"},
+			wantQuarantineState: priceBoundaryState{Units: "0", GrossMicrocents: "0", AllocatedCreditMicrocents: "0", MonthlyGrossMicrocents: "0", CreditDebitMicrocents: "0", CreditBalanceMicrocents: "500000000"},
 			wantRecoveredState: priceBoundaryState{
 				Groups: 1, Units: "100000000", PriceVersionID: "catalog-recovery", UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossTicks: "400000000", AllocatedCreditTicks: "400000000", BookedCents: 400,
-				Ratings: 1, MonthlyRows: 1, MonthlyGrossTicks: "400000000", CreditDebits: 1, CreditDebitTicks: "-400000000", CreditBalanceTicks: "100000000", StateVersion: 1,
+				GrossMicrocents: "400000000", AllocatedCreditMicrocents: "400000000", BookedCents: 400,
+				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "400000000", CreditDebits: 1, CreditDebitMicrocents: "-400000000", CreditBalanceMicrocents: "100000000", StateVersion: 1,
 			},
 		},
 	}
@@ -137,8 +137,8 @@ func testMissingPriceProcessing(t *testing.T) {
 					t.Fatalf("Prepare catalog %q: %v", tc.catalogSQL, err)
 				}
 			}
-			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$1::numeric WHERE customer_id='acme'", tc.initialCreditTicks); err != nil {
-				t.Fatalf("Prepare credit %s: %v", tc.initialCreditTicks, err)
+			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=$1::numeric WHERE customer_id='acme'", tc.initialCreditMicrocents); err != nil {
+				t.Fatalf("Prepare credit %s: %v", tc.initialCreditMicrocents, err)
 			}
 			event := usage.Event{Source: "catalog-test", EventID: "one", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox", Metric: tc.metric,
 				PeriodStart: parseBillingTime(t, tc.periodStart), PeriodEnd: parseBillingTime(t, tc.periodEnd), Units: tc.units}
@@ -252,7 +252,7 @@ func testMissingPriceProcessing(t *testing.T) {
 				DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_price_quarantine()`,
 			metric: "memory_seconds", periodStart: "2026-10-10T12:00:00Z", periodEnd: "2026-10-10T13:00:00Z", units: 100_000_000,
 			wantError: true, wantSQLState: "23514", wantWork: false, wantProcessed: false, wantProcessingError: "", wantLogCount: 0,
-			wantState: priceBoundaryState{Units: "0", GrossTicks: "0", AllocatedCreditTicks: "0", MonthlyGrossTicks: "0", CreditDebitTicks: "0", CreditBalanceTicks: "0"},
+			wantState: priceBoundaryState{Units: "0", GrossMicrocents: "0", AllocatedCreditMicrocents: "0", MonthlyGrossMicrocents: "0", CreditDebitMicrocents: "0", CreditBalanceMicrocents: "0"},
 		}
 		pool := billingDatabase(t)
 		ctx := context.Background()

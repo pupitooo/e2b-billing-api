@@ -11,7 +11,7 @@
         "status": 200,
         "body": {
           "customer_id": "cyberdyne",
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 0
@@ -109,7 +109,7 @@
         "status": 200,
         "body": {
           "customer_id": "cyberdyne",
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 2
@@ -177,8 +177,8 @@
         "body": {
           "number": "CYBERDYNE-0001",
           "total_cents": 1100,
-          "gross_usage_ticks": "1100000000",
-          "credit_used_ticks": "0",
+          "gross_usage_microcents": "1100000000",
+          "credit_used_microcents": "0",
           "lines": [
             {
               "kind": "usage",

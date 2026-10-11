@@ -81,7 +81,7 @@ SELECT pg_temp.assert_result(
 SELECT pg_temp.assert_result(
     scenario => 'opening billing state has no credit or spending limit',
     input_sql => $input$
-        SELECT count(*) AS count, bool_and(credit_balance_ticks = 0
+        SELECT count(*) AS count, bool_and(credit_balance_microcents = 0
             AND spend_limit_cents IS NULL AND state_version = 0) AS all_empty
         FROM customer_billing_state
     $input$,

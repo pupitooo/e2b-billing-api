@@ -5,7 +5,7 @@ import {
   buildCommand,
   customerPath,
   formatCents,
-  formatTicks,
+  formatMicrocents,
   groupDigits,
   invoiceEligible,
   parseExactJSON,
@@ -236,16 +236,16 @@ function metricsHTML(snapshot) {
   const cards = [
     {
       label: "Remaining credit",
-      value: credit ? formatTicks(credit.credit_balance_ticks) : "—",
+      value: credit ? formatMicrocents(credit.credit_balance_microcents) : "—",
       note: credit
-        ? `${formatTicks(credit.credit_balance_ticks, true)} exact`
+        ? `${formatMicrocents(credit.credit_balance_microcents, true)} exact`
         : "Refresh to read API",
     },
     {
       label: "Gross usage · " + state.month,
-      value: limit ? formatTicks(limit.gross_charge_ticks) : "—",
+      value: limit ? formatMicrocents(limit.gross_charge_microcents) : "—",
       note: limit
-        ? `${formatTicks(limit.gross_charge_ticks, true)} exact\nBefore credit · add-ons excluded`
+        ? `${formatMicrocents(limit.gross_charge_microcents, true)} exact\nBefore credit · add-ons excluded`
         : "Before credit · add-ons excluded",
     },
     {
@@ -451,7 +451,7 @@ function invoicesHTML() {
 function invoiceHTML(invoice) {
   return panel(
     "Issued snapshot",
-    `<h2 class="invoice-title">${x(invoice.number)}</h2><div class="invoice-meta"><div><strong>${x(invoice.customer_name)}</strong><br>${x(invoice.billing_address)}<br>${x(invoice.country)}</div><div>Month: ${x(invoice.month)} · ${x(invoice.currency)}<br>Issued: ${x(invoice.issued_at)}<br>Exact usage: ${x(formatTicks(invoice.gross_usage_ticks, true))}<br>Exact credit: ${x(formatTicks(invoice.credit_used_ticks, true))}</div></div><div class="table-scroll"><table><thead><tr><th>Kind</th><th>Description</th><th>Usage month</th><th>Units</th><th>Amount</th></tr></thead><tbody>${invoice.lines.map((line) => `<tr><td>${x(line.kind)}</td><td>${x(line.description)}${line.price_version_id ? `<div class="customer-meta mono">${x(line.price_version_id)}</div>` : ""}</td><td>${x(line.usage_month || "—")}</td><td class="number">${x(line.units ? groupDigits(line.units) : "—")}</td><td class="number">${x(formatCents(line.amount_cents))}</td></tr>`).join("")}</tbody></table></div><div class="invoice-total"><strong>Total</strong><strong>${x(formatCents(invoice.total_cents))}</strong></div><details><summary>Immutable API snapshot and exact audit values</summary><pre>${x(pretty(invoice))}</pre></details>`,
+    `<h2 class="invoice-title">${x(invoice.number)}</h2><div class="invoice-meta"><div><strong>${x(invoice.customer_name)}</strong><br>${x(invoice.billing_address)}<br>${x(invoice.country)}</div><div>Month: ${x(invoice.month)} · ${x(invoice.currency)}<br>Issued: ${x(invoice.issued_at)}<br>Exact usage: ${x(formatMicrocents(invoice.gross_usage_microcents, true))}<br>Exact credit: ${x(formatMicrocents(invoice.credit_used_microcents, true))}</div></div><div class="table-scroll"><table><thead><tr><th>Kind</th><th>Description</th><th>Usage month</th><th>Units</th><th>Amount</th></tr></thead><tbody>${invoice.lines.map((line) => `<tr><td>${x(line.kind)}</td><td>${x(line.description)}${line.price_version_id ? `<div class="customer-meta mono">${x(line.price_version_id)}</div>` : ""}</td><td>${x(line.usage_month || "—")}</td><td class="number">${x(line.units ? groupDigits(line.units) : "—")}</td><td class="number">${x(formatCents(line.amount_cents))}</td></tr>`).join("")}</tbody></table></div><div class="invoice-total"><strong>Total</strong><strong>${x(formatCents(invoice.total_cents))}</strong></div><details><summary>Immutable API snapshot and exact audit values</summary><pre>${x(pretty(invoice))}</pre></details>`,
   );
 }
 function databaseHTML() {

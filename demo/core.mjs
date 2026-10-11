@@ -1,8 +1,8 @@
 // Transport and presentation helpers keep API integers exact in the browser.
 export const INT64_MAX = 9_223_372_036_854_775_807n;
 const MAX_SAFE_INTEGER = 9_007_199_254_740_991n;
-const TICKS_PER_CENT = 1_000_000n;
-const TICKS_PER_DOLLAR = 100_000_000n;
+const MICROCENTS_PER_CENT = 1_000_000n;
+const MICROCENTS_PER_DOLLAR = 100_000_000n;
 
 export function integer(value, label, minimum = 0n) {
   const text = String(value).trim();
@@ -34,15 +34,15 @@ export function formatCents(value) {
   return `${amount < 0n ? "−" : ""}$${groupDigits(absolute / 100n)}.${String(absolute % 100n).padStart(2, "0")}`;
 }
 
-export function formatTicks(value, exact = false) {
+export function formatMicrocents(value, exact = false) {
   const amount = BigInt(value);
   const absolute = amount < 0n ? -amount : amount;
   if (!exact)
     return formatCents(
       (amount < 0n ? -1n : 1n) *
-        ((absolute + TICKS_PER_CENT / 2n) / TICKS_PER_CENT),
+        ((absolute + MICROCENTS_PER_CENT / 2n) / MICROCENTS_PER_CENT),
     );
-  return `${amount < 0n ? "−" : ""}$${groupDigits(absolute / TICKS_PER_DOLLAR)}.${String(absolute % TICKS_PER_DOLLAR).padStart(8, "0")}`;
+  return `${amount < 0n ? "−" : ""}$${groupDigits(absolute / MICROCENTS_PER_DOLLAR)}.${String(absolute % MICROCENTS_PER_DOLLAR).padStart(8, "0")}`;
 }
 
 export function groupDigits(value) {

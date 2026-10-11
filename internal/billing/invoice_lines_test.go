@@ -11,12 +11,12 @@ import (
 )
 
 type invoiceUsageFixture struct {
-	priceVersionID string
-	metric         string
-	usageMonth     string
-	units          string
-	grossTicks     string
-	creditTicks    string
+	priceVersionID   string
+	metric           string
+	usageMonth       string
+	units            string
+	grossMicrocents  string
+	creditMicrocents string
 }
 
 // TestAssembleInvoice verifies financial presentation without PostgreSQL: empty
@@ -40,24 +40,24 @@ func TestAssembleInvoice(t *testing.T) {
 			wantInvoice: Invoice{
 				CustomerID: "acme", Number: "ACME-0002", Month: "2026-11",
 				Lines:      []InvoiceLine{{Kind: "credit", Description: "Used credit", AmountCents: 0}},
-				TotalCents: 0, GrossUsageTicks: "0", CreditUsedTicks: "0",
+				TotalCents: 0, GrossUsageMicrocents: "0", CreditUsedMicrocents: "0",
 			},
 		},
 		{
 			name:  "zero-cent usage lines retain units and exact charges for each price group",
 			month: "2026-10", header: Invoice{CustomerID: "acme", Number: "ACME-0001", Month: "2026-10"},
 			usage: []invoiceUsageFixture{
-				{priceVersionID: "first-price", metric: "cpu_seconds", usageMonth: "2026-10", units: "75000", grossTicks: "300000", creditTicks: "0"},
-				{priceVersionID: "second-price", metric: "cpu_seconds", usageMonth: "2026-10", units: "60000", grossTicks: "300000", creditTicks: "0"},
+				{priceVersionID: "first-price", metric: "cpu_seconds", usageMonth: "2026-10", units: "75000", grossMicrocents: "300000", creditMicrocents: "0"},
+				{priceVersionID: "second-price", metric: "cpu_seconds", usageMonth: "2026-10", units: "60000", grossMicrocents: "300000", creditMicrocents: "0"},
 			},
 			wantInvoice: Invoice{
 				CustomerID: "acme", Number: "ACME-0001", Month: "2026-10",
 				Lines: []InvoiceLine{
-					{Kind: "usage", Description: "Usage", AmountCents: 0, PriceVersionID: "first-price", Metric: "cpu_seconds", UsageMonth: "2026-10", Units: "75000", GrossTicks: "300000", CreditTicks: "0"},
-					{Kind: "usage", Description: "Usage", AmountCents: 0, PriceVersionID: "second-price", Metric: "cpu_seconds", UsageMonth: "2026-10", Units: "60000", GrossTicks: "300000", CreditTicks: "0"},
+					{Kind: "usage", Description: "Usage", AmountCents: 0, PriceVersionID: "first-price", Metric: "cpu_seconds", UsageMonth: "2026-10", Units: "75000", GrossMicrocents: "300000", CreditMicrocents: "0"},
+					{Kind: "usage", Description: "Usage", AmountCents: 0, PriceVersionID: "second-price", Metric: "cpu_seconds", UsageMonth: "2026-10", Units: "60000", GrossMicrocents: "300000", CreditMicrocents: "0"},
 					{Kind: "credit", Description: "Used credit", AmountCents: 0},
 				},
-				TotalCents: 0, GrossUsageTicks: "600000", CreditUsedTicks: "0",
+				TotalCents: 0, GrossUsageMicrocents: "600000", CreditUsedMicrocents: "0",
 			},
 		},
 		{
@@ -65,20 +65,20 @@ func TestAssembleInvoice(t *testing.T) {
 			month: "2026-11", header: Invoice{CustomerID: "acme", Number: "ACME-0002", Month: "2026-11"},
 			usage: []invoiceUsageFixture{
 				{
-					priceVersionID: "acme-price",
-					metric:         "cpu",
-					usageMonth:     "2026-10",
-					units:          "50000000",
-					grossTicks:     "200000000",
-					creditTicks:    "200000000",
+					priceVersionID:   "acme-price",
+					metric:           "cpu",
+					usageMonth:       "2026-10",
+					units:            "50000000",
+					grossMicrocents:  "200000000",
+					creditMicrocents: "200000000",
 				},
 				{
-					priceVersionID: "acme-price",
-					metric:         "cpu",
-					usageMonth:     "2026-11",
-					units:          "100000000",
-					grossTicks:     "400000000",
-					creditTicks:    "400000000",
+					priceVersionID:   "acme-price",
+					metric:           "cpu",
+					usageMonth:       "2026-11",
+					units:            "100000000",
+					grossMicrocents:  "400000000",
+					creditMicrocents: "400000000",
 				},
 			},
 			addons: []InvoiceAddon{{SubscriptionID: "pack", Name: "concurrency_pack", PriceCents: 2_000}},
@@ -86,31 +86,31 @@ func TestAssembleInvoice(t *testing.T) {
 				CustomerID: "acme", Number: "ACME-0002", Month: "2026-11",
 				Lines: []InvoiceLine{
 					{
-						Kind:           "usage",
-						Description:    "Late usage from 2026-10",
-						AmountCents:    200,
-						PriceVersionID: "acme-price",
-						Metric:         "cpu",
-						UsageMonth:     "2026-10",
-						Units:          "50000000",
-						GrossTicks:     "200000000",
-						CreditTicks:    "200000000",
+						Kind:             "usage",
+						Description:      "Late usage from 2026-10",
+						AmountCents:      200,
+						PriceVersionID:   "acme-price",
+						Metric:           "cpu",
+						UsageMonth:       "2026-10",
+						Units:            "50000000",
+						GrossMicrocents:  "200000000",
+						CreditMicrocents: "200000000",
 					},
 					{
-						Kind:           "usage",
-						Description:    "Usage",
-						AmountCents:    400,
-						PriceVersionID: "acme-price",
-						Metric:         "cpu",
-						UsageMonth:     "2026-11",
-						Units:          "100000000",
-						GrossTicks:     "400000000",
-						CreditTicks:    "400000000",
+						Kind:             "usage",
+						Description:      "Usage",
+						AmountCents:      400,
+						PriceVersionID:   "acme-price",
+						Metric:           "cpu",
+						UsageMonth:       "2026-11",
+						Units:            "100000000",
+						GrossMicrocents:  "400000000",
+						CreditMicrocents: "400000000",
 					},
 					{Kind: "addon", Description: "concurrency_pack", AmountCents: 2_000, SubscriptionID: "pack"},
 					{Kind: "credit", Description: "Used credit", AmountCents: -600},
 				},
-				TotalCents: 2_000, GrossUsageTicks: "600000000", CreditUsedTicks: "600000000",
+				TotalCents: 2_000, GrossUsageMicrocents: "600000000", CreditUsedMicrocents: "600000000",
 			},
 		},
 		{
@@ -118,57 +118,57 @@ func TestAssembleInvoice(t *testing.T) {
 			month: "2026-11", header: Invoice{CustomerID: "cyberdyne", Number: "CYBERDYNE-0002", Month: "2026-11"},
 			usage: []invoiceUsageFixture{
 				{
-					priceVersionID: "first-price",
-					metric:         "cpu",
-					usageMonth:     "2026-11",
-					units:          "100000",
-					grossTicks:     "500000",
-					creditTicks:    "200000",
+					priceVersionID:   "first-price",
+					metric:           "cpu",
+					usageMonth:       "2026-11",
+					units:            "100000",
+					grossMicrocents:  "500000",
+					creditMicrocents: "200000",
 				},
 				{
-					priceVersionID: "second-price",
-					metric:         "cpu",
-					usageMonth:     "2026-11",
-					units:          "100000",
-					grossTicks:     "500000",
-					creditTicks:    "0",
+					priceVersionID:   "second-price",
+					metric:           "cpu",
+					usageMonth:       "2026-11",
+					units:            "100000",
+					grossMicrocents:  "500000",
+					creditMicrocents: "0",
 				},
 			},
 			wantInvoice: Invoice{
 				CustomerID: "cyberdyne", Number: "CYBERDYNE-0002", Month: "2026-11",
 				Lines: []InvoiceLine{
 					{
-						Kind:           "usage",
-						Description:    "Usage",
-						AmountCents:    1,
-						PriceVersionID: "first-price",
-						Metric:         "cpu",
-						UsageMonth:     "2026-11",
-						Units:          "100000",
-						GrossTicks:     "500000",
-						CreditTicks:    "200000",
+						Kind:             "usage",
+						Description:      "Usage",
+						AmountCents:      1,
+						PriceVersionID:   "first-price",
+						Metric:           "cpu",
+						UsageMonth:       "2026-11",
+						Units:            "100000",
+						GrossMicrocents:  "500000",
+						CreditMicrocents: "200000",
 					},
 					{
-						Kind:           "usage",
-						Description:    "Usage",
-						AmountCents:    1,
-						PriceVersionID: "second-price",
-						Metric:         "cpu",
-						UsageMonth:     "2026-11",
-						Units:          "100000",
-						GrossTicks:     "500000",
-						CreditTicks:    "0",
+						Kind:             "usage",
+						Description:      "Usage",
+						AmountCents:      1,
+						PriceVersionID:   "second-price",
+						Metric:           "cpu",
+						UsageMonth:       "2026-11",
+						Units:            "100000",
+						GrossMicrocents:  "500000",
+						CreditMicrocents: "0",
 					},
 					{Kind: "credit", Description: "Used credit", AmountCents: -1},
 				},
-				TotalCents: 1, GrossUsageTicks: "1000000", CreditUsedTicks: "200000",
+				TotalCents: 1, GrossUsageMicrocents: "1000000", CreditUsedMicrocents: "200000",
 			},
 		},
 		{
 			name:  "credit greater than the group's gross is rejected",
 			month: "2026-11", header: Invoice{CustomerID: "acme", Month: "2026-11"},
 			usage: []invoiceUsageFixture{
-				{priceVersionID: "price", metric: "cpu", usageMonth: "2026-11", units: "1", grossTicks: "1", creditTicks: "2"},
+				{priceVersionID: "price", metric: "cpu", usageMonth: "2026-11", units: "1", grossMicrocents: "1", creditMicrocents: "2"},
 			},
 			wantError: true, wantErrorMessage: "allocated credit exceeds gross charge",
 		},
@@ -177,20 +177,20 @@ func TestAssembleInvoice(t *testing.T) {
 			month: "2026-11", header: Invoice{CustomerID: "acme", Month: "2026-11"},
 			usage: []invoiceUsageFixture{
 				{
-					priceVersionID: "large-price",
-					metric:         "cpu",
-					usageMonth:     "2026-11",
-					units:          "9223372036854775807",
-					grossTicks:     "9223372036854775807000000",
-					creditTicks:    "9223372036854775807000000",
+					priceVersionID:   "large-price",
+					metric:           "cpu",
+					usageMonth:       "2026-11",
+					units:            "9223372036854775807",
+					grossMicrocents:  "9223372036854775807000000",
+					creditMicrocents: "9223372036854775807000000",
 				},
 				{
-					priceVersionID: "small-price",
-					metric:         "cpu",
-					usageMonth:     "2026-11",
-					units:          "1",
-					grossTicks:     "1000000",
-					creditTicks:    "1000000",
+					priceVersionID:   "small-price",
+					metric:           "cpu",
+					usageMonth:       "2026-11",
+					units:            "1",
+					grossMicrocents:  "1000000",
+					creditMicrocents: "1000000",
 				},
 			},
 			wantError: true, wantErrorMessage: "invoice cents exceed the signed 64-bit range",
@@ -289,7 +289,7 @@ func TestInvoiceTotal(t *testing.T) {
 	}
 }
 
-// invoiceUsageInput decodes literal input ticks and months for the pure invoice
+// invoiceUsageInput decodes literal input microcents and months for the pure invoice
 // builder. It performs no rating, allocation, rounding, or expected-value calculation.
 func invoiceUsageInput(t *testing.T, fixture invoiceUsageFixture) InvoiceUsage {
 	t.Helper()
@@ -297,7 +297,7 @@ func invoiceUsageInput(t *testing.T, fixture invoiceUsageFixture) InvoiceUsage {
 	return InvoiceUsage{
 		PriceVersionID: fixture.priceVersionID, Metric: fixture.metric,
 		UsageMonth: invoiceMonthInput(t, fixture.usageMonth), Units: fixture.units,
-		Gross: invoiceTicksInput(t, fixture.grossTicks), Credit: invoiceTicksInput(t, fixture.creditTicks),
+		Gross: invoiceMicrocentsInput(t, fixture.grossMicrocents), Credit: invoiceMicrocentsInput(t, fixture.creditMicrocents),
 	}
 }
 
@@ -313,18 +313,18 @@ func invoiceMonthInput(t *testing.T, value string) time.Time {
 	return month
 }
 
-// invoiceTicksInput converts a literal arbitrary-precision input to an Amount;
-// expected invoice ticks and displayed cents are always separate literal values.
-func invoiceTicksInput(t *testing.T, value string) accounting.Amount {
+// invoiceMicrocentsInput converts a literal arbitrary-precision input to an Amount;
+// expected invoice microcents and displayed cents are always separate literal values.
+func invoiceMicrocentsInput(t *testing.T, value string) accounting.Amount {
 	t.Helper()
-	ticks, ok := new(big.Int).SetString(value, 10)
+	microcents, ok := new(big.Int).SetString(value, 10)
 	if !ok {
-		t.Fatalf("Parse invoice input ticks %q: invalid integer", value)
+		t.Fatalf("Parse invoice input microcents %q: invalid integer", value)
 	}
 
-	amount, err := accounting.FromTicks(ticks)
+	amount, err := accounting.FromMicrocents(microcents)
 	if err != nil {
-		t.Fatalf("Construct invoice input amount from %q ticks: %v", value, err)
+		t.Fatalf("Construct invoice input amount from %q microcents: %v", value, err)
 	}
 
 	return amount

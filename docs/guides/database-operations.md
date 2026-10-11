@@ -31,7 +31,7 @@ Changing a host port alone does not select another database.
 
 Adminer groups integer result values with underscores: `1_500` or
 `1_300_000_000`. This applies to PostgreSQL `smallint`, `integer`, and `bigint`
-columns, the integer-only `billing_ticks` and `billing_signed_ticks` domains,
+columns, the integer-only `billing_microcents` and `billing_signed_microcents` domains,
 and whole-number `numeric` results without a decimal point, including negative
 values. Both table browsing and SQL query results use this presentation.
 Grouping operates on strings, preserving every digit of large microcent balances.

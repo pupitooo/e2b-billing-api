@@ -22,169 +22,169 @@ func testProcessingBounds(t *testing.T) {
 	t.Helper()
 
 	cases := []struct {
-		name                 string
-		customerID           string
-		priceVersionID       string
-		pricePerMillionCents int64
-		priceEffectiveFrom   string
-		periodStart          string
-		periodEnd            string
-		receivedAt           string
-		closedMonth          string
-		priorUnits           []int64
-		units                int64
-		availableCreditTicks string
-		wantError            bool
-		wantWork             bool
-		wantProcessed        bool
-		wantProcessingError  string
-		wantNextWork         bool
-		wantState            priceBoundaryState
+		name                      string
+		customerID                string
+		priceVersionID            string
+		pricePerMillionCents      int64
+		priceEffectiveFrom        string
+		periodStart               string
+		periodEnd                 string
+		receivedAt                string
+		closedMonth               string
+		priorUnits                []int64
+		units                     int64
+		availableCreditMicrocents string
+		wantError                 bool
+		wantWork                  bool
+		wantProcessed             bool
+		wantProcessingError       string
+		wantNextWork              bool
+		wantState                 priceBoundaryState
 	}{
 		{
-			name:                 "last supported billing month accounts while open",
-			customerID:           "acme",
-			priceVersionID:       "processing-boundary-price",
-			pricePerMillionCents: 4,
-			priceEffectiveFrom:   "2026-10-02T00:00:00Z",
-			periodStart:          "9999-12-10T12:00:00Z",
-			periodEnd:            "9999-12-10T13:00:00Z",
-			receivedAt:           "9999-12-11T00:00:00Z",
-			units:                1_000_000,
-			availableCreditTicks: "1000000",
-			wantError:            false,
-			wantWork:             true,
-			wantProcessed:        true,
-			wantProcessingError:  "",
-			wantNextWork:         false,
+			name:                      "last supported billing month accounts while open",
+			customerID:                "acme",
+			priceVersionID:            "processing-boundary-price",
+			pricePerMillionCents:      4,
+			priceEffectiveFrom:        "2026-10-02T00:00:00Z",
+			periodStart:               "9999-12-10T12:00:00Z",
+			periodEnd:                 "9999-12-10T13:00:00Z",
+			receivedAt:                "9999-12-11T00:00:00Z",
+			units:                     1_000_000,
+			availableCreditMicrocents: "1000000",
+			wantError:                 false,
+			wantWork:                  true,
+			wantProcessed:             true,
+			wantProcessingError:       "",
+			wantNextWork:              false,
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "processing-boundary-price",
 				UsageMonth: "9999-12-01", BillingMonth: "9999-12-01",
-				GrossTicks: "4000000", AllocatedCreditTicks: "1000000", BookedCents: 4,
-				Ratings: 1, MonthlyRows: 1, MonthlyGrossTicks: "4000000",
-				CreditDebits: 1, CreditDebitTicks: "-1000000", CreditBalanceTicks: "0", StateVersion: 1,
+				GrossMicrocents: "4000000", AllocatedCreditMicrocents: "1000000", BookedCents: 4,
+				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "4000000",
+				CreditDebits: 1, CreditDebitMicrocents: "-1000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
 		},
 		{
-			name:                 "closed November routes late usage into the last supported December",
-			customerID:           "acme",
-			priceVersionID:       "processing-boundary-price",
-			pricePerMillionCents: 4,
-			priceEffectiveFrom:   "2026-10-02T00:00:00Z",
-			periodStart:          "9999-11-10T12:00:00Z",
-			periodEnd:            "9999-11-10T13:00:00Z",
-			receivedAt:           "9999-11-11T00:00:00Z",
-			closedMonth:          "9999-11-01",
-			units:                1_000_000,
-			availableCreditTicks: "1000000",
-			wantError:            false,
-			wantWork:             true,
-			wantProcessed:        true,
-			wantProcessingError:  "",
-			wantNextWork:         false,
+			name:                      "closed November routes late usage into the last supported December",
+			customerID:                "acme",
+			priceVersionID:            "processing-boundary-price",
+			pricePerMillionCents:      4,
+			priceEffectiveFrom:        "2026-10-02T00:00:00Z",
+			periodStart:               "9999-11-10T12:00:00Z",
+			periodEnd:                 "9999-11-10T13:00:00Z",
+			receivedAt:                "9999-11-11T00:00:00Z",
+			closedMonth:               "9999-11-01",
+			units:                     1_000_000,
+			availableCreditMicrocents: "1000000",
+			wantError:                 false,
+			wantWork:                  true,
+			wantProcessed:             true,
+			wantProcessingError:       "",
+			wantNextWork:              false,
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "processing-boundary-price",
 				UsageMonth: "9999-11-01", BillingMonth: "9999-12-01",
-				GrossTicks: "4000000", AllocatedCreditTicks: "1000000", BookedCents: 4,
-				Ratings: 1, MonthlyRows: 1, MonthlyGrossTicks: "4000000",
-				CreditDebits: 1, CreditDebitTicks: "-1000000", CreditBalanceTicks: "0", StateVersion: 1,
+				GrossMicrocents: "4000000", AllocatedCreditMicrocents: "1000000", BookedCents: 4,
+				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "4000000",
+				CreditDebits: 1, CreditDebitMicrocents: "-1000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
 		},
 		{
-			name:                 "closed last billing month quarantines without financial effects",
-			customerID:           "acme",
-			priceVersionID:       "processing-boundary-price",
-			pricePerMillionCents: 4,
-			priceEffectiveFrom:   "2026-10-02T00:00:00Z",
-			periodStart:          "9999-12-10T12:00:00Z",
-			periodEnd:            "9999-12-10T13:00:00Z",
-			receivedAt:           "9999-12-11T00:00:00Z",
-			closedMonth:          "9999-12-01",
-			units:                1_000_000,
-			availableCreditTicks: "1000000",
-			wantError:            false,
-			wantWork:             true,
-			wantProcessed:        false,
-			wantProcessingError:  "no representable open billing month",
-			wantNextWork:         false,
+			name:                      "closed last billing month quarantines without financial effects",
+			customerID:                "acme",
+			priceVersionID:            "processing-boundary-price",
+			pricePerMillionCents:      4,
+			priceEffectiveFrom:        "2026-10-02T00:00:00Z",
+			periodStart:               "9999-12-10T12:00:00Z",
+			periodEnd:                 "9999-12-10T13:00:00Z",
+			receivedAt:                "9999-12-11T00:00:00Z",
+			closedMonth:               "9999-12-01",
+			units:                     1_000_000,
+			availableCreditMicrocents: "1000000",
+			wantError:                 false,
+			wantWork:                  true,
+			wantProcessed:             false,
+			wantProcessingError:       "no representable open billing month",
+			wantNextWork:              false,
 			wantState: priceBoundaryState{
 				Groups: 0, Units: "0", PriceVersionID: "", UsageMonth: "", BillingMonth: "",
-				GrossTicks: "0", AllocatedCreditTicks: "0", BookedCents: 0,
-				Ratings: 0, MonthlyRows: 0, MonthlyGrossTicks: "0",
-				CreditDebits: 0, CreditDebitTicks: "0", CreditBalanceTicks: "1000000", StateVersion: 0,
+				GrossMicrocents: "0", AllocatedCreditMicrocents: "0", BookedCents: 0,
+				Ratings: 0, MonthlyRows: 0, MonthlyGrossMicrocents: "0",
+				CreditDebits: 0, CreditDebitMicrocents: "0", CreditBalanceMicrocents: "1000000", StateVersion: 0,
 			},
 		},
 		{
-			name:                 "skipped November behind the final closure quarantines without financial effects",
-			customerID:           "acme",
-			priceVersionID:       "processing-boundary-price",
-			pricePerMillionCents: 4,
-			priceEffectiveFrom:   "2026-10-02T00:00:00Z",
-			periodStart:          "9999-11-10T12:00:00Z",
-			periodEnd:            "9999-11-10T13:00:00Z",
-			receivedAt:           "9999-11-11T00:00:00Z",
-			closedMonth:          "9999-12-01",
-			units:                1_000_000,
-			availableCreditTicks: "1000000",
-			wantError:            false,
-			wantWork:             true,
-			wantProcessed:        false,
-			wantProcessingError:  "no representable open billing month",
-			wantNextWork:         false,
+			name:                      "skipped November behind the final closure quarantines without financial effects",
+			customerID:                "acme",
+			priceVersionID:            "processing-boundary-price",
+			pricePerMillionCents:      4,
+			priceEffectiveFrom:        "2026-10-02T00:00:00Z",
+			periodStart:               "9999-11-10T12:00:00Z",
+			periodEnd:                 "9999-11-10T13:00:00Z",
+			receivedAt:                "9999-11-11T00:00:00Z",
+			closedMonth:               "9999-12-01",
+			units:                     1_000_000,
+			availableCreditMicrocents: "1000000",
+			wantError:                 false,
+			wantWork:                  true,
+			wantProcessed:             false,
+			wantProcessingError:       "no representable open billing month",
+			wantNextWork:              false,
 			wantState: priceBoundaryState{
 				Groups: 0, Units: "0", PriceVersionID: "", UsageMonth: "", BillingMonth: "",
-				GrossTicks: "0", AllocatedCreditTicks: "0", BookedCents: 0,
-				Ratings: 0, MonthlyRows: 0, MonthlyGrossTicks: "0",
-				CreditDebits: 0, CreditDebitTicks: "0", CreditBalanceTicks: "1000000", StateVersion: 0,
+				GrossMicrocents: "0", AllocatedCreditMicrocents: "0", BookedCents: 0,
+				Ratings: 0, MonthlyRows: 0, MonthlyGrossMicrocents: "0",
+				CreditDebits: 0, CreditDebitMicrocents: "0", CreditBalanceMicrocents: "1000000", StateVersion: 0,
 			},
 		},
 		{
-			name:                 "maximum whole-cent group total remains valid",
-			customerID:           "acme",
-			priceVersionID:       "processing-boundary-price",
-			pricePerMillionCents: 9_223_372_036_854_775_807,
-			priceEffectiveFrom:   "2026-10-02T00:00:00Z",
-			periodStart:          "2026-10-10T12:00:00Z",
-			periodEnd:            "2026-10-10T13:00:00Z",
-			receivedAt:           "2026-10-11T00:00:00Z",
-			units:                1_000_000,
-			availableCreditTicks: "1000000",
-			wantError:            false,
-			wantWork:             true,
-			wantProcessed:        true,
-			wantProcessingError:  "",
-			wantNextWork:         false,
+			name:                      "maximum whole-cent group total remains valid",
+			customerID:                "acme",
+			priceVersionID:            "processing-boundary-price",
+			pricePerMillionCents:      9_223_372_036_854_775_807,
+			priceEffectiveFrom:        "2026-10-02T00:00:00Z",
+			periodStart:               "2026-10-10T12:00:00Z",
+			periodEnd:                 "2026-10-10T13:00:00Z",
+			receivedAt:                "2026-10-11T00:00:00Z",
+			units:                     1_000_000,
+			availableCreditMicrocents: "1000000",
+			wantError:                 false,
+			wantWork:                  true,
+			wantProcessed:             true,
+			wantProcessingError:       "",
+			wantNextWork:              false,
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "processing-boundary-price",
 				UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossTicks: "9223372036854775807000000", AllocatedCreditTicks: "1000000", BookedCents: 9_223_372_036_854_775_807,
-				Ratings: 1, MonthlyRows: 1, MonthlyGrossTicks: "9223372036854775807000000",
-				CreditDebits: 1, CreditDebitTicks: "-1000000", CreditBalanceTicks: "0", StateVersion: 1,
+				GrossMicrocents: "9223372036854775807000000", AllocatedCreditMicrocents: "1000000", BookedCents: 9_223_372_036_854_775_807,
+				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "9223372036854775807000000",
+				CreditDebits: 1, CreditDebitMicrocents: "-1000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
 		},
 		{
-			name:                 "cumulative cent overflow preserves prior accounting and available credit",
-			customerID:           "acme",
-			priceVersionID:       "processing-boundary-price",
-			pricePerMillionCents: 9_223_372_036_854_775_807,
-			priceEffectiveFrom:   "2026-10-02T00:00:00Z",
-			periodStart:          "2026-10-10T12:00:00Z",
-			periodEnd:            "2026-10-10T13:00:00Z",
-			receivedAt:           "2026-10-11T00:00:00Z",
-			priorUnits:           []int64{1_000_000},
-			units:                1,
-			availableCreditTicks: "1000000",
-			wantError:            false,
-			wantWork:             true,
-			wantProcessed:        false,
-			wantProcessingError:  "rounded cents exceed the signed 64-bit range",
-			wantNextWork:         false,
+			name:                      "cumulative cent overflow preserves prior accounting and available credit",
+			customerID:                "acme",
+			priceVersionID:            "processing-boundary-price",
+			pricePerMillionCents:      9_223_372_036_854_775_807,
+			priceEffectiveFrom:        "2026-10-02T00:00:00Z",
+			periodStart:               "2026-10-10T12:00:00Z",
+			periodEnd:                 "2026-10-10T13:00:00Z",
+			receivedAt:                "2026-10-11T00:00:00Z",
+			priorUnits:                []int64{1_000_000},
+			units:                     1,
+			availableCreditMicrocents: "1000000",
+			wantError:                 false,
+			wantWork:                  true,
+			wantProcessed:             false,
+			wantProcessingError:       "rounded cents exceed the signed 64-bit range",
+			wantNextWork:              false,
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "processing-boundary-price",
 				UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossTicks: "9223372036854775807000000", AllocatedCreditTicks: "0", BookedCents: 9_223_372_036_854_775_807,
-				Ratings: 1, MonthlyRows: 1, MonthlyGrossTicks: "9223372036854775807000000",
-				CreditDebits: 0, CreditDebitTicks: "0", CreditBalanceTicks: "1000000", StateVersion: 1,
+				GrossMicrocents: "9223372036854775807000000", AllocatedCreditMicrocents: "0", BookedCents: 9_223_372_036_854_775_807,
+				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "9223372036854775807000000",
+				CreditDebits: 0, CreditDebitMicrocents: "0", CreditBalanceMicrocents: "1000000", StateVersion: 1,
 			},
 		},
 	}
@@ -226,8 +226,8 @@ func testProcessingBounds(t *testing.T) {
 				}
 			}
 
-			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric WHERE customer_id=$1", tc.customerID, tc.availableCreditTicks); err != nil {
-				t.Fatalf("Prepare available credit for customer=%s ticks=%s: %v", tc.customerID, tc.availableCreditTicks, err)
+			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=$2::numeric WHERE customer_id=$1", tc.customerID, tc.availableCreditMicrocents); err != nil {
+				t.Fatalf("Prepare available credit for customer=%s microcents=%s: %v", tc.customerID, tc.availableCreditMicrocents, err)
 			}
 			if tc.closedMonth != "" {
 				if _, err := pool.Exec(ctx, "INSERT INTO closed_billing_months VALUES ($1,$2,$3)", tc.customerID, tc.closedMonth, receivedAt); err != nil {

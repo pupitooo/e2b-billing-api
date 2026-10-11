@@ -63,7 +63,7 @@ func testClosingFirstMonthBoundary(t *testing.T) {
 			var next, version int64
 			var credit string
 			if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM invoices),(SELECT count(*) FROM usage_ratings),
-                (SELECT count(*) FROM usage_inbox WHERE processed_at IS NOT NULL),next_invoice_number,state_version,credit_balance_ticks::text
+                (SELECT count(*) FROM usage_inbox WHERE processed_at IS NOT NULL),next_invoice_number,state_version,credit_balance_microcents::text
                 FROM customer_billing_state WHERE customer_id='acme'`).Scan(&invoices, &ratings, &processed, &next, &version, &credit); err != nil {
 				t.Fatal(err)
 			}

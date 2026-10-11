@@ -36,8 +36,8 @@ func AssembleInvoice(invoice Invoice, month time.Time, charges InvoiceCharges) (
 	}
 
 	invoice.Lines = append(invoice.Lines, usage.Lines...)
-	invoice.GrossUsageTicks = usage.Gross.Ticks().String()
-	invoice.CreditUsedTicks = usage.Credit.Ticks().String()
+	invoice.GrossUsageMicrocents = usage.Gross.Microcents().String()
+	invoice.CreditUsedMicrocents = usage.Credit.Microcents().String()
 	for _, addon := range charges.Addons {
 		invoice.Lines = append(invoice.Lines, InvoiceLine{
 			Kind: "addon", SubscriptionID: addon.SubscriptionID,
@@ -93,7 +93,7 @@ func invoiceUsageLine(month time.Time, group InvoiceUsage) (InvoiceLine, int64, 
 		Kind: "usage", Description: "Usage", AmountCents: display.GrossCents,
 		PriceVersionID: group.PriceVersionID, Metric: group.Metric,
 		UsageMonth: group.UsageMonth.Format("2006-01"), Units: group.Units,
-		GrossTicks: group.Gross.Ticks().String(), CreditTicks: group.Credit.Ticks().String(),
+		GrossMicrocents: group.Gross.Microcents().String(), CreditMicrocents: group.Credit.Microcents().String(),
 	}
 	if group.UsageMonth.Before(month) {
 		line.Description = "Late usage from " + line.UsageMonth

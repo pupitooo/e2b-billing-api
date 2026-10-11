@@ -6,7 +6,7 @@ final class E2BIntegerFormat extends Adminer\Plugin
     // PostgreSQL query results expose the integer-only billing domains as numeric.
     private const EXACT_NUMBER_TYPES = [
         'smallint', 'integer', 'bigint', 'int2', 'int4', 'int8',
-        'numeric', 'decimal', 'billing_ticks', 'billing_signed_ticks',
+        'numeric', 'decimal', 'billing_microcents', 'billing_signed_microcents',
     ];
 
     /** Format result cells while leaving other types to Adminer's default renderer. */

@@ -474,7 +474,7 @@ paths:
                 $ref: '#/components/schemas/CreditSnapshot'
               example:
                 customer_id: acme
-                credit_balance_ticks: '1300000000'
+                credit_balance_microcents: '1300000000'
                 state_version: 3
                 pending_events: 0
                 processing_errors: 0
@@ -793,7 +793,7 @@ paths:
                 customer_id: cyberdyne
                 month: 2026-10
                 limit_cents: 1500
-                gross_charge_ticks: '1817283945'
+                gross_charge_microcents: '1817283945'
                 limit_reached: true
                 state_version: 3
                 pending_events: 0
@@ -871,7 +871,7 @@ paths:
                 customer_id: cyberdyne
                 month: 2026-10
                 limit_cents: 1500
-                gross_charge_ticks: '1817283945'
+                gross_charge_microcents: '1817283945'
                 limit_reached: true
                 state_version: 3
                 pending_events: 0
@@ -963,8 +963,8 @@ paths:
                   metric: cpu_seconds
                   usage_month: 2026-10
                   units: '300000000'
-                  gross_ticks: '1200000000'
-                  credit_ticks: '1200000000'
+                  gross_microcents: '1200000000'
+                  credit_microcents: '1200000000'
                 - kind: addon
                   description: concurrency_pack
                   amount_cents: 2000
@@ -973,8 +973,8 @@ paths:
                   description: Used credit
                   amount_cents: -1200
                 total_cents: 2000
-                gross_usage_ticks: '1200000000'
-                credit_used_ticks: '1200000000'
+                gross_usage_microcents: '1200000000'
+                credit_used_microcents: '1200000000'
                 issued_at: '2026-11-01T00:00:00Z'
         '400':
           description: Invalid or ambiguous JSON.
@@ -1099,8 +1099,8 @@ paths:
                   metric: cpu_seconds
                   usage_month: 2026-10
                   units: '300000000'
-                  gross_ticks: '1200000000'
-                  credit_ticks: '1200000000'
+                  gross_microcents: '1200000000'
+                  credit_microcents: '1200000000'
                 - kind: addon
                   description: concurrency_pack
                   amount_cents: 2000
@@ -1109,8 +1109,8 @@ paths:
                   description: Used credit
                   amount_cents: -1200
                 total_cents: 2000
-                gross_usage_ticks: '1200000000'
-                credit_used_ticks: '1200000000'
+                gross_usage_microcents: '1200000000'
+                credit_used_microcents: '1200000000'
                 issued_at: '2026-11-01T00:00:00Z'
         '404':
           description: Customer or invoice does not exist.
@@ -1428,19 +1428,19 @@ components:
       additionalProperties: false
       required:
       - customer_id
-      - credit_balance_ticks
+      - credit_balance_microcents
       - state_version
       - pending_events
       - processing_errors
       properties:
         customer_id:
           $ref: '#/components/schemas/Identifier'
-        credit_balance_ticks:
+        credit_balance_microcents:
           type: string
           pattern: ^[0-9]+$
           description: |
             Credit remaining after grants and processed usage debits, available only
-            for usage. The _ticks suffix denotes an amount in microcents; one USD
+            for usage. The _microcents suffix denotes an amount in microcents; one USD
             cent is 1_000_000 microcents. The decimal string preserves
             exact integers beyond JSON clients' safe numeric range.
         state_version:
@@ -1555,7 +1555,7 @@ components:
       - customer_id
       - month
       - limit_cents
-      - gross_charge_ticks
+      - gross_charge_microcents
       - limit_reached
       - state_version
       - pending_events
@@ -1573,7 +1573,7 @@ components:
           format: int64
           minimum: 0
           description: Current gross usage threshold in USD cents, including for historical month queries; null means unlimited, and 0 is immediately reached.
-        gross_charge_ticks:
+        gross_charge_microcents:
           type: string
           pattern: ^[0-9]+$
           description: |
@@ -1650,11 +1650,11 @@ components:
           type: string
           pattern: ^[0-9]+$
           description: Total resource units in the usage group, retained even when amount_cents is zero; a decimal string because sums may exceed a single event's integer range. Present only on usage lines.
-        gross_ticks:
+        gross_microcents:
           type: string
           pattern: ^[0-9]+$
           description: Exact group charge before credit and rounding; one USD cent is 1_000_000 microcents. Present only on usage lines, as a string to preserve integer precision.
-        credit_ticks:
+        credit_microcents:
           type: string
           pattern: ^[0-9]+$
           description: Exact credit already allocated to this group before rounding, as a decimal string; one USD cent is 1_000_000 microcents. Present only on usage lines.
@@ -1682,8 +1682,8 @@ components:
       - currency
       - lines
       - total_cents
-      - gross_usage_ticks
-      - credit_used_ticks
+      - gross_usage_microcents
+      - credit_used_microcents
       - issued_at
       properties:
         customer_id:
@@ -1713,11 +1713,11 @@ components:
           format: int64
           minimum: 0
           description: USD cents payable; the sum of every signed line amount_cents, with no further rounding. Zero is valid even with positive usage and no credit; no rounding remainder is charged on a later invoice.
-        gross_usage_ticks:
+        gross_usage_microcents:
           type: string
           pattern: ^[0-9]+$
           description: Exact gross usage summed over the invoice's usage lines before credit, excluding add-ons; one USD cent is 1_000_000 microcents. The string preserves integer precision.
-        credit_used_ticks:
+        credit_used_microcents:
           type: string
           pattern: ^[0-9]+$
           description: Exact usage credit summed over the invoice's usage lines before rounding, as a decimal string; one USD cent is 1_000_000 microcents. Issuance does not debit it again.

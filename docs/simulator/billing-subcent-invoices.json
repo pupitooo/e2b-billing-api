@@ -11,7 +11,7 @@
         "status": 200,
         "body": {
           "customer_id": "acme",
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 0
@@ -55,7 +55,7 @@
       "want": {
         "status": 200,
         "body": {
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 1
@@ -79,8 +79,8 @@
           "month": "2026-10",
           "number": "ACME-0001",
           "total_cents": 0,
-          "gross_usage_ticks": "200000",
-          "credit_used_ticks": "0",
+          "gross_usage_microcents": "200000",
+          "credit_used_microcents": "0",
           "lines": [
             {
               "kind": "usage",
@@ -89,8 +89,8 @@
               "metric": "cpu_seconds",
               "usage_month": "2026-10",
               "units": "50000",
-              "gross_ticks": "200000",
-              "credit_ticks": "0",
+              "gross_microcents": "200000",
+              "credit_microcents": "0",
               "amount_cents": 0
             },
             {
@@ -140,7 +140,7 @@
       "want": {
         "status": 200,
         "body": {
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 3
@@ -164,8 +164,8 @@
           "month": "2026-11",
           "number": "ACME-0002",
           "total_cents": 0,
-          "gross_usage_ticks": "200000",
-          "credit_used_ticks": "0",
+          "gross_usage_microcents": "200000",
+          "credit_used_microcents": "0",
           "lines": [
             {
               "kind": "usage",
@@ -174,8 +174,8 @@
               "metric": "cpu_seconds",
               "usage_month": "2026-11",
               "units": "50000",
-              "gross_ticks": "200000",
-              "credit_ticks": "0",
+              "gross_microcents": "200000",
+              "credit_microcents": "0",
               "amount_cents": 0
             },
             {
@@ -225,7 +225,7 @@
       "want": {
         "status": 200,
         "body": {
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 5
@@ -249,8 +249,8 @@
           "month": "2026-12",
           "number": "ACME-0003",
           "total_cents": 0,
-          "gross_usage_ticks": "200000",
-          "credit_used_ticks": "0",
+          "gross_usage_microcents": "200000",
+          "credit_used_microcents": "0",
           "lines": [
             {
               "kind": "usage",
@@ -259,8 +259,8 @@
               "metric": "cpu_seconds",
               "usage_month": "2026-12",
               "units": "50000",
-              "gross_ticks": "200000",
-              "credit_ticks": "0",
+              "gross_microcents": "200000",
+              "credit_microcents": "0",
               "amount_cents": 0
             },
             {
@@ -329,7 +329,7 @@
       "want": {
         "status": 200,
         "body": {
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 6

@@ -11,7 +11,7 @@
         "status": 200,
         "body": {
           "customer_id": "cyberdyne",
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 0
@@ -111,7 +111,7 @@
         "status": 200,
         "body": {
           "customer_id": "cyberdyne",
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 5
@@ -130,7 +130,7 @@
         "body": {
           "customer_id": "cyberdyne",
           "month": "2026-10",
-          "gross_charge_ticks": "1817283945",
+          "gross_charge_microcents": "1817283945",
           "limit_cents": null,
           "limit_reached": false,
           "pending_events": 0,
@@ -156,8 +156,8 @@
           "month": "2026-10",
           "currency": "USD",
           "total_cents": 3817,
-          "gross_usage_ticks": "1817283945",
-          "credit_used_ticks": "0",
+          "gross_usage_microcents": "1817283945",
+          "credit_used_microcents": "0",
           "lines": [
             {
               "kind": "usage",
@@ -165,8 +165,8 @@
               "usage_month": "2026-10",
               "units": "123456789",
               "amount_cents": 617,
-              "gross_ticks": "617283945",
-              "credit_ticks": "0"
+              "gross_microcents": "617283945",
+              "credit_microcents": "0"
             },
             {
               "kind": "usage",
@@ -174,8 +174,8 @@
               "usage_month": "2026-10",
               "units": "200000000",
               "amount_cents": 1200,
-              "gross_ticks": "1200000000",
-              "credit_ticks": "0"
+              "gross_microcents": "1200000000",
+              "credit_microcents": "0"
             },
             {
               "kind": "addon",
@@ -229,7 +229,7 @@
         "status": 200,
         "body": {
           "customer_id": "cyberdyne",
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 6

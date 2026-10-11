@@ -13,11 +13,11 @@ import (
 )
 
 type commandKeyState struct {
-	creditEntries   int
-	limitOperations int
-	creditTicks     string
-	version         int64
-	limit           *int64
+	creditEntries    int
+	limitOperations  int
+	creditMicrocents string
+	version          int64
+	limit            *int64
 }
 
 type commandKeyEndpoint struct {
@@ -40,20 +40,20 @@ func testCommandBodyKeys(t *testing.T, endpoint commandKeyEndpoint) {
 		wantField  string
 		wantState  commandKeyState
 	}{
-		{name: "missing", wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditTicks: "0"}},
-		{name: "header alone does not supply JSON key", headerKey: "header-only", wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditTicks: "0"}},
-		{name: "null", members: `"idempotency_key":null`, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditTicks: "0"}},
-		{name: "number", members: `"idempotency_key":1`, wantStatus: 400, wantCode: "invalid_json", wantState: commandKeyState{creditTicks: "0"}},
-		{name: "empty", members: `"idempotency_key":""`, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditTicks: "0"}},
-		{name: "space", members: `"idempotency_key":"a b"`, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditTicks: "0"}},
-		{name: "Unicode", members: `"idempotency_key":"ž"`, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditTicks: "0"}},
-		{name: "duplicate fields", members: `"idempotency_key":"one","idempotency_key":"two"`, wantStatus: 400, wantCode: "invalid_json", wantState: commandKeyState{creditTicks: "0"}},
-		{name: "case alias is rejected", members: `"Idempotency_Key":"one"`, wantStatus: 400, wantCode: "invalid_json", wantState: commandKeyState{creditTicks: "0"}},
-		{name: "above maximum", members: `"idempotency_key":"` + strings.Repeat("a", 257) + `"`, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditTicks: "0"}},
+		{name: "missing", wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditMicrocents: "0"}},
+		{name: "header alone does not supply JSON key", headerKey: "header-only", wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditMicrocents: "0"}},
+		{name: "null", members: `"idempotency_key":null`, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditMicrocents: "0"}},
+		{name: "number", members: `"idempotency_key":1`, wantStatus: 400, wantCode: "invalid_json", wantState: commandKeyState{creditMicrocents: "0"}},
+		{name: "empty", members: `"idempotency_key":""`, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditMicrocents: "0"}},
+		{name: "space", members: `"idempotency_key":"a b"`, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditMicrocents: "0"}},
+		{name: "Unicode", members: `"idempotency_key":"ž"`, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditMicrocents: "0"}},
+		{name: "duplicate fields", members: `"idempotency_key":"one","idempotency_key":"two"`, wantStatus: 400, wantCode: "invalid_json", wantState: commandKeyState{creditMicrocents: "0"}},
+		{name: "case alias is rejected", members: `"Idempotency_Key":"one"`, wantStatus: 400, wantCode: "invalid_json", wantState: commandKeyState{creditMicrocents: "0"}},
+		{name: "above maximum", members: `"idempotency_key":"` + strings.Repeat("a", 257) + `"`, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: commandKeyState{creditMicrocents: "0"}},
 		{name: "at maximum", members: `"idempotency_key":"` + strings.Repeat("a", 256) + `"`, wantStatus: 200, wantState: endpoint.wantSuccess},
 		{name: "minimum", members: `"idempotency_key":"!"`, wantStatus: 200, wantState: endpoint.wantSuccess},
 		{name: "body owns the key even when a header is present", members: `"idempotency_key":"body-key"`, headerKey: "different-header-key", wantStatus: 200, wantState: endpoint.wantSuccess},
-		{name: "legacy operation_id is rejected", body: endpoint.legacyBody, wantStatus: 400, wantCode: "invalid_json", wantState: commandKeyState{creditTicks: "0"}},
+		{name: "legacy operation_id is rejected", body: endpoint.legacyBody, wantStatus: 400, wantCode: "invalid_json", wantState: commandKeyState{creditMicrocents: "0"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -93,9 +93,9 @@ func testCommandBodyKeys(t *testing.T, endpoint commandKeyEndpoint) {
 			var state commandKeyState
 			err := pool.QueryRow(context.Background(), `SELECT
                 (SELECT count(*) FROM credit_entries), (SELECT count(*) FROM api_idempotency_operations WHERE operation_scope='spend-limit/acme'),
-                credit_balance_ticks::text,state_version,spend_limit_cents
+                credit_balance_microcents::text,state_version,spend_limit_cents
                 FROM customer_billing_state WHERE customer_id='acme'`).
-				Scan(&state.creditEntries, &state.limitOperations, &state.creditTicks, &state.version, &state.limit)
+				Scan(&state.creditEntries, &state.limitOperations, &state.creditMicrocents, &state.version, &state.limit)
 			if err != nil {
 				t.Fatalf("Read POST %s state: %v", endpoint.path, err)
 			}

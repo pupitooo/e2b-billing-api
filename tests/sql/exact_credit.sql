@@ -5,7 +5,7 @@
     \set test_timezone UTC
 \endif
 
--- Exercise the real cent-to-tick migration on legacy financial records in an
+-- Exercise the real cent-to-microcent migration on legacy financial records in an
 -- isolated transaction. Neither application data nor migration versions change.
 BEGIN;
 SET LOCAL TIME ZONE :'test_timezone';
@@ -17,7 +17,7 @@ SET LOCAL search_path TO e2b_exact_credit_test;
 
 INSERT INTO rated_usage_groups (
     group_id, customer_id, price_version_id, metric, usage_month, billing_month,
-    total_units, exact_charge_ticks, booked_charge_cents, allocated_credit_cents
+    total_units, exact_charge_microcents, booked_charge_cents, allocated_credit_cents
 ) VALUES ('credit-migration-group', 'acme', 'cpu-acme-2026-10-01', 'cpu_seconds',
     '2026-10-01', '2026-10-01', 300000000, 1200000000, 1200, 1200);
 INSERT INTO credit_entries (credit_entry_id, customer_id, group_id, amount_cents, recorded_at)
@@ -70,23 +70,23 @@ $function$;
 SELECT pg_temp.assert_result(
     scenario => 'legacy cent migration preserves exact ledger and account state',
     input_sql => $input$
-        SELECT (SELECT credit_balance_ticks FROM customer_billing_state WHERE customer_id = 'acme') AS balance_ticks,
+        SELECT (SELECT credit_balance_microcents FROM customer_billing_state WHERE customer_id = 'acme') AS balance_microcents,
             (SELECT state_version FROM customer_billing_state WHERE customer_id = 'acme') AS state_version,
-            (SELECT sum(amount_ticks) FROM credit_entries WHERE customer_id = 'acme') AS ledger_ticks,
-            (SELECT allocated_credit_ticks FROM rated_usage_groups WHERE group_id = 'credit-migration-group') AS allocated_ticks,
+            (SELECT sum(amount_microcents) FROM credit_entries WHERE customer_id = 'acme') AS ledger_microcents,
+            (SELECT allocated_credit_microcents FROM rated_usage_groups WHERE group_id = 'credit-migration-group') AS allocated_microcents,
             (SELECT count(*) FROM credit_entries) AS entry_count,
-            (SELECT credit_balance_ticks FROM customer_billing_state WHERE customer_id = 'credit-large-customer') AS large_balance_ticks,
-            (SELECT amount_ticks FROM credit_entries WHERE credit_entry_id = 'credit-large-grant') AS large_grant_ticks
+            (SELECT credit_balance_microcents FROM customer_billing_state WHERE customer_id = 'credit-large-customer') AS large_balance_microcents,
+            (SELECT amount_microcents FROM credit_entries WHERE credit_entry_id = 'credit-large-grant') AS large_grant_microcents
     $input$,
     want_result => $want$
     {
-        "balance_ticks": 1300000000,
+        "balance_microcents": 1300000000,
         "state_version": 2,
-        "ledger_ticks": 1300000000,
-        "allocated_ticks": 1200000000,
+        "ledger_microcents": 1300000000,
+        "allocated_microcents": 1200000000,
         "entry_count": 3,
-        "large_balance_ticks": 9223372036854775807000000,
-        "large_grant_ticks": 9223372036854775807000000
+        "large_balance_microcents": 9223372036854775807000000,
+        "large_grant_microcents": 9223372036854775807000000
     }
     $want$::jsonb
 );
@@ -94,7 +94,7 @@ SELECT pg_temp.assert_result(
 SELECT pg_temp.assert_result(
     scenario => 'legacy debit retains identity, sign, timestamp, and amount',
     input_sql => $input$
-        SELECT credit_entry_id, group_id, amount_ticks,
+        SELECT credit_entry_id, group_id, amount_microcents,
             to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS recorded_at
         FROM credit_entries WHERE credit_entry_id = 'credit-migration-debit'
     $input$,
@@ -102,7 +102,7 @@ SELECT pg_temp.assert_result(
     {
         "credit_entry_id": "credit-migration-debit",
         "group_id": "credit-migration-group",
-        "amount_ticks": -1200000000,
+        "amount_microcents": -1200000000,
         "recorded_at": "2026-10-10T12:00:00Z"
     }
     $want$::jsonb
@@ -116,18 +116,18 @@ INSERT INTO rated_usage_groups VALUES (
 INSERT INTO credit_entries VALUES
     ('credit-small-grant', 'cyberdyne', NULL, 1000000, '2026-10-01T00:00:00Z'),
     ('credit-small-debit', 'cyberdyne', 'credit-small-group', -5000, '2026-10-10T12:00:00Z');
-UPDATE customer_billing_state SET credit_balance_ticks = 995000 WHERE customer_id = 'cyberdyne';
+UPDATE customer_billing_state SET credit_balance_microcents = 995000 WHERE customer_id = 'cyberdyne';
 
 SELECT pg_temp.assert_result(
     scenario => 'fractional-cent debit retains exact remaining balance',
     input_sql => $input$
-        SELECT (SELECT credit_balance_ticks FROM customer_billing_state WHERE customer_id = 'cyberdyne') AS balance_ticks,
-            (SELECT sum(amount_ticks) FROM credit_entries WHERE customer_id = 'cyberdyne') AS ledger_ticks
+        SELECT (SELECT credit_balance_microcents FROM customer_billing_state WHERE customer_id = 'cyberdyne') AS balance_microcents,
+            (SELECT sum(amount_microcents) FROM credit_entries WHERE customer_id = 'cyberdyne') AS ledger_microcents
     $input$,
     want_result => $want$
     {
-        "balance_ticks": 995000,
-        "ledger_ticks": 995000
+        "balance_microcents": 995000,
+        "ledger_microcents": 995000
     }
     $want$::jsonb
 );
@@ -139,24 +139,24 @@ DECLARE
 BEGIN
     FOREACH invalid_number IN ARRAY ARRAY['-1', '0.5', 'NaN', 'Infinity', '-Infinity'] LOOP
         PERFORM pg_temp.assert_rejection(
-            scenario => 'Invalid balance ticks: ' || invalid_number,
-            input_sql => format('UPDATE customer_billing_state SET credit_balance_ticks = %L::numeric WHERE customer_id = %L', invalid_number, 'cyberdyne'),
+            scenario => 'Invalid balance microcents: ' || invalid_number,
+            input_sql => format('UPDATE customer_billing_state SET credit_balance_microcents = %L::numeric WHERE customer_id = %L', invalid_number, 'cyberdyne'),
             want_sqlstate => '23514');
         PERFORM pg_temp.assert_rejection(
-            scenario => 'Invalid allocated ticks: ' || invalid_number,
-            input_sql => format('UPDATE rated_usage_groups SET allocated_credit_ticks = %L::numeric WHERE group_id = %L', invalid_number, 'credit-small-group'),
+            scenario => 'Invalid allocated microcents: ' || invalid_number,
+            input_sql => format('UPDATE rated_usage_groups SET allocated_credit_microcents = %L::numeric WHERE group_id = %L', invalid_number, 'credit-small-group'),
             want_sqlstate => '23514');
     END LOOP;
     FOREACH invalid_number IN ARRAY ARRAY['0', '-1', '0.5', 'NaN', 'Infinity', '-Infinity'] LOOP
         PERFORM pg_temp.assert_rejection(
-            scenario => 'Invalid grant ticks: ' || invalid_number,
+            scenario => 'Invalid grant microcents: ' || invalid_number,
             input_sql => format('INSERT INTO credit_entries VALUES (%L, %L, NULL, %L::numeric, %L)',
                 'invalid-credit', 'cyberdyne', invalid_number, '2026-10-01T00:00:00Z'),
             want_sqlstate => '23514');
     END LOOP;
     PERFORM pg_temp.assert_rejection(
             scenario => 'Allocation exceeds exact charge',
-            input_sql => $$UPDATE rated_usage_groups SET allocated_credit_ticks = 5001 WHERE group_id = 'credit-small-group'$$,
+            input_sql => $$UPDATE rated_usage_groups SET allocated_credit_microcents = 5001 WHERE group_id = 'credit-small-group'$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Debit has a positive amount',
@@ -164,7 +164,7 @@ BEGIN
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Credit history update',
-            input_sql => $$UPDATE credit_entries SET amount_ticks = 1 WHERE credit_entry_id = 'credit-small-grant'$$,
+            input_sql => $$UPDATE credit_entries SET amount_microcents = 1 WHERE credit_entry_id = 'credit-small-grant'$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Credit history deletion',

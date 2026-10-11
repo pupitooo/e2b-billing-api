@@ -35,7 +35,7 @@ This diagram shows all 16 tables and their SQL columns, primary keys, foreign ke
 
 [Open full-size PNG](../diagrams/implemented-data-model/implemented-data-model.png) · [Editable Mermaid source](../diagrams/implemented-data-model/implemented-data-model.mmd).
 
-All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns belonging to primary and foreign keys, including composite keys. Solid relationships include the referenced identity in the child's primary key; dashed relationships are other declared foreign keys. The Mermaid source records the composite unique constraints. `billing_ticks` is an exact `numeric` domain for non-negative finite integer amounts in microcents; one cent is 1_000_000 microcents. Columns ending in `_ticks` contain microcents; the signed ledger uses `billing_signed_ticks`.
+All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns belonging to primary and foreign keys, including composite keys. Solid relationships include the referenced identity in the child's primary key; dashed relationships are other declared foreign keys. The Mermaid source records the composite unique constraints. `billing_microcents` is an exact `numeric` domain for non-negative finite integer amounts in microcents; one cent is 1_000_000 microcents. Columns ending in `_microcents` contain microcents; the signed ledger uses `billing_signed_microcents`.
 
 `usage_inbox` has no customer or metric foreign keys. Its optional one-to-one relationship with `usage_ratings` records whether an event has been assigned to a group; each rating references one `rated_usage_groups` row. The diagram shows database cardinalities, so a customer may have zero or one account-state row even though the seed creates one for each initial customer. Receipt matching and price ownership checks are enforced by triggers, as described below.
 
@@ -83,7 +83,7 @@ Migration `002_billing_model.sql` creates the model. Migration `003_assignment_s
 
 Both accounts start with zero credit, no spend limit, and state version zero. The example's USD 25 grant, purchase, USD 15 limit, metering events, and invoices are business actions performed by public APIs and the billing simulator, rather than initial catalog data. No financial history or usage is seeded.
 
-Migration `004_exact_credit.sql` converts existing cent credit values to microcents without rewriting migration 002 or its seed. It adds the finite signed-integer domain `billing_signed_ticks` for ledger amounts. See the [conversion and legacy-allocation limitation](../guides/migrations.md#migration-and-verification).
+Migration `004_exact_credit.sql` converts existing cent credit values to microcents without rewriting migration 002 or its seed. It adds the finite signed-integer domain `billing_signed_microcents` for ledger amounts. See the [conversion and legacy-allocation limitation](../guides/migrations.md#migration-and-verification).
 
 The migration runner applies schema, seed, and version records in one transaction under the existing advisory lock. On an existing volume it applies only pending versions. Repeated runs skip the seed, preserving changed account state and customer details. A seed error rolls back the model migration and its version record too.
 

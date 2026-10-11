@@ -69,7 +69,7 @@ parameters are escaped for their output contexts. Displayed money uses exact
 integer arithmetic; the GUI preserves int64 JSON tokens without converting them
 to imprecise JavaScript numbers. The remaining credit and gross usage cards show
 rounded USD totals with the exact eight-decimal USD amounts underneath. The API
-inspector exposes microcent amounts in the API fields named `*_ticks`
+inspector exposes microcent amounts in the API fields named `*_microcents`
 (1 cent = 1_000_000 microcents). Invoice lines use
 the server's stored cent presentation rather than calculating another invoice.
 

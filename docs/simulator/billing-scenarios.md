@@ -144,7 +144,7 @@ Each numbered row corresponds to exactly one JSON step. The tables are the
 human-readable scenario descriptions; the linked JSON supplies the complete
 request and response assertions. All measurements use `cpu_seconds`, schema
 version 1, and UTC intervals. Amounts are USD unless labeled as cents or microcents;
-1 USD is 100_000_000 microcents. JSON fields ending in `_ticks` contain microcents. Fresh-account reads require zero credit, pending events,
+1 USD is 100_000_000 microcents. JSON fields ending in `_microcents` contain microcents. Fresh-account reads require zero credit, pending events,
 processing errors, and state version. Completed accounting reads require zero
 pending events and errors unless the row explicitly expects quarantine.
 HTTP `202` means durable receipt; financial processing is checked by later reads.

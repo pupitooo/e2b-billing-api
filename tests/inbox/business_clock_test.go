@@ -26,7 +26,7 @@ func testSharedBusinessClock(t *testing.T) {
 		wantErrorField, wantErrorCode, wantInvoiceTime, wantNumber         string
 		wantTotalCents                                                     int64
 		wantInvoices, wantRatings, wantLedgerEntries                       int
-		wantCreditTicks                                                    string
+		wantCreditMicrocents                                               string
 		wantStateVersion                                                   int64
 	}{
 		{
@@ -37,7 +37,7 @@ func testSharedBusinessClock(t *testing.T) {
 			usageJSON:       `{"events":[{"source":"clock-scenario","event_id":"one","schema_version":1,"customer_id":"acme","sandbox_id":"sandbox-a","metric":"cpu_seconds","period_start":"2026-10-10T12:00:00Z","period_end":"2026-10-10T13:00:00Z","units":100000000}]}`,
 			invoiceJSON:     `{"month":"2026-10"}`,
 			wantGrantStatus: 200, wantAddonStatus: 200, wantUsageStatus: 202, wantCloseStatus: 422,
-			wantErrorField: "month", wantErrorCode: "invalid_command", wantInvoices: 0, wantRatings: 1, wantLedgerEntries: 2, wantCreditTicks: "0", wantStateVersion: 3,
+			wantErrorField: "month", wantErrorCode: "invalid_command", wantInvoices: 0, wantRatings: 1, wantLedgerEntries: 2, wantCreditMicrocents: "0", wantStateVersion: 3,
 		},
 		{
 			name:        "exact UTC boundary publishes the same invoice on retry",
@@ -47,7 +47,7 @@ func testSharedBusinessClock(t *testing.T) {
 			usageJSON:       `{"events":[{"source":"clock-scenario","event_id":"one","schema_version":1,"customer_id":"acme","sandbox_id":"sandbox-a","metric":"cpu_seconds","period_start":"2026-10-10T12:00:00Z","period_end":"2026-10-10T13:00:00Z","units":100000000}]}`,
 			invoiceJSON:     `{"month":"2026-10"}`,
 			wantGrantStatus: 200, wantAddonStatus: 200, wantUsageStatus: 202, wantCloseStatus: 200,
-			wantInvoiceTime: "2026-11-01T00:00:00Z", wantNumber: "ACME-0001", wantTotalCents: 2300, wantInvoices: 1, wantRatings: 1, wantLedgerEntries: 2, wantCreditTicks: "0", wantStateVersion: 4,
+			wantInvoiceTime: "2026-11-01T00:00:00Z", wantNumber: "ACME-0001", wantTotalCents: 2300, wantInvoices: 1, wantRatings: 1, wantLedgerEntries: 2, wantCreditMicrocents: "0", wantStateVersion: 4,
 		},
 	}
 	for _, tc := range cases {
@@ -122,8 +122,8 @@ func testSharedBusinessClock(t *testing.T) {
 
 			var receivedAt, processedAt, grantAt, debitAt time.Time
 			err = pool.QueryRow(ctx, `SELECT received_at,processed_at,
-                (SELECT recorded_at FROM credit_entries WHERE amount_ticks>0),
-                (SELECT recorded_at FROM credit_entries WHERE amount_ticks<0) FROM usage_inbox`).Scan(&receivedAt, &processedAt, &grantAt, &debitAt)
+                (SELECT recorded_at FROM credit_entries WHERE amount_microcents>0),
+                (SELECT recorded_at FROM credit_entries WHERE amount_microcents<0) FROM usage_inbox`).Scan(&receivedAt, &processedAt, &grantAt, &debitAt)
 			if err != nil {
 				t.Fatalf("Read clock audit state: %v", err)
 			}
@@ -135,12 +135,12 @@ func testSharedBusinessClock(t *testing.T) {
 			var credit string
 			var version int64
 			err = pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM invoices),(SELECT count(*) FROM usage_ratings),
-                (SELECT count(*) FROM credit_entries),credit_balance_ticks::text,state_version FROM customer_billing_state WHERE customer_id='acme'`).Scan(&invoices, &ratings, &ledgerEntries, &credit, &version)
+                (SELECT count(*) FROM credit_entries),credit_balance_microcents::text,state_version FROM customer_billing_state WHERE customer_id='acme'`).Scan(&invoices, &ratings, &ledgerEntries, &credit, &version)
 			if err != nil {
 				t.Fatalf("Read financial state after clock scenario: %v", err)
 			}
-			if invoices != tc.wantInvoices || ratings != tc.wantRatings || ledgerEntries != tc.wantLedgerEntries || credit != tc.wantCreditTicks || version != tc.wantStateVersion {
-				t.Errorf("Clock scenario invoices=%d ratings=%d ledger=%d credit=%s version=%d; want %d %d %d %s %d", invoices, ratings, ledgerEntries, credit, version, tc.wantInvoices, tc.wantRatings, tc.wantLedgerEntries, tc.wantCreditTicks, tc.wantStateVersion)
+			if invoices != tc.wantInvoices || ratings != tc.wantRatings || ledgerEntries != tc.wantLedgerEntries || credit != tc.wantCreditMicrocents || version != tc.wantStateVersion {
+				t.Errorf("Clock scenario invoices=%d ratings=%d ledger=%d credit=%s version=%d; want %d %d %d %s %d", invoices, ratings, ledgerEntries, credit, version, tc.wantInvoices, tc.wantRatings, tc.wantLedgerEntries, tc.wantCreditMicrocents, tc.wantStateVersion)
 			}
 		})
 	}

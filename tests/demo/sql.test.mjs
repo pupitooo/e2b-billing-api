@@ -88,7 +88,7 @@ test("inspectionSQL", async (t) => {
     {
       scenario: "credit inspection uses internal ledger IDs",
       inputView: "credit", inputCustomer: "acme", inputMonth: "2026-10",
-      wantFragments: ["SELECT credit_entry_id, group_id, amount_ticks", "FROM credit_entries"],
+      wantFragments: ["SELECT credit_entry_id, group_id, amount_microcents", "FROM credit_entries"],
       wantAbsentFragments: ["operation_id", "idempotency_key"], wantError: false,
     },
     {
