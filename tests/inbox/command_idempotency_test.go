@@ -49,8 +49,8 @@ func TestAPICommandIdempotency(t *testing.T) {
 			name: "credit",
 			financialCommandEndpoint: financialCommandEndpoint{
 				path: "/customers/acme/credits", scope: "credits/acme", key: "ui-credit-request",
-				body:               `{"amount_cents":1,"recorded_at":"2026-10-01T00:00:00Z"}`,
-				changedBody:        `{"amount_cents":2,"recorded_at":"2026-10-01T00:00:00Z"}`,
+				body:               `{"amount_cents":1}`,
+				changedBody:        `{"amount_cents":2}`,
 				wantState:          commandHistoryState{creditIDs: "crd_1", balance: "1000000", version: 1, commands: 1},
 				wantRecoveredState: commandHistoryState{creditIDs: "crd_2", balance: "1000000", version: 1, commands: 1},
 				wantChangedState:   commandHistoryState{creditIDs: "crd_1", balance: "2000000", version: 1, commands: 1},
@@ -318,11 +318,11 @@ func testCommandHistoryScopes(t *testing.T) {
 		body       string
 		wantStatus int
 	}{
-		{name: "first customer grant", path: "/customers/acme/credits", body: `{"amount_cents":1,"recorded_at":"2026-10-01T00:00:00Z"}`, wantStatus: 200},
-		{name: "second customer grant", path: "/customers/cyberdyne/credits", body: `{"amount_cents":1,"recorded_at":"2026-10-01T00:00:00Z"}`, wantStatus: 200},
+		{name: "first customer grant", path: "/customers/acme/credits", body: `{"amount_cents":1}`, wantStatus: 200},
+		{name: "second customer grant", path: "/customers/cyberdyne/credits", body: `{"amount_cents":1}`, wantStatus: 200},
 		{name: "limit shares the UI key", path: "/customers/acme/spend-limit", body: `{"limit_cents":1500}`, wantStatus: 200},
-		{name: "add-on shares the UI key", path: "/customers/acme/addons", body: `{"addon_name":"concurrency_pack","purchased_at":"2026-10-01T00:00:00Z"}`, wantStatus: 200},
-		{name: "price shares the UI key", path: "/prices", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 200},
+		{name: "add-on shares the UI key", path: "/customers/acme/addons", body: `{"addon_name":"concurrency_pack","purchased_at":"2026-10-01"}`, wantStatus: 200},
+		{name: "price shares the UI key", path: "/prices", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01"}`, wantStatus: 200},
 	}
 	scenario := struct {
 		key         string
@@ -380,46 +380,52 @@ func assertCommandHistoryState(t *testing.T, pool *pgxpool.Pool, want commandHis
 	}
 }
 
-// testCreditGrantTimestampIdentity compares normalized grant timestamps after
-// the result is persisted: an equivalent UTC instant replays, a different instant
-// conflicts, and neither attempt changes the original ledger or account state.
+// testCreditGrantTimestampIdentity records the server clock once, then proves that
+// retries with a later clock retain the original ledger and command audit times.
 func testCreditGrantTimestampIdentity(t *testing.T) {
 	steps := []struct {
-		name       string
-		recordedAt string
-		wantError  error
+		name        string
+		serverTime  string
+		amountCents int64
+		wantError   error
 	}{
-		{name: "original grant", recordedAt: "2026-10-01T00:00:00Z"},
-		{name: "same instant with another offset", recordedAt: "2026-10-01T08:00:00+08:00"},
-		{name: "different instant conflicts", recordedAt: "2026-10-01T00:00:01Z", wantError: billing.ErrConflict},
+		{name: "original grant normalizes UTC and truncates nanoseconds", serverTime: "2026-10-01T08:00:00.123456789+08:00", amountCents: 1},
+		{name: "later retry retains the original server timestamp", serverTime: "2026-11-01T00:00:00Z", amountCents: 1},
+		{name: "changed amount conflicts without a financial effect", serverTime: "2026-12-01T00:00:00Z", amountCents: 2, wantError: billing.ErrConflict},
 	}
 	scenario := struct {
 		customer       string
 		key            string
-		amountCents    int64
 		wantRecordedAt string
 		wantState      commandHistoryState
-	}{customer: "acme", key: "timestamp-grant", amountCents: 1, wantRecordedAt: "2026-10-01T00:00:00Z",
+	}{customer: "acme", key: "timestamp-grant", wantRecordedAt: "2026-10-01T00:00:00.123456Z",
 		wantState: commandHistoryState{creditIDs: "crd_1", balance: "1000000", version: 1, commands: 1}}
 	pool := billingDatabase(t)
-	store := newPostgresStore(t, pool, postgres.Config{})
+	var serverTime time.Time
+	store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }})
 	for _, step := range steps {
 		t.Run(step.name, func(t *testing.T) {
-			grant := billing.CreditGrant{IdempotencyKey: scenario.key, AmountCents: scenario.amountCents, RecordedAt: parseBillingTime(t, step.recordedAt)}
+			serverTime = parseBillingTime(t, step.serverTime)
+			grant := billing.CreditGrant{IdempotencyKey: scenario.key, AmountCents: step.amountCents}
 
 			err := store.GrantCredit(context.Background(), scenario.customer, grant)
 
 			if !errors.Is(err, step.wantError) {
-				t.Fatalf("GrantCredit(customer=%s, grant=%+v): error=%v; want %v", scenario.customer, grant, err, step.wantError)
+				t.Fatalf("GrantCredit(customer=%s grant=%+v clock=%s): error=%v; want %v", scenario.customer, grant, step.serverTime, err, step.wantError)
 			}
-			var recordedAt time.Time
-			if err := pool.QueryRow(context.Background(), "SELECT recorded_at FROM credit_entries WHERE credit_entry_id=$1", scenario.wantState.creditIDs).Scan(&recordedAt); err != nil {
+
+			var recordedAt, operationAt time.Time
+			if err := pool.QueryRow(context.Background(), `SELECT recorded_at,
+                (SELECT created_at FROM api_idempotency_operations WHERE operation_scope='credits/acme' AND idempotency_key=$2)
+                FROM credit_entries WHERE credit_entry_id=$1`, scenario.wantState.creditIDs, scenario.key).Scan(&recordedAt, &operationAt); err != nil {
 				t.Fatal(err)
 			}
 
-			if !recordedAt.Equal(parseBillingTime(t, scenario.wantRecordedAt)) {
-				t.Errorf("GrantCredit(recorded_at=%s): ledger time=%s; want %s", step.recordedAt, recordedAt, scenario.wantRecordedAt)
+			wantTime := parseBillingTime(t, scenario.wantRecordedAt)
+			if !recordedAt.Equal(wantTime) || !operationAt.Equal(wantTime) {
+				t.Errorf("GrantCredit(clock=%s): ledger time=%s command time=%s; want both %s", step.serverTime, recordedAt, operationAt, scenario.wantRecordedAt)
 			}
+
 			assertCommandHistoryState(t, pool, scenario.wantState)
 		})
 	}

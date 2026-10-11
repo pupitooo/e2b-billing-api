@@ -185,7 +185,8 @@ The tick column uses the `billing_ticks` domain over exact PostgreSQL `numeric`.
 
 Both default and customer-specific rates support only whole cents **per million units** in this model. This still allows individual measurements to cost far less than a cent. [Issue #29](https://github.com/pupitooo/e2b-billing-api/issues/29) proposes a per-version `price_unit_count` with 1_000_000 for all existing prices. A variable denominator would still require exact whole-tick charges: merely requiring a multiple of a million is insufficient, since 5 cents per 2_000_000 units gives 2.5 ticks for one unit. The proposal preserves the current money resolution; prices requiring fractional ticks would need a separate precision change.
 
-New ordinary prices cannot have backdated validity. See the [price insertion contract](accounting-rules.md#price-insertion-contract) and its [activation and delayed-delivery diagram](../diagrams/price-version-activation/price-version-activation.png).
+New ordinary prices take effect at midnight UTC on a supplied calendar date,
+which must be today or later; already rated history is preserved. See the [price insertion contract](accounting-rules.md#price-insertion-contract) and its [activation and delayed-delivery diagram](../diagrams/price-version-activation/price-version-activation.png).
 
 ### Example: why summing all units and using the current price fails
 
@@ -202,7 +203,7 @@ Pricing both million units at the later 6-cent rate would produce 12 cents. Usin
 Acme has its own 4-cent price throughout the example period. The default change to 6 cents does not replace that eligible customer price. A late October event also uses its historical consumption price, even if it is received in November.
 
 All versions require a finite, non-null `effective_from`. The seed supplies the
-assignment's dated prices; ordinary new versions cannot start before insertion; an additional metric must have its applicable price
+assignment's dated prices; ordinary new versions cannot start before the insertion UTC date; an additional metric must have its applicable price
 configured before its first measurement. There is no undated baseline. If no
 price covers the original consumption time, the receipt retains
 `P0 missing_valid_price: ...` and has no financial effect. Accounting reports the
@@ -285,7 +286,9 @@ Existing group and ledger IDs remain unchanged. Sequence gaps after rollback are
 normal; retry identity is determined by business keys. See the
 [accounting identity rules](accounting-rules.md#accounting-resource-identities).
 
-The ledger contains a server-generated `credit_entry_id`, `customer_id`, optional `group_id`, a signed `amount_ticks`, and `recorded_at`. A grant is positive and has no group; a debit is negative and links to a group owned by the same customer. Zero debits are omitted. Records are append-only. Grant retries are protected by `(operation_scope, idempotency_key)` in the shared API command history. Usage debits commit with the unique event rating and locked receipt checkpoint, so retries cannot consume credit twice. Caller keys never become ledger IDs.
+The ledger contains a server-generated `credit_entry_id`, `customer_id`, optional `group_id`, a signed `amount_ticks`, and a server-owned `recorded_at` audit instant. Credit API requests and responses
+contain only `idempotency_key` and `amount_cents`; callers cannot supply the audit time.
+A grant is positive and has no group; a debit is negative and links to a group owned by the same customer. Zero debits are omitted. Records are append-only. Grant retries are protected by `(operation_scope, idempotency_key)` in the shared API command history. Usage debits commit with the unique event rating and locked receipt checkpoint, so retries cannot consume credit twice. Caller keys never become ledger IDs.
 
 The balance is a fast ledger projection. Before allocating credit, the worker locks the `customer_billing_state` row and changes the balance, ledger, group allocation, and `state_version` together. The database does not calculate the ledger sum or verify agreement between these projections automatically.
 

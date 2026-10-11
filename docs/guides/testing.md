@@ -61,3 +61,18 @@ go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
 [CI](../../.github/workflows/ci.yml) runs `make check` before `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check includes Go formatting and static analysis, SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
 
 Read the [test-quality and mutation audit](test-mutation-audit.md) for the 10 October 2026 findings, regression scenarios, exact mutation evidence and a practical workflow for reviewing AI-generated tests.
+
+## Calendar commands and credit audit time
+
+`TestCommandDate` and `TestValidateDate` cover supported years, leap days,
+strict date-only input, and UTC midnight. `TestUTCDay` covers offset conversion.
+`TestCreatePrice` checks today at noon, past-date rejection, rated-history
+protection, stable retries, and catalog waiting within a day or across midnight.
+`TestPriceAPI` checks request and response dates and midnight persistence.
+`TestPurchaseAddon` covers past open, today, future, and closed-month boundaries;
+`TestAddonAPI` rejects timestamps and invalid dates. `TestGrantCredit` checks
+server-owned audit time, UTC/microsecond precision, supported clock boundaries,
+and replay without ledger, balance, version, or command-history changes.
+The GUI's `calendarDate` and `buildCommand` tests verify the same wire format;
+credit commands contain no timestamp. The executable billing simulator checks
+unchanged literal assignment totals using the updated public commands.

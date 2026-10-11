@@ -81,6 +81,14 @@ there is no public clock override. Identical price retries remain valid after
 activation. Investigated missing historical prices use [controlled operator SQL](../guides/accounting-recovery.md#controlled-historical-price-repair)
 and explicit receipt release, independently of invoice publication.
 
+Financial command fixtures use the public calendar-date contract:
+`effective_from` and `purchased_at` contain `YYYY-MM-DD`, resolved by the backend
+to midnight UTC. A new price date must be today or later after catalog locking;
+today remains subject to rated-history protection. Add-on purchases can use open
+historical months or future dates, while closing and closed months conflict.
+Credit grants supply an amount and operation key; the backend determines their
+ledger audit time. Requests and responses contain no `recorded_at`.
+
 ## Durable retries, outages, and restart
 
 `fault.lose_response: true` discards one successful response **after the real API has

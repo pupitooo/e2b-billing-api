@@ -4,7 +4,7 @@ package billing
 import "time"
 
 // PriceInput contains caller-owned price values; resource identities belong to billing.
-// An empty customer denotes the default price. CreatePriceNow resolves the timestamp.
+// An empty customer denotes the default price. EffectiveFrom is midnight UTC.
 type PriceInput struct {
 	CustomerID           string    `json:"customer_id"`
 	Metric               string    `json:"metric"`
@@ -12,10 +12,10 @@ type PriceInput struct {
 	EffectiveFrom        time.Time `json:"effective_from"`
 }
 
+// CreditGrant contains caller values; the ledger audit time belongs to storage.
 type CreditGrant struct {
-	IdempotencyKey string    `json:"idempotency_key"`
-	AmountCents    int64     `json:"amount_cents"`
-	RecordedAt     time.Time `json:"recorded_at"`
+	IdempotencyKey string `json:"idempotency_key"`
+	AmountCents    int64  `json:"amount_cents"`
 }
 
 // CreditSnapshot reports exact balance and asynchronous accounting visibility.
@@ -28,6 +28,7 @@ type CreditSnapshot struct {
 	ProcessingErrors int64  `json:"processing_errors"`
 }
 
+// AddonPurchase starts at midnight UTC on the caller-supplied calendar date.
 type AddonPurchase struct {
 	AddonName   string    `json:"addon_name"`
 	PurchasedAt time.Time `json:"purchased_at"`

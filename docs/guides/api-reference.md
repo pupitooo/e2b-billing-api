@@ -51,27 +51,27 @@ See the [event contract](../architecture/usage-to-invoice.md#3-usage-events-what
 
 ## Price activation
 
-`POST /prices` requires `idempotency_key` in the JSON body and `effective_from`, either a timestamp or explicit `null`.
-Null activates the price at the server's current UTC time after the catalog lock
-is acquired, with microsecond precision. The row is committed before the `200`
-response, which contains the concrete stored timestamp. For example:
+`POST /prices` requires `idempotency_key` and `effective_from` as a calendar date
+in `YYYY-MM-DD` format, years 1000 through 9999. The backend stores midnight UTC
+and returns the date. Timestamps, null, missing dates, and invalid calendar days
+return `422`; wrong JSON types return `400`. For example:
 
 ```json
 {
-  "idempotency_key": "manual-cpu-immediate",
+  "idempotency_key": "manual-cpu-date",
   "customer_id": "cyberdyne",
   "metric": "cpu_seconds",
   "price_per_million_cents": 7,
-  "effective_from": null
+  "effective_from": "2026-11-01"
 }
 ```
 
-Retry with the same request key and `null` to retain the original activation time.
-Null also reuses an existing explicitly scheduled version's time when the other
-fields match. An explicit timestamp must match that stored instant on retries.
-Missing timestamps and backdated new explicit timestamps return `422`.
-Changed customer, metric, amount, or explicit timestamp under an existing request key
-returns `409`. See the [price insertion contract](../architecture/accounting-rules.md#price-insertion-contract).
+Use today or a future UTC date; the server checks the current date after acquiring
+the catalog lock. Today's date remains valid later in the same day, but a new
+version must preserve already rated usage or return `409`. Previous days return
+`422`. Retain the original date on retries: identical commands return their original
+price after activation; changed customer, metric, amount, or date returns `409`.
+See the [price insertion contract](../architecture/accounting-rules.md#price-insertion-contract).
 
 ## Command retries
 
@@ -118,10 +118,17 @@ The revised migration foundation requires a clean database schema; it does not
 upgrade the previous split key storage or infer keys for earlier resource commands.
 Use updated scenario files and a new simulator state file when switching from a
 checkpoint containing the former request format.
+For any command with an unknown commit outcome, retain its original idempotency
+key. A credit retry removes the obsolete audit field but keeps the same amount
+and key. Date-command retries must match the stored UTC date; historical intraday
+operations require investigation rather than a new key to bypass a conflict.
 
-Credit grants apply immediately; `recorded_at` is audit metadata. Each customer
+Credit grants apply immediately. The backend owns the audit timestamp; grant
+requests and responses contain only `idempotency_key` and `amount_cents`. Each customer
 can hold one subscription per add-on. A purchase with a different key for the same customer/add-on conflicts,
 and a new purchase cannot start in or before an already closing or closed month.
+Supply `purchased_at` as `YYYY-MM-DD`; the backend stores midnight UTC and returns
+the date. Historical open months and future dates are supported.
 
 ## Browser requests and service routing
 

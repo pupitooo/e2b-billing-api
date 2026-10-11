@@ -15,22 +15,21 @@ import (
 )
 
 // testPriceLockWait observes PostgreSQL contention before advancing the server
-// clock. Validation uses the instant after locking, with no writes on rejection.
+// clock. Validation uses the UTC date after locking, with no writes on rejection.
 func testPriceLockWait(t *testing.T) {
 	cases := []struct {
 		name              string
 		arrivalTime       string
 		insertionTime     string
 		effectiveFrom     string
-		useCurrentTime    bool
 		wantEffectiveFrom string
 		wantError         bool
 		wantField         string
 		wantVersions      int
 	}{
-		{name: "activation becomes past while waiting", arrivalTime: "2026-11-01T00:00:00Z", insertionTime: "2026-11-01T00:00:02Z", effectiveFrom: "2026-11-01T00:00:01Z", wantError: true, wantField: "effective_from", wantVersions: 3},
-		{name: "exact instant after waiting remains valid", arrivalTime: "2026-11-01T00:00:00Z", insertionTime: "2026-11-01T00:00:02Z", effectiveFrom: "2026-11-01T00:00:02Z", wantVersions: 4},
-		{name: "automatic activation uses the clock after waiting", arrivalTime: "2026-11-01T00:00:00Z", insertionTime: "2026-11-01T00:00:02.123456789Z", useCurrentTime: true, wantEffectiveFrom: "2026-11-01T00:00:02.123456Z", wantVersions: 4},
+		{name: "today becomes past across UTC midnight while waiting", arrivalTime: "2026-11-01T23:59:59Z", insertionTime: "2026-11-02T00:00:00Z", effectiveFrom: "2026-11-01T00:00:00Z", wantError: true, wantField: "effective_from", wantVersions: 3},
+		{name: "today remains valid after a minute waiting", arrivalTime: "2026-11-01T12:00:00Z", insertionTime: "2026-11-01T12:01:00Z", effectiveFrom: "2026-11-01T00:00:00Z", wantEffectiveFrom: "2026-11-01T00:00:00Z", wantVersions: 4},
+		{name: "next day stays valid at midnight after waiting", arrivalTime: "2026-11-01T23:59:59Z", insertionTime: "2026-11-02T00:00:00Z", effectiveFrom: "2026-11-02T00:00:00Z", wantEffectiveFrom: "2026-11-02T00:00:00Z", wantVersions: 4},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -56,17 +55,11 @@ func testPriceLockWait(t *testing.T) {
 			clock.Store(parseBillingTime(t, tc.arrivalTime))
 			store := newPostgresStore(t, writer, postgres.Config{Now: func() time.Time { return clock.Load().(time.Time) }})
 			price := billing.PriceInput{Metric: "cpu_seconds", PricePerMillionCents: 7}
-			if !tc.useCurrentTime {
-				price.EffectiveFrom = parseBillingTime(t, tc.effectiveFrom)
-			}
+			price.EffectiveFrom = parseBillingTime(t, tc.effectiveFrom)
 			result := make(chan error, 1)
 
 			go func() {
-				if tc.useCurrentTime {
-					_, err := store.CreatePriceNow(ctx, "activation-wait", price)
-					result <- err
-					return
-				}
+
 				_, err := store.CreatePrice(ctx, "activation-wait", price)
 				result <- err
 			}()
@@ -92,7 +85,7 @@ func testPriceLockWait(t *testing.T) {
 					t.Fatal(err)
 				}
 				if got := stored.UTC().Format(time.RFC3339Nano); got != tc.wantEffectiveFrom {
-					t.Errorf("CreatePriceNow(%+v) after lock wait effective_from=%s; want %s", price, got, tc.wantEffectiveFrom)
+					t.Errorf("CreatePrice(%+v) after lock wait effective_from=%s; want %s", price, got, tc.wantEffectiveFrom)
 				}
 			}
 

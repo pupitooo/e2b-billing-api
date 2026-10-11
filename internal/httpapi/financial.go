@@ -93,10 +93,15 @@ func parseCommandJSON(body []byte, target any, requiredFields, nullableFields []
 	return nil
 }
 
-func commandTime(value, field string) (time.Time, error) {
-	parsed, err := parseTimestamp(value)
-	if err != nil {
-		return time.Time{}, &billing.ValidationError{Field: field, Message: err.Error()}
+// commandDate accepts a calendar date only and resolves midnight in UTC.
+func commandDate(value, field string) (time.Time, error) {
+	parsed, err := time.Parse(time.DateOnly, value)
+	if err != nil || parsed.Format(time.DateOnly) != value {
+		return time.Time{}, &billing.ValidationError{Field: field, Message: "Use a valid calendar date in YYYY-MM-DD format."}
+	}
+
+	if err := billing.ValidateDate(field, parsed); err != nil {
+		return time.Time{}, err
 	}
 
 	return parsed, nil

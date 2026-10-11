@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"time"
 
-	"e2b/billing-api/internal/accounting"
 	"e2b/billing-api/internal/billing"
 )
 
@@ -12,7 +11,7 @@ type priceValues struct {
 	CustomerID           *string `json:"customer_id"`
 	Metric               string  `json:"metric"`
 	PricePerMillionCents int64   `json:"price_per_million_cents"`
-	EffectiveFrom        *string `json:"effective_from"`
+	EffectiveFrom        string  `json:"effective_from"`
 }
 
 type priceCommand struct {
@@ -46,7 +45,6 @@ func (handler priceHandler) createPrice(w http.ResponseWriter, r *http.Request) 
 	}
 	nullableFields := []string{
 		"customer_id",
-		"effective_from",
 	}
 
 	var input priceCommand
@@ -63,28 +61,17 @@ func (handler priceHandler) createPrice(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := financialContext(r, handler.timeout)
 	defer cancel()
 
-	var price accounting.PriceVersion
-	if input.EffectiveFrom == nil {
-		price, err = handler.store.CreatePriceNow(ctx, input.IdempotencyKey, command)
-	} else {
-		price, err = handler.store.CreatePrice(ctx, input.IdempotencyKey, command)
-	}
-
-	resolved := price.EffectiveFrom.Format(time.RFC3339Nano)
-	input.EffectiveFrom = &resolved
+	price, err := handler.store.CreatePrice(ctx, input.IdempotencyKey, command)
+	input.EffectiveFrom = price.EffectiveFrom.Format(time.DateOnly)
 	financialResult(w, priceResponse{ID: price.ID, priceValues: input.priceValues}, err)
 }
 
-// parsePriceCommand preserves explicit nulls while converting transport values.
+// parsePriceCommand preserves a null default owner and resolves a UTC calendar date.
 // A supplied customer must be valid before it becomes a price owner.
 func parsePriceCommand(input priceCommand) (billing.PriceInput, error) {
-	var effective time.Time
-	if input.EffectiveFrom != nil {
-		var err error
-		effective, err = commandTime(*input.EffectiveFrom, "effective_from")
-		if err != nil {
-			return billing.PriceInput{}, err
-		}
+	effective, err := commandDate(input.EffectiveFrom, "effective_from")
+	if err != nil {
+		return billing.PriceInput{}, err
 	}
 
 	command := billing.PriceInput{

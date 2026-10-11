@@ -178,3 +178,59 @@ func TestValidateCents(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateDate permits midnight UTC and equivalent offset instants, while
+// rejecting intra-day values and unsupported years independently of transport.
+func TestValidateDate(t *testing.T) {
+	cases := []struct {
+		name      string
+		input     time.Time
+		wantError bool
+		wantField string
+	}{
+		{name: "UTC midnight", input: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)},
+		{name: "offset denotes UTC midnight", input: time.Date(2026, 11, 1, 8, 0, 0, 0, time.FixedZone("east", 8*3600))},
+		{name: "one microsecond after midnight", input: time.Date(2026, 11, 1, 0, 0, 0, 1000, time.UTC), wantError: true, wantField: "effective_from"},
+		{name: "noon", input: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC), wantError: true, wantField: "effective_from"},
+		{name: "missing date", input: time.Time{}, wantError: true, wantField: "effective_from"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateDate("effective_from", tc.input)
+
+			if (err != nil) != tc.wantError {
+				t.Fatalf("ValidateDate(%s) error=%v; wantError=%t", tc.input, err, tc.wantError)
+			}
+
+			if tc.wantError {
+				var validation *ValidationError
+				if !errors.As(err, &validation) || validation.Field != tc.wantField {
+					t.Errorf("ValidateDate(%s) error=%v; want field=%s", tc.input, err, tc.wantField)
+				}
+			}
+		})
+	}
+}
+
+// TestUTCDay resolves UTC midnight rather than local midnight, including calendar
+// rollover at an offset and the last supported day with nanosecond clock input.
+func TestUTCDay(t *testing.T) {
+	cases := []struct {
+		name  string
+		input time.Time
+		want  time.Time
+	}{
+		{name: "midday", input: time.Date(2026, 11, 1, 12, 34, 0, 0, time.UTC), want: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)},
+		{name: "offset crosses UTC date", input: time.Date(2026, 11, 2, 0, 1, 0, 0, time.FixedZone("east", 8*3600)), want: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)},
+		{name: "upper day", input: time.Date(9999, 12, 31, 23, 59, 59, 999_999_999, time.UTC), want: time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := UTCDay(tc.input)
+
+			if !got.Equal(tc.want) || got.Location() != time.UTC {
+				t.Errorf("UTCDay(%s)=%s (%s); want %s (UTC)", tc.input, got, got.Location(), tc.want)
+			}
+		})
+	}
+}

@@ -28,7 +28,7 @@
           "customer_id": null,
           "metric": "cpu_seconds",
           "price_per_million_cents": 8,
-          "effective_from": "2026-10-12T00:00:00Z"
+          "effective_from": "2026-10-12"
         }
       },
       "want": {
@@ -49,7 +49,7 @@
           "customer_id": "cyberdyne",
           "metric": "cpu_seconds",
           "price_per_million_cents": 3,
-          "effective_from": "2026-10-19T00:00:00Z"
+          "effective_from": "2026-10-19"
         }
       },
       "want": {
@@ -127,7 +127,7 @@
           "customer_id": null,
           "metric": "cpu_seconds",
           "price_per_million_cents": 9,
-          "effective_from": "2026-10-12T01:00:00Z"
+          "effective_from": "2026-10-12"
         }
       },
       "want": {
@@ -150,7 +150,7 @@
           "customer_id": "cyberdyne",
           "metric": "cpu_seconds",
           "price_per_million_cents": 1,
-          "effective_from": "2026-10-10T00:00:00Z"
+          "effective_from": "2026-10-10"
         }
       },
       "want": {

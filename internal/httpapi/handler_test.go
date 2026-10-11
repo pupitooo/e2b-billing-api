@@ -1379,11 +1379,6 @@ func (store storeFunc) CreatePrice(ctx context.Context, key string, input billin
 	return accounting.PriceVersion{}, errors.New("unexpected CreatePrice call")
 }
 
-// CreatePriceNow rejects unexpected financial calls in usage transport scenarios.
-func (store storeFunc) CreatePriceNow(ctx context.Context, key string, input billing.PriceInput) (accounting.PriceVersion, error) {
-	return accounting.PriceVersion{}, errors.New("unexpected CreatePriceNow call")
-}
-
 // Credit rejects unexpected financial calls in usage transport scenarios.
 func (store storeFunc) Credit(ctx context.Context, customer string) (billing.CreditSnapshot, error) {
 	return billing.CreditSnapshot{}, errors.New("unexpected Credit call")

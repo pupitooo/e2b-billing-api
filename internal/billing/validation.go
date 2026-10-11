@@ -39,6 +39,25 @@ func ValidateTime(field string, value time.Time) error {
 	return nil
 }
 
+// ValidateDate keeps application calendar values at midnight UTC in supported years.
+func ValidateDate(field string, value time.Time) error {
+	if err := ValidateTime(field, value); err != nil {
+		return err
+	}
+
+	if !value.Equal(UTCDay(value)) {
+		return &ValidationError{Field: field, Message: "Use the start of a UTC calendar day."}
+	}
+
+	return nil
+}
+
+// UTCDay resolves the beginning of the UTC day containing an instant.
+func UTCDay(value time.Time) time.Time {
+	utc := value.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
+}
+
 // ValidateCents accepts nonnegative prices and limits, and positive credit grants.
 func ValidateCents(field string, value int64, positive bool) error {
 	if value < 0 || (positive && value == 0) {

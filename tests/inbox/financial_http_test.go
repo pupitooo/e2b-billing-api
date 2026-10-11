@@ -22,13 +22,13 @@ func TestPriceAPI(t *testing.T) {
 	t.Run("resource idempotency", func(t *testing.T) {
 		testResourceIdempotency(t, resourceEndpoint{
 			path: "/prices", idField: "price_version_id",
-			body:        `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`,
-			changedBody: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":8,"effective_from":null}`,
-			legacyBody:  `{"price_version_id":"caller-id","customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`,
+			body:        `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`,
+			changedBody: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":8,"effective_from":"2026-11-01"}`,
+			legacyBody:  `{"price_version_id":"caller-id","customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`,
 			wantPrices:  4, wantSubscriptions: 0, wantVersion: 0,
 		})
 	})
-	t.Run("automatic activation retries", testPriceAutomaticRetries)
+	t.Run("calendar date retries", testPriceDateRetries)
 	cases := []struct {
 		name              string
 		body              string
@@ -42,22 +42,28 @@ func TestPriceAPI(t *testing.T) {
 		wantRatings       int
 		wantCreditEntries int
 	}{
-		{key: "price-command", name: "past price is rejected", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-10-31T23:59:59.999999Z"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
-		{key: "price-command", name: "exact insertion instant is accepted", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01T00:00:00Z"}`, wantStatus: 200, wantVersions: 4, wantRatings: 0, wantCreditEntries: 0},
-		{key: "price-command", name: "future default", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 200, wantVersions: 4, wantRatings: 0, wantCreditEntries: 0},
-		{key: "price-command", name: "customer override", body: `{"customer_id":"acme","metric":"cpu_seconds","price_per_million_cents":3,"effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 200, wantVersions: 4, wantRatings: 0, wantCreditEntries: 0},
-		{key: "price-command", name: "explicit zero price", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":0,"effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 200, wantVersions: 4, wantRatings: 0, wantCreditEntries: 0},
-		{key: "price-command", name: "missing cents", body: `{"customer_id":null,"metric":"cpu_seconds","effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "price_per_million_cents", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
-		{key: "price-command", name: "null customer differs from empty", body: `{"customer_id":"","metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "customer_id", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
-		{key: "price-command", name: "duplicate field", body: `{"customer_id":null,"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 400, wantCode: "invalid_json", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
-		{key: "price-command", name: "invalid timestamp", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
-		{key: "price-command", name: "null uses current server time", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":5,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00Z", wantVersions: 4, wantRatings: 0, wantCreditEntries: 0},
-		{key: "price-command", name: "null truncates server nanoseconds to database precision", serverTime: "2026-11-01T08:00:00.123456789+08:00", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00.123456Z", wantVersions: 4},
-		{key: "price-command", name: "null customer price", body: `{"customer_id":"acme","metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00Z", wantVersions: 4},
-		{key: "price-command", name: "null does not bypass negative price validation", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":-1,"effective_from":null}`, wantStatus: 422, wantCode: "invalid_command", wantField: "price_per_million_cents", wantVersions: 3},
-		{key: "price-command", name: "null requires an existing customer", body: `{"customer_id":"missing","metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 404, wantCode: "not_found", wantVersions: 3},
-		{key: "price-command", name: "null requires an existing metric", body: `{"customer_id":null,"metric":"missing","price_per_million_cents":7,"effective_from":null}`, wantStatus: 404, wantCode: "not_found", wantVersions: 3},
-		{key: "price-command", name: "null still conflicts at an occupied activation instant", serverTime: "2026-10-15T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 409, wantCode: "billing_conflict", wantVersions: 3},
+		{key: "price-command", name: "past price is rejected", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-10-31"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
+		{key: "price-command", name: "today is accepted later during the same UTC day", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantVersions: 4, wantRatings: 0, wantCreditEntries: 0},
+		{key: "price-command", name: "future default", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01"}`, wantStatus: 200, wantVersions: 4, wantRatings: 0, wantCreditEntries: 0},
+		{key: "price-command", name: "customer override", body: `{"customer_id":"acme","metric":"cpu_seconds","price_per_million_cents":3,"effective_from":"2026-12-01"}`, wantStatus: 200, wantVersions: 4, wantRatings: 0, wantCreditEntries: 0},
+		{key: "price-command", name: "explicit zero price", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":0,"effective_from":"2026-12-01"}`, wantStatus: 200, wantVersions: 4, wantRatings: 0, wantCreditEntries: 0},
+		{key: "price-command", name: "missing cents", body: `{"customer_id":null,"metric":"cpu_seconds","effective_from":"2026-12-01"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "price_per_million_cents", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
+		{key: "price-command", name: "null customer differs from empty", body: `{"customer_id":"","metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "customer_id", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
+		{key: "price-command", name: "null date is rejected", serverTime: "2026-11-01T12:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from", wantVersions: 3},
+		{key: "price-command", name: "invalid leap day", serverTime: "2026-11-01T12:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-02-29"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from", wantVersions: 3},
+		{key: "price-command", name: "unbounded year", serverTime: "2026-11-01T12:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"10000-01-01"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from", wantVersions: 3},
+		{key: "price-command", name: "lower supported date", serverTime: "1000-01-01T12:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"1000-01-01"}`, wantStatus: 200, wantEffectiveFrom: "1000-01-01", wantVersions: 4},
+		{key: "price-command", name: "upper supported date", serverTime: "1000-01-01T12:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"9999-12-31"}`, wantStatus: 200, wantEffectiveFrom: "9999-12-31", wantVersions: 4},
+		{key: "price-command", name: "date wrong type", serverTime: "2026-11-01T12:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":123}`, wantStatus: 400, wantCode: "invalid_json", wantVersions: 3},
+		{key: "price-command", name: "duplicate field", body: `{"customer_id":null,"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01"}`, wantStatus: 400, wantCode: "invalid_json", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
+		{key: "price-command", name: "timestamps are rejected", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
+		{key: "price-command", name: "date returns a calendar value", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":5,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01", wantVersions: 4, wantRatings: 0, wantCreditEntries: 0},
+		{key: "price-command", name: "date uses midnight despite offset server clock", serverTime: "2026-11-01T08:00:00.123456789+08:00", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01", wantVersions: 4},
+		{key: "price-command", name: "customer price with today date", body: `{"customer_id":"acme","metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01", wantVersions: 4},
+		{key: "price-command", name: "date does not bypass negative price validation", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":-1,"effective_from":"2026-11-01"}`, wantStatus: 422, wantCode: "invalid_command", wantField: "price_per_million_cents", wantVersions: 3},
+		{key: "price-command", name: "date requires an existing customer", body: `{"customer_id":"missing","metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 404, wantCode: "not_found", wantVersions: 3},
+		{key: "price-command", name: "date requires an existing metric", body: `{"customer_id":null,"metric":"missing","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 404, wantCode: "not_found", wantVersions: 3},
+		{key: "price-command", name: "occupied UTC date conflicts", serverTime: "2026-10-15T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-10-15"}`, wantStatus: 409, wantCode: "billing_conflict", wantVersions: 3},
 		{key: "price-command", name: "empty effective start is rejected", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":""}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from", wantVersions: 3},
 		{key: "price-command", name: "numeric effective start is rejected", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":1}`, wantStatus: 400, wantCode: "invalid_json", wantVersions: 3},
 		{key: "price-command", name: "effective start must be supplied", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":5}`, wantStatus: 422, wantCode: "invalid_command", wantField: "effective_from", wantVersions: 3, wantRatings: 0, wantCreditEntries: 0},
@@ -67,7 +73,7 @@ func TestPriceAPI(t *testing.T) {
 			pool := billingDatabase(t)
 			serverTimeText := tc.serverTime
 			if serverTimeText == "" {
-				serverTimeText = "2026-11-01T00:00:00Z"
+				serverTimeText = "2026-11-01T12:00:00Z"
 			}
 			serverTime := parseBillingTime(t, serverTimeText)
 			handler := newBillingHandler(t, newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }}), 5*time.Second, 8)
@@ -105,7 +111,7 @@ func TestPriceAPI(t *testing.T) {
 				if err := pool.QueryRow(context.Background(), "SELECT effective_from FROM price_versions WHERE price_version_id=$1", actual.ID).Scan(&stored); err != nil {
 					t.Fatal(err)
 				}
-				if got := stored.UTC().Format(time.RFC3339Nano); got != tc.wantEffectiveFrom {
+				if got := stored.UTC().Format(time.DateOnly); got != tc.wantEffectiveFrom || !stored.Equal(time.Date(stored.UTC().Year(), stored.UTC().Month(), stored.UTC().Day(), 0, 0, 0, 0, time.UTC)) {
 					t.Errorf("POST /prices(%s): stored effective_from=%s; want %s", tc.body, got, tc.wantEffectiveFrom)
 				}
 			}
@@ -154,9 +160,9 @@ func financialCommandBody(t testing.TB, body string, keys ...string) string {
 	return body
 }
 
-// testPriceAutomaticRetries executes declared HTTP steps in one private schema
-// per scenario. Retries preserve the timestamp, row count, and financial state.
-func testPriceAutomaticRetries(t *testing.T) {
+// testPriceDateRetries executes declared HTTP steps in one private schema
+// per scenario. Retries preserve the date, row count, and financial state.
+func testPriceDateRetries(t *testing.T) {
 	type step struct {
 		name              string
 		serverTime        string
@@ -172,33 +178,33 @@ func testPriceAutomaticRetries(t *testing.T) {
 		wantStoredTime string
 		wantVersions   int
 	}{
-		{name: "null retry retains original time", steps: []step{
-			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00Z"},
-			{key: "price-command", name: "retry after activation", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00Z"},
+		{name: "same date retry retains original price", steps: []step{
+			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01"},
+			{key: "price-command", name: "retry after activation", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01"},
 		}, wantStoredTime: "2026-11-01T00:00:00Z", wantVersions: 4},
 		{name: "changed amount conflicts", steps: []step{
-			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00Z"},
-			{key: "price-command", name: "changed retry", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":8,"effective_from":null}`, wantStatus: 409, wantCode: "billing_conflict"},
+			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01"},
+			{key: "price-command", name: "changed retry", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":8,"effective_from":"2026-11-01"}`, wantStatus: 409, wantCode: "billing_conflict"},
 		}, wantStoredTime: "2026-11-01T00:00:00Z", wantVersions: 4},
 		{name: "changed customer conflicts", steps: []step{
-			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00Z"},
-			{key: "price-command", name: "changed retry", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":"acme","metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 409, wantCode: "billing_conflict"},
+			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01"},
+			{key: "price-command", name: "changed retry", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":"acme","metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 409, wantCode: "billing_conflict"},
 		}, wantStoredTime: "2026-11-01T00:00:00Z", wantVersions: 4},
 		{name: "changed metric conflicts", steps: []step{
-			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00Z"},
-			{key: "price-command", name: "changed retry", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":null,"metric":"other","price_per_million_cents":7,"effective_from":null}`, wantStatus: 409, wantCode: "billing_conflict"},
+			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01"},
+			{key: "price-command", name: "changed retry", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":null,"metric":"other","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 409, wantCode: "billing_conflict"},
 		}, wantStoredTime: "2026-11-01T00:00:00Z", wantVersions: 4},
-		{name: "explicit retry matches resolved timestamp", steps: []step{
-			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00Z"},
-			{key: "price-command", name: "explicit retry", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01T08:00:00+08:00"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00Z"},
+		{name: "same date retries after activation", steps: []step{
+			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01"},
+			{key: "price-command", name: "explicit retry", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01"},
 		}, wantStoredTime: "2026-11-01T00:00:00Z", wantVersions: 4},
-		{name: "changed explicit timestamp conflicts", steps: []step{
-			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01T00:00:00Z"},
-			{key: "price-command", name: "changed retry", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01T00:00:00.000001Z"}`, wantStatus: 409, wantCode: "billing_conflict"},
+		{name: "changed date conflicts", steps: []step{
+			{key: "price-command", name: "insert", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-11-01"},
+			{key: "price-command", name: "changed retry", serverTime: "2026-12-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-02"}`, wantStatus: 409, wantCode: "billing_conflict"},
 		}, wantStoredTime: "2026-11-01T00:00:00Z", wantVersions: 4},
-		{name: "null reuses explicitly scheduled timestamp", steps: []step{
-			{key: "price-command", name: "schedule", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01T00:00:00Z"}`, wantStatus: 200, wantEffectiveFrom: "2026-12-01T00:00:00Z"},
-			{key: "price-command", name: "null retry", serverTime: "2027-01-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, wantStatus: 200, wantEffectiveFrom: "2026-12-01T00:00:00Z"},
+		{name: "scheduled date retries after activation", steps: []step{
+			{key: "price-command", name: "schedule", serverTime: "2026-11-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-12-01"},
+			{key: "price-command", name: "scheduled date retry", serverTime: "2027-01-01T00:00:00Z", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-12-01"}`, wantStatus: 200, wantEffectiveFrom: "2026-12-01"},
 		}, wantStoredTime: "2026-12-01T00:00:00Z", wantVersions: 4},
 	}
 	for _, tc := range cases {

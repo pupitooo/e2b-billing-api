@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildCommand,
+  calendarDate,
   expectationDifferences,
   formatCents,
   formatTicks,
@@ -216,8 +217,7 @@ test("buildCommand", async (t) => {
         "operation": "credits",
         "input": {
           "idempotency_key": "zero",
-          "amount": "0.00",
-          "recorded_at": "2026-10-01T00:00:00Z"
+          "amount": "0.00"
         },
         "wantError": true,
         "wantMessage": "outside the supported int64 range"
@@ -289,7 +289,7 @@ test("buildCommand", async (t) => {
 
   const cases = [
     {
-      scenario: "default current-time price",
+      scenario: "default price with a calendar date",
       operation: "prices",
       customer: "acme",
       input: {
@@ -297,7 +297,7 @@ test("buildCommand", async (t) => {
         scope: "default",
         metric: "cpu_seconds",
         price: "0.06",
-        activation: "now",
+        effective_from: "2026-11-01",
       },
       wantPath: "/prices",
       wantBody: {
@@ -305,7 +305,7 @@ test("buildCommand", async (t) => {
         customer_id: null,
         metric: "cpu_seconds",
         price_per_million_cents: 6,
-        effective_from: null,
+        effective_from: "2026-11-01",
       },
       wantError: false,
     },
@@ -318,8 +318,7 @@ test("buildCommand", async (t) => {
         scope: "customer",
         metric: "cpu_seconds",
         price: "0.04",
-        activation: "scheduled",
-        effective_from: "2027-01-01T00:00:00Z",
+        effective_from: "2027-01-01",
       },
       wantPath: "/prices",
       wantBody: {
@@ -327,7 +326,7 @@ test("buildCommand", async (t) => {
         customer_id: "acme",
         metric: "cpu_seconds",
         price_per_million_cents: 4,
-        effective_from: "2027-01-01T00:00:00Z",
+        effective_from: "2027-01-01",
       },
       wantError: false,
     },
@@ -338,13 +337,11 @@ test("buildCommand", async (t) => {
       input: {
         idempotency_key: "welcome",
         amount: "25.00",
-        recorded_at: "2026-10-01T00:00:00Z",
       },
       wantPath: "/customers/acme/credits",
       wantBody: {
         idempotency_key: "welcome",
         amount_cents: 2500,
-        recorded_at: "2026-10-01T00:00:00Z",
       },
       wantError: false,
     },
@@ -355,13 +352,13 @@ test("buildCommand", async (t) => {
       input: {
         idempotency_key: "pack",
         addon_name: "concurrency_pack",
-        purchased_at: "2026-10-05T00:00:00Z",
+        purchased_at: "2026-10-05",
       },
       wantPath: "/customers/acme/addons",
       wantBody: {
         idempotency_key: "pack",
         addon_name: "concurrency_pack",
-        purchased_at: "2026-10-05T00:00:00Z",
+        purchased_at: "2026-10-05",
       },
       wantError: false,
     },
@@ -396,7 +393,7 @@ test("buildCommand", async (t) => {
       scenario: "missing operation key",
       operation: "credits",
       customer: "acme",
-      input: { amount: "25.00", recorded_at: "2026-10-01T00:00:00Z" },
+      input: { amount: "25.00" },
       wantPath: undefined,
       wantBody: undefined,
       wantError: true,
@@ -542,4 +539,25 @@ test("expectationDifferences", async (t) => {
       assert.deepEqual(expectationDifferences(c.actual, c.expected), c.want, `actual=${JSON.stringify(c.actual)}; expected=${JSON.stringify(c.expected)}; want differences=${JSON.stringify(c.want)}`);
     });
   }
+});
+
+// calendarDate preserves supported UTC dates and rejects timestamps and invalid Gregorian days.
+test("calendarDate", async (t) => {
+  const cases = [
+    { scenario: "lower date", input: "1000-01-01", want: "1000-01-01", wantError: false },
+    { scenario: "upper date", input: "9999-12-31", want: "9999-12-31", wantError: false },
+    { scenario: "leap day", input: "2028-02-29", want: "2028-02-29", wantError: false },
+    { scenario: "invalid leap day", input: "2026-02-29", want: undefined, wantError: true },
+    { scenario: "timestamp", input: "2026-11-01T00:00:00Z", want: undefined, wantError: true },
+    { scenario: "unsupported year", input: "0999-12-31", want: undefined, wantError: true },
+    { scenario: "unpadded day", input: "2026-11-1", want: undefined, wantError: true },
+  ];
+  for (const c of cases)
+    await t.test(c.scenario, () => {
+      let actual, error;
+      try { actual = calendarDate(c.input); } catch (caught) { error = caught; }
+
+      assert.equal(Boolean(error), c.wantError, `calendarDate(${c.input}): error=${error}; wantError=${c.wantError}`);
+      if (!c.wantError) assert.equal(actual, c.want);
+    });
 });

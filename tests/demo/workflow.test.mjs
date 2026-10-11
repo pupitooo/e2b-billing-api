@@ -45,7 +45,6 @@ test("AssignmentRunner.step", async (t) => {
           body: {
             idempotency_key: "welcome",
             amount_cents: 2500,
-            recorded_at: "2026-10-01T00:00:00Z",
           },
         },
         want: { status: 200, body: { amount_cents: 2500 } },
@@ -61,7 +60,7 @@ test("AssignmentRunner.step", async (t) => {
       wantDifferenceCount: 0,
       wantSavedCapture: { amount_cents: 2500 },
       wantBody:
-        '{"idempotency_key":"welcome","amount_cents":2500,"recorded_at":"2026-10-01T00:00:00Z"}',
+        '{"idempotency_key":"welcome","amount_cents":2500}',
     },
     {
       scenario: "pending accounting is polled before advancing",

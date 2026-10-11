@@ -25,7 +25,6 @@
         "path": "/customers/acme/credits",
         "body": {
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z",
           "idempotency_key": "welcome"
         }
       },
@@ -33,7 +32,6 @@
         "status": 200,
         "body": {
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z",
           "idempotency_key": "welcome"
         }
       },
@@ -48,7 +46,6 @@
         "path": "/customers/acme/credits",
         "body": {
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z",
           "idempotency_key": "welcome"
         }
       },
@@ -56,7 +53,6 @@
         "status": 200,
         "body": {
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z",
           "idempotency_key": "welcome"
         }
       }
@@ -68,7 +64,6 @@
         "path": "/customers/acme/credits",
         "body": {
           "amount_cents": 2600,
-          "recorded_at": "2026-10-01T00:00:00Z",
           "idempotency_key": "welcome"
         }
       },
@@ -107,7 +102,7 @@
         "body": {
           "idempotency_key": "acme-pack",
           "addon_name": "concurrency_pack",
-          "purchased_at": "2026-10-05T00:00:00Z"
+          "purchased_at": "2026-10-05"
         }
       },
       "want": {
@@ -126,7 +121,7 @@
         "body": {
           "idempotency_key": "acme-pack",
           "addon_name": "concurrency_pack",
-          "purchased_at": "2026-10-05T00:00:00Z"
+          "purchased_at": "2026-10-05"
         }
       },
       "want": {
@@ -144,7 +139,7 @@
         "body": {
           "idempotency_key": "another-pack",
           "addon_name": "concurrency_pack",
-          "purchased_at": "2026-10-05T00:00:00Z"
+          "purchased_at": "2026-10-05"
         }
       },
       "want": {
@@ -240,7 +235,7 @@
           "customer_id": null,
           "metric": "cpu_seconds",
           "price_per_million_cents": 7,
-          "effective_from": "2026-12-01T00:00:00Z"
+          "effective_from": "2026-12-01"
         }
       },
       "want": {
@@ -261,7 +256,7 @@
           "customer_id": null,
           "metric": "cpu_seconds",
           "price_per_million_cents": 7,
-          "effective_from": "2026-12-01T00:00:00Z"
+          "effective_from": "2026-12-01"
         }
       },
       "want": {
@@ -282,7 +277,7 @@
           "customer_id": null,
           "metric": "cpu_seconds",
           "price_per_million_cents": 8,
-          "effective_from": "2026-12-01T00:00:00Z"
+          "effective_from": "2026-12-01"
         }
       },
       "want": {

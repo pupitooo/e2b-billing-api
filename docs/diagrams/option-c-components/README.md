@@ -36,7 +36,7 @@ Arrows show request/response or SQL interactions, not server push. Actor roles d
 | Customer | `GET /customers/{customer_id}/credit` | Remaining exact credit and processing progress. |
 | Customer or E2B | `GET /customers/{customer_id}/invoices/{month}` | Immutable issued invoice. |
 | E2B administrator | `POST /customers/{customer_id}/credits` | Grant usage-only credit once per operation identity. |
-| E2B administrator | `POST /prices` | Append a dated version; a new ordinary version cannot backdate activation. |
+| E2B administrator | `POST /prices` | Append a version effective at midnight UTC on today or later, preserving rated history. |
 | Closing operator | `POST /customers/{customer_id}/invoices` | Issue the explicit `YYYY-MM` month from already processed groups. |
 
 T1 uses the inbox; T2 uses both inbox and financial tables. API financial commands and invoice publication own their own account-locked transactions. Ingestion does not acquire the financial account lock. API reads inspect financial state and pending/error counts; the first invoice also checks whether earlier accepted usage would be skipped.

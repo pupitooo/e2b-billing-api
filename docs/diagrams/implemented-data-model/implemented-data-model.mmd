@@ -76,7 +76,7 @@ erDiagram
         text customer_id FK "Nullable: default price"
         text metric FK
         bigint price_per_million_cents "Non-negative"
-        timestamptz effective_from "Finite"
+        timestamptz effective_from "Finite; API dates at UTC midnight"
     }
     monthly_usage {
         text customer_id PK,FK
@@ -88,7 +88,7 @@ erDiagram
         text customer_id FK "Also part of group FK"
         text group_id FK "Nullable: grants"
         billing_signed_ticks amount_ticks "Positive grant or negative debit"
-        timestamptz recorded_at "Finite"
+        timestamptz recorded_at "Finite; backend audit time"
     }
     addons {
         text addon_name PK
@@ -99,7 +99,7 @@ erDiagram
         text customer_id FK
         text addon_name FK
         bigint monthly_price_cents "Purchased price snapshot"
-        timestamptz purchased_at "Finite"
+        timestamptz purchased_at "Finite; API dates at UTC midnight"
         date start_month "First day of UTC purchase month"
     }
     closed_billing_months {

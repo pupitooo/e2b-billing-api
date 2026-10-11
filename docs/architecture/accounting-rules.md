@@ -8,7 +8,7 @@ and the migration and verification requirements:
 - [Fixed calendar-month contract](#fixed-calendar-month-contract): whole UTC calendar periods and one immutable invoice per customer/month.
 - [Exact money and credit](#exact-money-and-credit): tick precision, exact charge calculations, signed credit entries, and allocation order.
 - [Historical prices and groups](#historical-prices-and-groups): customer overrides, consumption-time pricing, supported intervals, and stable grouping keys.
-- [Price insertion contract](#price-insertion-contract): no backdated ordinary changes, lock-time validation, stable retries, and controlled historical repairs.
+- [Price insertion contract](#price-insertion-contract): UTC calendar activation, lock-time date validation, stable retries, and controlled historical repairs.
 - [Catalog provisioning and P0 recovery](#catalog-provisioning-and-p0-recovery): required dated prices before metering and explicit recovery from a missing valid catalog.
 - [Rounding and invoice presentation](#rounding-and-invoice-presentation): cumulative half-up rounding, balancing credit lines, immutable snapshots, and invoice totals.
 - [UTC months, limits, add-ons, and late usage](#utc-months-limits-add-ons-and-late-usage): supported years, gross spend limits, full monthly add-on charges, and routing after closure.
@@ -166,25 +166,31 @@ configuration.
 The revised migration foundation requires a clean schema; it does not backfill
 keys or upgrade the previous split command histories.
 
-New ordinary price versions must have `effective_from` at or after the server's
-insertion instant, sampled after the exclusive catalog lock is acquired and the
-scoped request key is checked. Equality is accepted; future activation can be scheduled.
-`POST /prices` also accepts an explicit `effective_from: null` to activate at
-that server instant, converted to UTC and truncated to microsecond precision.
-The application supplies the resolved timestamp to PostgreSQL and returns it
-in the response; stored prices remain finite and non-null. Omitting the field
-is still invalid. This does not create an undated baseline.
-A past instant returns HTTP `422`, `invalid_command`, field `effective_from`,
-without a catalog or financial write. An unchanged existing request key succeeds
-on retry even after activation; changed content still returns `409`.
-Retries with `null` reuse the stored activation time when the request key, customer,
-metric, and amount match, even if the original request supplied an explicit
-timestamp. An explicit retry timestamp must equal the stored instant. A retry
-never samples a new activation time or rewrites an existing price.
+`POST /prices` requires `effective_from` as a valid Gregorian date in
+`YYYY-MM-DD` format, years 1000 through 9999. Timestamps, offsets, null, and
+missing dates are rejected. The application resolves the date to midnight UTC,
+supplies that instant explicitly to PostgreSQL, and returns a date in the public
+response. Activation always applies to the whole UTC calendar day.
 
-Keep the catalog lock and rated-history protection. Waiting for the lock can
-make a previously future instant invalid, so request arrival time is not the
-validation boundary. Usage remains priced at consumption time. Two increments
+The requested date must be today or later according to the server clock sampled
+after acquiring the exclusive catalog lock and checking the scoped request key.
+Yesterday returns HTTP `422`, `invalid_command`, field `effective_from`, without
+catalog or financial writes. Today's date remains valid when submission or lock
+waiting advances the clock within the same UTC day. Crossing midnight during a
+lock wait can make the requested date past. Validation never uses local time.
+
+Already rated usage is protected even when a new version starts today. If the
+new version would change a selected historical price or split an already rated
+interval, the transaction returns `409` without financial effects. Unprocessed
+usage uses the version valid on its consumption day. This policy permits a
+whole-day start; it never recalculates existing allocations or invoices.
+
+An unchanged existing request key returns its original price after activation.
+Changed customer, metric, amount, or date returns `409`. A retry never resolves a
+new activation date. Stored historical versions remain finite, non-null instants;
+controlled operator repairs retain their existing responsibilities.
+
+Usage remains priced at consumption time. Two increments
 from 1 February both use price 100, even when one arrives on 10 February after
 price 200 was inserted and became effective on 2 February. Only consumption
 from the activation instant uses 200. Invoice closure affects billing-month
@@ -195,6 +201,30 @@ database operations, outside ordinary `POST /prices`. Repairs must acquire the
 exclusive catalog advisory lock, preserve all rated history and issued invoices,
 and explicitly release only the investigated receipt. They do not implement
 retroactive repricing; no automatic recalculation exists.
+
+## Credit audit time and add-on purchase dates
+
+Credit commands contain only `idempotency_key` and `amount_cents`. The API neither
+accepts nor returns `recorded_at`. After the operation replay check and account
+lock, the backend samples its clock, converts to UTC, and truncates to microsecond
+precision. This audit instant is written explicitly to both the credit ledger and
+command history in the same transaction. A replay retains the original ledger
+entry, audit time, balance, and state version; only changed amounts conflict.
+An unsupported backend clock fails with HTTP `503` and no financial writes; it
+is never reported as a caller validation error for an audit field.
+
+Add-on commands require `purchased_at` as `YYYY-MM-DD`, years 1000 through 9999.
+The backend stores midnight UTC and returns the date, deriving `start_month` from
+that same UTC day. Historical dates in open months and future dates are allowed;
+a new purchase in or before any closing or closed month returns `409`. The full
+catalog price is charged in every active month starting with the purchase month.
+Identical retries return the original subscription even after catalog changes or
+invoice closure; changing the date under the same key conflicts.
+
+The database keeps `timestamptz` columns for internal accounting instants and
+historical records. This API change requires no schema migration or rewrite of
+append-only history. New application price and purchase inputs require midnight
+UTC; credit audit instants remain precise timestamps owned by the backend.
 
 ## Catalog provisioning and P0 recovery
 

@@ -13,7 +13,7 @@ import (
 	"e2b/billing-api/internal/usage"
 )
 
-// TestCreatePrice checks insertion-time boundaries, unchanged and conflicting
+// TestCreatePrice checks UTC date boundaries, unchanged and conflicting
 // retries, and rejection without catalog or financial effects in private schemas.
 func TestCreatePrice(t *testing.T) {
 	cases := []struct {
@@ -37,14 +37,14 @@ func TestCreatePrice(t *testing.T) {
 		{name: "past default leaves rated history intact", serverTime: "2026-11-01T00:00:00Z", effective: "2026-10-09T00:00:00Z", price: 7, existingUsage: true, wantError: true, wantField: "effective_from", wantVersions: 3, wantRatings: 1},
 		{name: "past override leaves rated history intact", customer: "cyberdyne", serverTime: "2026-11-01T00:00:00Z", effective: "2026-10-09T00:00:00Z", price: 3, existingUsage: true, wantError: true, wantField: "effective_from", wantVersions: 3, wantRatings: 1},
 		{name: "one microsecond before insertion is rejected", serverTime: "2026-11-01T00:00:00Z", effective: "2026-10-31T23:59:59.999999Z", price: 7, wantError: true, wantField: "effective_from", wantVersions: 3},
-		{name: "exact insertion instant is accepted", serverTime: "2026-11-01T00:00:00Z", effective: "2026-11-01T00:00:00Z", price: 7, wantVersions: 4},
-		{name: "one microsecond after insertion is accepted", serverTime: "2026-11-01T00:00:00Z", effective: "2026-11-01T00:00:00.000001Z", price: 7, wantVersions: 4},
+		{name: "today is accepted after midnight", serverTime: "2026-11-01T12:34:00Z", effective: "2026-11-01T00:00:00Z", price: 7, wantVersions: 4},
+		{name: "intraday activation is rejected", serverTime: "2026-11-01T00:00:00Z", effective: "2026-11-01T00:00:00.000001Z", price: 7, wantError: true, wantField: "effective_from", wantVersions: 3},
 		{name: "equivalent UTC offset at insertion is accepted", serverTime: "2026-11-01T00:00:00Z", effective: "2026-11-01T08:00:00+08:00", price: 7, wantVersions: 4},
 		{name: "local future date cannot hide a past UTC instant", serverTime: "2026-11-01T00:00:00Z", effective: "2026-11-01T07:59:59.999999+08:00", price: 7, wantError: true, wantField: "effective_from", wantVersions: 3},
 		{name: "future insertion cannot change an already rated default", serverTime: "2026-10-01T00:00:00Z", effective: "2026-10-09T00:00:00Z", price: 7, existingUsage: true, wantError: true, wantSentinel: billing.ErrConflict, wantVersions: 3, wantRatings: 1},
 		{name: "future insertion cannot change an already rated override", customer: "cyberdyne", serverTime: "2026-10-01T00:00:00Z", effective: "2026-10-09T00:00:00Z", price: 3, existingUsage: true, wantError: true, wantSentinel: billing.ErrConflict, wantVersions: 3, wantRatings: 1},
-		{name: "future insertion cannot split a rated interval", serverTime: "2026-10-01T00:00:00Z", effective: "2026-10-10T12:30:00Z", price: 7, existingUsage: true, wantError: true, wantSentinel: billing.ErrConflict, wantVersions: 3, wantRatings: 1},
-		{name: "future insertion at rated interval end is harmless", serverTime: "2026-10-01T00:00:00Z", effective: "2026-10-10T13:00:00Z", price: 7, existingUsage: true, wantVersions: 4, wantRatings: 1},
+		{name: "intraday price cannot split a rated interval", serverTime: "2026-10-01T00:00:00Z", effective: "2026-10-10T12:30:00Z", price: 7, existingUsage: true, wantError: true, wantField: "effective_from", wantVersions: 3, wantRatings: 1},
+		{name: "next day after a rated interval is harmless", serverTime: "2026-10-01T00:00:00Z", effective: "2026-10-11T00:00:00Z", price: 7, existingUsage: true, wantVersions: 4, wantRatings: 1},
 		{name: "missing customer has no new version", customer: "missing", serverTime: "2026-11-01T00:00:00Z", effective: "2026-12-01T00:00:00Z", price: 7, wantError: true, wantSentinel: billing.ErrNotFound, wantVersions: 3},
 	}
 	for _, tc := range cases {
@@ -109,4 +109,5 @@ func TestCreatePrice(t *testing.T) {
 	}
 
 	t.Run("activation after a catalog lock wait", testPriceLockWait)
+	t.Run("supported calendar dates and history", testPriceDateBoundaries)
 }

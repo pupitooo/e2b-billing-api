@@ -60,7 +60,7 @@ constraints and every concurrency interleaving were not exhaustively mutated.
 | Simulator transport | Some configuration endpoints, HTTP 500, non-JSON acknowledgements, a single duplicate copy and exact body/file/response limits were missing. | Named direct scenarios, literal byte counts and transmission counts; the exact one-MiB batch uses valid identifiers. |
 | Worker validation | Missing guards could hang invalid-configuration cases until the package timeout. | Local cancellation budgets preserve processor/heartbeat checks and yield immediate test failures for the same mutations. |
 | SQL integrity | Removing positive schema-version, positive invoice-sequence, nonnegative invoice-total or object-snapshot checks survived all SQL files. | Named SQL with expected `23514`, plus adjacent valid values and rolled-back fixtures. |
-| GUI | The last safe integer, zero grant, equal usage endpoints, schema version, extra invoice lines, complete captured snapshots, journal preservation, path restrictions and Retry-After were not all asserted. | Extend existing operation tests and add direct expectation/snapshot scenarios; 86 frontend tests pass locally. |
+| GUI | The last safe integer, zero grant, equal usage endpoints, schema version, extra invoice lines, complete captured snapshots, journal preservation, path restrictions and Retry-After were not all asserted. | Extend existing operation tests and add direct expectation/snapshot scenarios; the frontend suite includes these regression cases. |
 
 Go accounting unit coverage was already 97.4% before this audit, yet the mutable
 money-storage mutation survived. Reaching a statement and asserting its contract
@@ -76,15 +76,12 @@ have been applied to the local tests and verified there. The
 publishing the unrelated GUI implementation in this audit PR. Carry these test
 changes into the GUI's own commit when that implementation is approved.
 
-For a fresh copy containing the same completed GUI, apply the patch once:
+The regression cases are included in `tests/demo/`; the patch is a review artifact
+and must not be applied over those existing cases. Its credit fixture uses the
+current command format without a caller audit timestamp. Calendar-date regressions
+for prices and add-ons extend the suite beyond the mutation cases listed here.
+Run the current GUI checks with `make demo-check`.
 
-```sh
-git apply --unidiff-zero --check docs/guides/gui-test-regressions.patch
-git apply --unidiff-zero docs/guides/gui-test-regressions.patch
-make demo-check
-```
-
-The patch must not be applied twice to the already updated local checkout.
 GUI mutation results concern the recorded snapshot, not an independently
 reproducible GUI build from this PR's base alone.
 
@@ -163,7 +160,7 @@ The following checks passed after restoring every production edit:
 - Unit race checks for accounting, billing, HTTP, simulator, usage and worker;
   integration race checks for ProcessBatch, PostgresInsertBatch and GrantCredit.
 - All 114 final Go mutations, 48 SQL mutation executions and 22 GUI mutations;
-  86 tests on the completed local GUI with the regression patch.
+  the frontend regression suite, including calendar-date command tests.
 
 The standard API image lacks a C compiler, so its initial race attempt could not
 build. The successful race runs used the existing compiler-equipped verification

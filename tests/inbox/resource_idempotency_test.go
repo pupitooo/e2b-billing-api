@@ -367,9 +367,9 @@ func testResourceKeyScopes(t *testing.T) {
 		idField    string
 		wantStatus int
 	}{
-		{path: "/prices", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":null}`, idField: "price_version_id", wantStatus: 200},
-		{path: "/customers/acme/addons", body: `{"addon_name":"concurrency_pack","purchased_at":"2026-10-05T00:00:00Z"}`, idField: "subscription_id", wantStatus: 200},
-		{path: "/customers/cyberdyne/addons", body: `{"addon_name":"concurrency_pack","purchased_at":"2026-10-05T00:00:00Z"}`, idField: "subscription_id", wantStatus: 200},
+		{path: "/prices", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, idField: "price_version_id", wantStatus: 200},
+		{path: "/customers/acme/addons", body: `{"addon_name":"concurrency_pack","purchased_at":"2026-10-05"}`, idField: "subscription_id", wantStatus: 200},
+		{path: "/customers/cyberdyne/addons", body: `{"addon_name":"concurrency_pack","purchased_at":"2026-10-05"}`, idField: "subscription_id", wantStatus: 200},
 	}, wantState: resourceState{prices: 4, subscriptions: 2, operations: 3, stateVersion: 1, creditTicks: "0"}}
 	pool := billingDatabase(t)
 	seen := map[string]bool{}

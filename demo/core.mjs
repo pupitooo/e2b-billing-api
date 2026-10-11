@@ -140,10 +140,7 @@ export function buildCommand(operation, fields, customer) {
         customer_id: fields.scope === "default" ? null : customer,
         metric: fields.metric,
         price_per_million_cents: usdToCents(fields.price),
-        effective_from:
-          fields.activation === "now"
-            ? null
-            : utcTimestamp(fields.effective_from),
+        effective_from: calendarDate(fields.effective_from),
       }),
     };
   if (operation === "credits")
@@ -153,7 +150,6 @@ export function buildCommand(operation, fields, customer) {
       body: wireJSON({
         idempotency_key: key,
         amount_cents: usdToCents(fields.amount, 1n),
-        recorded_at: utcTimestamp(fields.recorded_at),
       }),
     };
   if (operation === "addons")
@@ -163,7 +159,7 @@ export function buildCommand(operation, fields, customer) {
       body: wireJSON({
         idempotency_key: key,
         addon_name: fields.addon_name,
-        purchased_at: utcTimestamp(fields.purchased_at),
+        purchased_at: calendarDate(fields.purchased_at),
       }),
     };
   if (operation === "spend-limit")
@@ -237,4 +233,14 @@ export function invoiceEligible(month, now = new Date()) {
   validMonth(month);
   // Lexical UTC month comparison also handles the upper supported year boundary.
   return month < now.toISOString().slice(0, 7);
+}
+
+// calendarDate rejects timestamps and invalid dates before constructing a billing command.
+export function calendarDate(value) {
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value) || Number(value.slice(0, 4)) < 1000)
+    throw new Error("Use a valid calendar date in YYYY-MM-DD format, years 1000 through 9999.");
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value)
+    throw new Error("Use a valid calendar date in YYYY-MM-DD format.");
+  return value;
 }

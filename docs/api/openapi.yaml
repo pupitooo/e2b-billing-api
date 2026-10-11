@@ -152,21 +152,18 @@ paths:
       - Prices
       summary: Add price version
       description: |
-        Add an immutable default or customer-specific price, effective now or in the future.
+        Add an immutable default or customer-specific price effective from a UTC calendar date.
+        Supply effective_from as YYYY-MM-DD (years 1000 through 9999); timestamps and null are rejected.
+        The backend stores 00:00:00 UTC on that date and returns the date in the response.
+        A new date must be today or later, checked after acquiring the catalog lock.
+        Today's date is allowed only if already rated history is preserved; conflicts return 409.
         Supply idempotency_key in the JSON body; billing generates price_version_id.
-        Keys are scoped to this endpoint and successful results are retained indefinitely
-        in PostgreSQL, atomically with the price. Reusing a key returns the stored result
-        when the price values match; changed values return 409. Failed commands reserve
-        no key. Missing, null, or invalid string keys return 422. Duplicate fields or wrong key types return 400.
-        Supply effective_from as a timestamp or explicit null. Null selects the server's
-        current UTC time after acquiring the catalog lock, truncated to microseconds.
-        The response always contains the stored timestamp. Keep null on retries:
-        an existing request key reuses its original timestamp when all other fields match,
-        including keys initially created with an explicit timestamp. Changed
-        customer, metric, amount, or an unequal explicit timestamp returns 409.
-        Omitting effective_from returns 422.
-        See [price selection](/architecture/accounting-rules/#historical-prices-and-groups)
-        and [insertion rules](/architecture/accounting-rules/#price-insertion-contract).
+        Keys are scoped to this endpoint and successful results are retained indefinitely.
+        Unchanged retries retain the original price even after activation; changed
+        customer, metric, amount, or date returns 409. Failed commands reserve no key.
+        Missing, null, or invalid string keys return 422. Duplicate or unknown fields
+        and wrong types return 400. Omitting effective_from returns 422.
+        See [price insertion contract](/architecture/accounting-rules/#price-insertion-contract).
       x-implementation-status: implemented
       requestBody:
         required: true
@@ -182,15 +179,15 @@ paths:
                   customer_id: null
                   metric: cpu_seconds
                   price_per_million_cents: 7
-                  effective_from: '2026-12-01T00:00:00Z'
-              immediate:
-                summary: Activate a price at the server insertion time
+                  effective_from: '2026-12-01'
+              daily:
+                summary: Start on a calendar date
                 value:
-                  idempotency_key: cpu-default-immediate
+                  idempotency_key: cpu-default-daily
                   customer_id: null
                   metric: cpu_seconds
                   price_per_million_cents: 7
-                  effective_from: null
+                  effective_from: '2026-11-01'
       responses:
         '200':
           description: Price version stored, or original version returned on an identical retry.
@@ -203,7 +200,7 @@ paths:
                 customer_id: null
                 metric: cpu_seconds
                 price_per_million_cents: 7
-                effective_from: '2026-12-01T00:00:00Z'
+                effective_from: '2026-12-01'
         '400':
           description: Invalid or ambiguous JSON.
           content:
@@ -225,7 +222,7 @@ paths:
                   code: not_found
                   message: Customer or catalog resource does not exist.
         '409':
-          description: Price identity, effective time, or rated history conflicts.
+          description: Price identity, effective date, or rated history conflicts.
           content:
             application/json:
               schema:
@@ -264,7 +261,7 @@ paths:
               example:
                 error:
                   code: invalid_command
-                  message: A new price must not start before its insertion time.
+                  message: A new price must not start before the current UTC date.
                   field: effective_from
         '503':
           description: Storage unavailable. Outcome may be unknown; retry unchanged command after Retry-After.
@@ -292,7 +289,7 @@ paths:
       summary: Grant credit
       description: |
         Grant credit for usage charges immediately; add-ons are excluded.
-        `recorded_at` is audit metadata, not a scheduled activation time.
+        The backend records the grant audit timestamp; no caller timestamp is accepted or returned.
         See [credit allocation](/architecture/usage-to-invoice/#6-credits-gross-charge-allocated-credit-and-balance).
         Supply idempotency_key in the JSON body; keys are scoped to this customer and endpoint.
         Unchanged retries return the original command result; changed content returns 409.
@@ -313,7 +310,6 @@ paths:
             example: &creditGrantExample
               idempotency_key: welcome-acme
               amount_cents: 2500
-              recorded_at: '2026-10-01T00:00:00Z'
       responses:
         '200':
           description: Credit granted, or original grant returned on an identical retry.
@@ -477,6 +473,10 @@ paths:
       summary: Purchase add-on
       description: |
         Start a recurring add-on at its current catalog price, charged in full from the purchase month.
+        Supply purchased_at as YYYY-MM-DD (years 1000 through 9999); timestamps and null are rejected.
+        The backend stores midnight UTC on that date and returns the date.
+        Historical dates in open months and future dates are allowed. A date in or before a
+        closing or closed month conflicts. Unchanged retries preserve the original result.
         Supply idempotency_key in the JSON body; billing derives subscription_id from the customer and add-on name.
         Keys are scoped to this endpoint and customer. Successful results are retained
         indefinitely in PostgreSQL, atomically with the purchase. An unchanged retry
@@ -500,7 +500,7 @@ paths:
             example:
               idempotency_key: acme-concurrency
               addon_name: concurrency_pack
-              purchased_at: '2026-10-05T00:00:00Z'
+              purchased_at: '2026-10-05'
       responses:
         '200':
           description: Subscription created, or original subscription returned on an identical retry.
@@ -513,7 +513,7 @@ paths:
                 customer_id: acme
                 addon_name: concurrency_pack
                 monthly_price_cents: 2000
-                purchased_at: '2026-10-05T00:00:00Z'
+                purchased_at: '2026-10-05'
                 start_month: '2026-10-01'
         '400':
           description: Invalid or ambiguous JSON.
@@ -1288,10 +1288,8 @@ components:
           minimum: 0
           maximum: 9223372036854775807
         effective_from:
-          description: Explicit timestamp or null for the server insertion time. Required even when null.
-          oneOf:
-          - $ref: '#/components/schemas/ConsumptionTime'
-          - type: 'null'
+          $ref: '#/components/schemas/BillingDate'
+          description: UTC calendar date; must not precede the current UTC date at catalog insertion.
 
     PriceVersion:
       type: object
@@ -1320,8 +1318,16 @@ components:
           minimum: 0
           maximum: 9223372036854775807
         effective_from:
-          $ref: '#/components/schemas/ConsumptionTime'
-          description: Stored start of price validity; always a concrete UTC timestamp, including null requests.
+          $ref: '#/components/schemas/BillingDate'
+          description: Stored UTC activation date; the internal instant is midnight UTC.
+
+    BillingDate:
+      type: string
+      format: date
+      pattern: '^[1-9][0-9]{3}-[0-9]{2}-[0-9]{2}$'
+      description: Valid Gregorian date in years 1000 through 9999, interpreted at midnight UTC.
+      examples:
+      - '2026-11-01'
 
     CreditGrant:
       type: object
@@ -1329,7 +1335,6 @@ components:
       required:
       - idempotency_key
       - amount_cents
-      - recorded_at
       properties:
         idempotency_key:
           $ref: '#/components/schemas/IdempotencyKey'
@@ -1338,8 +1343,6 @@ components:
           format: int64
           minimum: 1
           maximum: 9223372036854775807
-        recorded_at:
-          $ref: '#/components/schemas/ConsumptionTime'
 
     CreditSnapshot:
       type: object
@@ -1384,7 +1387,7 @@ components:
         addon_name:
           $ref: '#/components/schemas/Identifier'
         purchased_at:
-          $ref: '#/components/schemas/ConsumptionTime'
+          $ref: '#/components/schemas/BillingDate'
 
     Subscription:
       type: object
@@ -1410,7 +1413,7 @@ components:
           format: int64
           minimum: 0
         purchased_at:
-          $ref: '#/components/schemas/ConsumptionTime'
+          $ref: '#/components/schemas/BillingDate'
         start_month:
           type: string
           format: date

@@ -77,7 +77,7 @@ func TestCloseMonth(t *testing.T) {
 			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return invoiceTime }})
 			transport := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second})
 			if tc.creditCents > 0 {
-				if err := store.GrantCredit(ctx, tc.customer, billing.CreditGrant{IdempotencyKey: "welcome", AmountCents: tc.creditCents, RecordedAt: parseBillingTime(t, "2026-10-01T00:00:00Z")}); err != nil {
+				if err := store.GrantCredit(ctx, tc.customer, billing.CreditGrant{IdempotencyKey: "welcome", AmountCents: tc.creditCents}); err != nil {
 					t.Fatal(err)
 				}
 			}
