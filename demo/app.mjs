@@ -355,36 +355,27 @@ function pricesHTML() {
     ]) +
     field("metric", "Metric", "cpu_seconds") +
     field("price", "USD per 1_000_000 units", "0.05") +
-    select("activation", "Activation", [
-      { value: "now", label: "Server insertion time" },
-      { value: "scheduled", label: "Explicit future timestamp" },
-    ]) +
-    field(
-      "effective_from",
-      "Scheduled effective time",
-      new Date(Date.now() + 86_400_000).toISOString(),
-      {
-        full: true,
-        hint: "Used only for explicit future activation. Earlier ordinary activation is rejected.",
-      },
-    ) +
+    field("effective_from", "Effective date · UTC", now().slice(0, 10), {
+      type: "date",
+      full: true,
+      hint: "Today or a future UTC date. Applies from 00:00 UTC; already rated usage is protected.",
+    }) +
     field("idempotency_key", "Operation key", newKey(), { full: true });
   return (
     intro(
       "Historical prices",
-      "Customer-specific prices take precedence over defaults. New ordinary versions start now or in the future and preserve already rated history.",
+      "Customer-specific prices take precedence over defaults. New ordinary versions start at midnight UTC on today or a future date and preserve already rated history.",
       dbButton("prices", "Live price versions"),
     ) +
     `<div class="columns">${operationForm("prices", "Create price version", fields, "Create price")}${panel("Assignment seed prices", `<p class="catalog-label">REFERENCE DATA · NOT THE CURRENT CATALOG</p><div class="table-scroll"><table><thead><tr><th>Scope</th><th>USD / million</th><th>Effective · UTC</th></tr></thead><tbody><tr><td>default</td><td>$0.05</td><td class="mono">2026-10-01</td></tr><tr><td>default</td><td>$0.06</td><td class="mono">2026-10-15</td></tr><tr><td>acme override</td><td>$0.04</td><td class="mono">2026-10-01</td></tr></tbody></table></div><p class="hint">Use the live database link to see added versions and exact timestamps. The API generates each new price ID.</p>`)}</div>` +
     notice(
-      "Server insertion time sends effective_from: null. An exact retry reuses the same key and original body, and returns the originally stored timestamp.",
+      "Supply effective_from as YYYY-MM-DD. An exact retry reuses the same key and original date.",
     )
   );
 }
 function creditHTML() {
   const fields =
     field("amount", "Grant amount · USD", "25.00") +
-    field("recorded_at", "Recorded at · explicit UTC/offset", now()) +
     field("idempotency_key", "Operation key", newKey(), { full: true });
   return (
     intro(
@@ -400,7 +391,7 @@ function creditHTML() {
 function addonsHTML() {
   const fields =
     field("addon_name", "Add-on name", "concurrency_pack") +
-    field("purchased_at", "Purchased at · explicit UTC/offset", now()) +
+    field("purchased_at", "Purchase date · UTC", now().slice(0, 10), { type: "date" }) +
     field("idempotency_key", "Operation key", newKey(), { full: true });
   return (
     intro(
@@ -576,8 +567,6 @@ async function render() {
     assignment: assignmentHTML,
   };
   $("#content").innerHTML = views[section.id]();
-  if (section.id === "prices")
-    $('#content input[name="effective_from"]').disabled = true;
   if (["overview", "usage", "credit", "limits"].includes(section.id)) {
     try {
       const snapshot = await refreshCustomer();
@@ -752,9 +741,6 @@ $("#content").addEventListener("submit", async (event) => {
   }
 });
 $("#content").addEventListener("change", (event) => {
-  if (event.target.name === "activation")
-    event.target.form.querySelector('[name="effective_from"]').disabled =
-      event.target.value === "now";
   if (event.target.name === "unlimited")
     event.target.form.querySelector('[name="limit"]').disabled =
       event.target.checked;

@@ -47,7 +47,7 @@ by ID. There is no customer-creation API in the current application.
 | --- | --- |
 | Overview | Read exact credit, consumption-month gross usage, limit state, pending counts and errors. |
 | Usage | Submit a measurement or a JSON batch, load an example of late usage, and trace receipts to rated groups. |
-| Prices | Insert default/customer versions at the server instant or a future timestamp; inspect live historical versions in SQL. |
+| Prices | Insert default/customer versions using today or a future UTC date; inspect live historical versions in SQL. |
 | Credit | Grant credit as E2B, inspect balance, grants, debits and allocations. |
 | Add-ons | Purchase a catalog add-on and inspect its stored subscription snapshot. |
 | Limits | Set, raise or remove a limit; query the selected month or server's current month. Zero is a real limit; null means unlimited. |
@@ -74,6 +74,16 @@ The browser saves the original request before sending it. Request history retain
 the latest 100 entries in local storage. The context and assignment source/cursor
 also survive reload on the same browser origin. A storage failure prevents a new
 request from being sent if its original content cannot first be saved.
+
+Price activation and add-on purchase forms use date inputs (`YYYY-MM-DD`). The
+backend resolves these dates to midnight UTC and returns dates. A price may start
+today if rated history is preserved, or on a future date; dates before today are
+rejected after catalog locking. Add-on dates may select an open historical month
+or a future month. The credit form has no audit timestamp field; the backend owns
+that ledger value. Retained request history must use the new command format.
+Saved requests are retained exactly and are not silently rewritten. If an old
+command has an unknown commit outcome, keep its original key when correcting the
+format; never create a new key to bypass a retry conflict.
 
 Use **Exact retry** to retain the original customer path, timestamps, event
 identities, operation keys and JSON body. Use **New operation key** only for a new

@@ -74,7 +74,7 @@ func validatePurchase(customer string, p billing.AddonPurchase) error {
 		return err
 	}
 
-	return billing.ValidateTime("purchased_at", p.PurchasedAt)
+	return billing.ValidateDate("purchased_at", p.PurchasedAt)
 }
 
 func insertSubscription(ctx context.Context, tx pgx.Tx, customer, subscriptionID string, p billing.AddonPurchase, result *billing.Subscription) error {

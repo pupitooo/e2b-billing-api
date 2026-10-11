@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
-	"time"
 
 	"e2b/billing-api/internal/accounting"
 	"e2b/billing-api/internal/billing"
@@ -20,16 +19,6 @@ const (
 // CreatePrice generates an identity and appends a version under the catalog lock.
 // The scoped request key replays the stored result even after activation.
 func (s *Store) CreatePrice(ctx context.Context, key string, input billing.PriceInput) (accounting.PriceVersion, error) {
-	return s.createPrice(ctx, key, input, false)
-}
-
-// CreatePriceNow resolves activation under the catalog lock. Replays retain both
-// the server-generated identity and the original persisted activation instant.
-func (s *Store) CreatePriceNow(ctx context.Context, key string, input billing.PriceInput) (accounting.PriceVersion, error) {
-	return s.createPrice(ctx, key, input, true)
-}
-
-func (s *Store) createPrice(ctx context.Context, key string, input billing.PriceInput, useCurrentTime bool) (accounting.PriceVersion, error) {
 	if err := billing.ValidateIdempotencyKey(key); err != nil {
 		return accounting.PriceVersion{}, err
 	}
@@ -38,10 +27,8 @@ func (s *Store) createPrice(ctx context.Context, key string, input billing.Price
 		return accounting.PriceVersion{}, err
 	}
 
-	if !useCurrentTime {
-		if err := billing.ValidateTime("effective_from", input.EffectiveFrom); err != nil {
-			return accounting.PriceVersion{}, err
-		}
+	if err := billing.ValidateDate("effective_from", input.EffectiveFrom); err != nil {
+		return accounting.PriceVersion{}, err
 	}
 
 	input.EffectiveFrom = input.EffectiveFrom.UTC()
@@ -56,9 +43,6 @@ func (s *Store) createPrice(ctx context.Context, key string, input billing.Price
 
 		if found {
 			price.ID = existing.ID
-			if useCurrentTime {
-				price.EffectiveFrom = existing.EffectiveFrom
-			}
 
 			if !samePrice(existing, price) {
 				return billing.ErrConflict
@@ -74,13 +58,8 @@ func (s *Store) createPrice(ctx context.Context, key string, input billing.Price
 		}
 
 		insertionTime := s.now().UTC()
-		if useCurrentTime {
-			price.EffectiveFrom = insertionTime.Truncate(time.Microsecond)
-			if err := billing.ValidateTime("effective_from", price.EffectiveFrom); err != nil {
-				return err
-			}
-		} else if price.EffectiveFrom.Before(insertionTime) {
-			return &billing.ValidationError{Field: "effective_from", Message: "A new price must not start before its insertion time."}
+		if price.EffectiveFrom.Before(billing.UTCDay(insertionTime)) {
+			return &billing.ValidationError{Field: "effective_from", Message: "A new price must not start before the current UTC date."}
 		}
 
 		price.ID = priceIDPrefix + rand.Text()
@@ -92,12 +71,7 @@ func (s *Store) createPrice(ctx context.Context, key string, input billing.Price
 			return err
 		}
 
-		request := struct {
-			Price          billing.PriceInput `json:"price"`
-			UseCurrentTime bool               `json:"use_current_time"`
-		}{Price: input, UseCurrentTime: useCurrentTime}
-
-		return recordOperation(ctx, tx, priceOperationScope, key, request, price, insertionTime)
+		return recordOperation(ctx, tx, priceOperationScope, key, input, price, insertionTime)
 	})
 	if err != nil {
 		return accounting.PriceVersion{}, err

@@ -112,7 +112,7 @@ test("APIClient.send", async (t) => {
       inputRequest: {
         method: "POST",
         path: "/customers/acme/credits",
-        body: '{"idempotency_key":"welcome","amount_cents":2500,"recorded_at":"2026-10-01T00:00:00Z"}',
+        body: '{"idempotency_key":"welcome","amount_cents":2500}',
       },
       inputNetworkFailure: false,
       inputStorageFailure: false,
@@ -127,7 +127,7 @@ test("APIClient.send", async (t) => {
       inputRequest: {
         method: "POST",
         path: "/customers/acme/credits",
-        body: '{"idempotency_key":"welcome","amount_cents":2500,"recorded_at":"2026-10-01T00:00:00Z"}',
+        body: '{"idempotency_key":"welcome","amount_cents":2500}',
       },
       inputNetworkFailure: true,
       inputStorageFailure: false,
@@ -142,7 +142,7 @@ test("APIClient.send", async (t) => {
       inputRequest: {
         method: "POST",
         path: "/customers/acme/credits",
-        body: '{"idempotency_key":"welcome","amount_cents":2500,"recorded_at":"2026-10-01T00:00:00Z"}',
+        body: '{"idempotency_key":"welcome","amount_cents":2500}',
       },
       inputNetworkFailure: false,
       inputStorageFailure: true,

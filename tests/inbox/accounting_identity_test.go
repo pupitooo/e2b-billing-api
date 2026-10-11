@@ -405,8 +405,7 @@ func testCreditEntryIdentities(t *testing.T) {
 			store := newPostgresStore(t, pool, postgres.Config{})
 
 			for _, step := range tc.steps {
-				err := store.GrantCredit(ctx, step.customer, billing.CreditGrant{IdempotencyKey: step.key, AmountCents: step.cents,
-					RecordedAt: parseBillingTime(t, "2026-10-01T00:00:00Z")})
+				err := store.GrantCredit(ctx, step.customer, billing.CreditGrant{IdempotencyKey: step.key, AmountCents: step.cents})
 				if step.wantSQLState != "" {
 					var databaseError *pgconn.PgError
 					if !errors.As(err, &databaseError) || databaseError.Code != step.wantSQLState {

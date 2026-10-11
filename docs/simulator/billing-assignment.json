@@ -42,7 +42,6 @@
         "path": "/customers/acme/credits",
         "body": {
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z",
           "idempotency_key": "welcome"
         }
       },
@@ -50,7 +49,6 @@
         "status": 200,
         "body": {
           "amount_cents": 2500,
-          "recorded_at": "2026-10-01T00:00:00Z",
           "idempotency_key": "welcome"
         }
       },
@@ -66,7 +64,7 @@
         "body": {
           "idempotency_key": "acme-pack",
           "addon_name": "concurrency_pack",
-          "purchased_at": "2026-10-05T00:00:00Z"
+          "purchased_at": "2026-10-05"
         }
       },
       "want": {

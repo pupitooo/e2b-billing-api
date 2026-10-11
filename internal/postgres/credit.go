@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	"e2b/billing-api/internal/accounting"
 	"e2b/billing-api/internal/billing"
@@ -10,6 +11,8 @@ import (
 )
 
 const creditOperationScopePrefix = "credits/"
+
+var errCreditAuditClock = errors.New("credit audit clock is outside the supported timestamp range")
 
 type creditGrantResult struct {
 	CreditEntryID string              `json:"credit_entry_id"`
@@ -31,12 +34,7 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.
 		return err
 	}
 
-	if err := billing.ValidateTime("recorded_at", grant.RecordedAt); err != nil {
-		return err
-	}
-
 	ticks, _ := accounting.FromCents(grant.AmountCents)
-	grant.RecordedAt = grant.RecordedAt.UTC()
 	scope := creditOperationScopePrefix + customer
 
 	return s.transact(ctx, func(tx pgx.Tx) error {
@@ -47,7 +45,7 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.
 		}
 
 		if found {
-			if previous.Grant.AmountCents == grant.AmountCents && previous.Grant.RecordedAt.Equal(grant.RecordedAt) {
+			if previous.Grant.AmountCents == grant.AmountCents {
 				return nil
 			}
 
@@ -58,6 +56,12 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.
 			return err
 		}
 
+		recordedAt := s.now().UTC().Truncate(time.Microsecond)
+		if err := billing.ValidateTime("recorded_at", recordedAt); err != nil {
+			// An invalid backend clock is a server failure, not a caller field error.
+			return errCreditAuditClock
+		}
+
 		entryID, err := nextAccountingID(ctx, tx, creditEntryIDSequence, creditEntryIDPrefix)
 		if err != nil {
 			return err
@@ -66,7 +70,7 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.
 		_, err = tx.Exec(ctx, `INSERT INTO credit_entries
             (credit_entry_id,customer_id,group_id,amount_ticks,recorded_at)
             VALUES ($1,$2,NULL,$3::numeric,$4)`, entryID,
-			customer, ticks.Ticks().String(), grant.RecordedAt)
+			customer, ticks.Ticks().String(), recordedAt)
 		if err != nil {
 			return err
 		}
@@ -79,7 +83,7 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.
 
 		result := creditGrantResult{CreditEntryID: entryID, Grant: grant}
 
-		return recordOperation(ctx, tx, scope, grant.IdempotencyKey, grant, result, s.now())
+		return recordOperation(ctx, tx, scope, grant.IdempotencyKey, grant, result, recordedAt)
 	})
 }
 

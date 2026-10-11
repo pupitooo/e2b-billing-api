@@ -2079,8 +2079,8 @@ repeat the GET until accounting finishes; do not issue the invoice beforehand.
 
 | Step | Method/path and explicit input | Required result |
 | --- | --- | --- |
-| Grant | POST `/customers/acme/credits`, `{"idempotency_key":"covered-grant","amount_cents":2500,"recorded_at":"2026-10-01T00:00:00Z"}` | HTTP `200`, balance 2_500_000_000 ticks. |
-| Purchase | POST `/customers/acme/addons`, `{"idempotency_key":"covered-pack","addon_name":"concurrency_pack","purchased_at":"2026-10-05T00:00:00Z"}` | HTTP `200`, monthly price 2_000 cents. |
+| Grant | POST `/customers/acme/credits`, `{"idempotency_key":"covered-grant","amount_cents":2500}` | HTTP `200`, balance 2_500_000_000 ticks. |
+| Purchase | POST `/customers/acme/addons`, `{"idempotency_key":"covered-pack","addon_name":"concurrency_pack","purchased_at":"2026-10-05"}` | HTTP `200`, monthly price 2_000 cents. |
 | Limit | POST `/customers/acme/spend-limit`, `{"idempotency_key":"covered-limit","limit_cents":1500}` | HTTP `200`, limit 1_500 cents. |
 | Before usage | GET `/customers/acme/months/2026-10/limit-status` | HTTP `200`, gross 0, reached `false`, pending/errors 0. The 2_000-cent pack exceeds the limit but is excluded. |
 | Usage | POST `/usage/batches` with the JSON below | HTTP `202`; all 400_000_000 units are retained even though their gross charge exceeds the limit. |

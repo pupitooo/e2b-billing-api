@@ -16,10 +16,10 @@ flowchart TB
         catalog["Acquire exclusive catalog lock"]
         identity{"Stored result for this request key?"}
         retry["Identical content: return original price<br/>Changed content: 409 conflict"]
-        time["Sample server UTC insertion instant<br/>After lock acquisition and identity check"]
-        eligible{"effective_from at or after<br/>the insertion instant?"}
+        time["Sample server UTC insertion date<br/>After lock acquisition and identity check"]
+        eligible{"effective_from date today or later?<br/>Resolve midnight UTC"}
         invalid["422 invalid_command<br/>Field: effective_from<br/>No catalog or financial writes"]
-        persist["Generate internal price ID; check rated history<br/>Insert price and operation result; commit together<br/>Future activation is supported"]
+        persist["Generate internal price ID; check rated history<br/>Insert price and operation result; commit together<br/>Daily activation; rated history is protected"]
         lock --> identity
         identity -->|"Yes"| retry
         identity -->|"No"| catalog --> time --> eligible

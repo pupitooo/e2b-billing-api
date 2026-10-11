@@ -84,7 +84,7 @@ func testReadableAddonIdentities(t *testing.T) {
 				IdempotencyKey string `json:"idempotency_key"`
 				AddonName      string `json:"addon_name"`
 				PurchasedAt    string `json:"purchased_at"`
-			}{IdempotencyKey: "readable-purchase", AddonName: tc.addon, PurchasedAt: "2026-10-05T00:00:00Z"}
+			}{IdempotencyKey: "readable-purchase", AddonName: tc.addon, PurchasedAt: "2026-10-05"}
 			body, err := json.Marshal(input)
 			if err != nil {
 				t.Fatal(err)
@@ -113,7 +113,10 @@ func testReadableAddonIdentities(t *testing.T) {
 				return
 			}
 
-			var actual billing.Subscription
+			var actual struct {
+				billing.Subscription
+				PurchasedAt string `json:"purchased_at"`
+			}
 			if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
 				t.Fatal(err)
 			}
@@ -187,7 +190,7 @@ func testStoredAddonIdentities(t *testing.T) {
 				t.Fatal(err)
 			}
 			if _, err := pool.Exec(ctx, `INSERT INTO api_idempotency_operations VALUES
-				('addons/acme','earlier-purchase','{"addon_name":"concurrency_pack","purchased_at":"2026-10-05T00:00:00Z"}',$1,'2026-10-05T00:00:00Z')`, encoded); err != nil {
+				('addons/acme','earlier-purchase','{"addon_name":"concurrency_pack","purchased_at":"2026-10-05"}',$1,'2026-10-05T00:00:00Z')`, encoded); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET state_version=1 WHERE customer_id='acme'"); err != nil {

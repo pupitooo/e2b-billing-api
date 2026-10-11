@@ -19,7 +19,6 @@ type BatchStore interface {
 type Store interface {
 	BatchStore
 	CreatePrice(context.Context, string, billing.PriceInput) (accounting.PriceVersion, error)
-	CreatePriceNow(context.Context, string, billing.PriceInput) (accounting.PriceVersion, error)
 	GrantCredit(context.Context, string, billing.CreditGrant) error
 	Credit(context.Context, string) (billing.CreditSnapshot, error)
 	PurchaseAddon(context.Context, string, string, billing.AddonPurchase) (billing.Subscription, error)
