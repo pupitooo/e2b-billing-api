@@ -14,6 +14,11 @@ for review. Its source and test hashes are recorded in the
 [mutation evidence](test-mutation-audit.json), together with every exact edit,
 before/after result, killing test name, SQL error and equivalent-mutant rationale.
 
+The 11 October 2026 idempotency refactor replaces the old credit operation
+uniqueness and separate limit history with shared API command history. This audit
+remains evidence for its stated baseline; the retired ledger constraint mutation
+is historical, and a new mutation audit has not been run for the revised schema.
+
 | Layer | Distinct mutations | Before regression additions | After regression additions |
 | --- | --- | --- | --- |
 | Go | 114 | 69 assertion failures, 6 suite timeouts, 39 survivors | 108 assertion failures; 6 equivalent survivors |

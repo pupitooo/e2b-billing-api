@@ -285,7 +285,7 @@ Existing group and ledger IDs remain unchanged. Sequence gaps after rollback are
 normal; retry identity is determined by business keys. See the
 [accounting identity rules](accounting-rules.md#accounting-resource-identities).
 
-The ledger contains `credit_entry_id`, `customer_id`, a stable `operation_id`, optional `group_id`, a signed `amount_ticks`, and `recorded_at`. A grant is positive and has no group; a debit is negative and links to a group owned by the same customer. Zero debits are omitted. Records are append-only, and `(customer_id, operation_id)` is unique so retrying one operation cannot grant or consume credit twice.
+The ledger contains a server-generated `credit_entry_id`, `customer_id`, optional `group_id`, a signed `amount_ticks`, and `recorded_at`. A grant is positive and has no group; a debit is negative and links to a group owned by the same customer. Zero debits are omitted. Records are append-only. Grant retries are protected by `(operation_scope, idempotency_key)` in the shared API command history. Usage debits commit with the unique event rating and locked receipt checkpoint, so retries cannot consume credit twice. Caller keys never become ledger IDs.
 
 The balance is a fast ledger projection. Before allocating credit, the worker locks the `customer_billing_state` row and changes the balance, ledger, group allocation, and `state_version` together. The database does not calculate the ledger sum or verify agreement between these projections automatically.
 

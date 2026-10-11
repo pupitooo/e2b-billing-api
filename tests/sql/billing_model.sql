@@ -118,10 +118,10 @@ SELECT pg_temp.assert_result(
 INSERT INTO monthly_usage (customer_id, usage_month, gross_charge_ticks) VALUES
     ('billing-model-acme', '2026-10-01', 1400000000),
     ('billing-model-cyberdyne', '2026-10-01', 617283945);
-INSERT INTO credit_entries (credit_entry_id, customer_id, operation_id, group_id, amount_ticks, recorded_at)
+INSERT INTO credit_entries (credit_entry_id, customer_id, group_id, amount_ticks, recorded_at)
 VALUES
-    ('billing-model-grant', 'billing-model-acme', 'grant-1', NULL, 2500000000, '2026-10-01T00:00:00Z'),
-    ('billing-model-debit', 'billing-model-acme', 'debit-1', 'billing-model-acme-oct', -1200000000, '2026-11-01T00:01:00Z');
+    ('billing-model-grant', 'billing-model-acme', NULL, 2500000000, '2026-10-01T00:00:00Z'),
+    ('billing-model-debit', 'billing-model-acme', 'billing-model-acme-oct', -1200000000, '2026-11-01T00:01:00Z');
 UPDATE customer_billing_state SET credit_balance_ticks = 1300000000, state_version = 1
 WHERE customer_id = 'billing-model-acme';
 INSERT INTO addons (addon_name, monthly_price_cents) VALUES ('billing-model-addon', 2000);
@@ -334,20 +334,20 @@ BEGIN
             want_sqlstate => '23503');
 
     PERFORM pg_temp.assert_rejection(
-            scenario => 'Duplicate credit operation',
-            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-grant-retry', 'billing-model-acme', 'grant-1', NULL, 2500, '2026-10-01T00:00:00Z')$$,
+            scenario => 'Duplicate internal credit entry ID',
+            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-grant', 'billing-model-acme', NULL, 2500, '2026-10-01T00:00:00Z')$$,
             want_sqlstate => '23505');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Credit debit for another customer group',
-            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-cross-customer', 'billing-model-cyberdyne', 'debit-2', 'billing-model-acme-oct', -1, '2026-11-01T00:00:00Z')$$,
+            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-cross-customer', 'billing-model-cyberdyne', 'billing-model-acme-oct', -1, '2026-11-01T00:00:00Z')$$,
             want_sqlstate => '23503');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Negative grant without usage',
-            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-negative-grant', 'billing-model-acme', 'grant-2', NULL, -1, '2026-10-01T00:00:00Z')$$,
+            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-negative-grant', 'billing-model-acme', NULL, -1, '2026-10-01T00:00:00Z')$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Positive usage debit',
-            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-positive-debit', 'billing-model-acme', 'debit-2', 'billing-model-acme-oct', 1, '2026-11-01T00:00:00Z')$$,
+            input_sql => $$INSERT INTO credit_entries VALUES ('billing-model-positive-debit', 'billing-model-acme', 'billing-model-acme-oct', 1, '2026-11-01T00:00:00Z')$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Editing credit history',

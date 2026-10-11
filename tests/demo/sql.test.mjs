@@ -78,10 +78,24 @@ test("inspectionSQL", async (t) => {
       inputMonth: "2026-10",
       wantFragments: [
         "operation_scope = 'addons/' || E'acme'",
+        "operation_scope = 'credits/' || E'acme'",
+        "operation_scope = 'spend-limit/' || E'acme'",
         "operation_scope = 'prices'",
         "request_payload->'price'->>'customer_id' = E'acme'",
       ],
       wantError: false,
+    },
+    {
+      scenario: "credit inspection uses internal ledger IDs",
+      inputView: "credit", inputCustomer: "acme", inputMonth: "2026-10",
+      wantFragments: ["SELECT credit_entry_id, group_id, amount_ticks", "FROM credit_entries"],
+      wantAbsentFragments: ["operation_id", "idempotency_key"], wantError: false,
+    },
+    {
+      scenario: "limit history uses the shared command table",
+      inputView: "limits", inputCustomer: "acme", inputMonth: "2026-10",
+      wantFragments: ["FROM api_idempotency_operations", "operation_scope = 'spend-limit/' || E'acme'", "response_payload->'limit_cents'"],
+      wantAbsentFragments: ["spend_limit_operations"], wantError: false,
     },
     {
       scenario: "UTC inbox month bounds",
@@ -123,6 +137,8 @@ test("inspectionSQL", async (t) => {
           actual.includes(fragment),
           `view=${c.inputView}: missing ${fragment}`,
         );
+      for (const fragment of c.wantAbsentFragments ?? [])
+        assert.equal(actual.includes(fragment), false, `view=${c.inputView}: retired field/table ${fragment}`);
     });
 });
 

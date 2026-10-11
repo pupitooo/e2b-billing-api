@@ -105,7 +105,7 @@ func testAccountingGroupIdentities(t *testing.T) {
 			setupSQL: `INSERT INTO rated_usage_groups VALUES
 				('group/earlier','acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',60000,240000,0,0);
 				INSERT INTO monthly_usage VALUES ('acme','2026-10-01',240000);
-				INSERT INTO credit_entries VALUES ('grant/earlier','acme','grant/earlier',NULL,1000000,'2026-10-10T00:00:00Z');
+				INSERT INTO credit_entries VALUES ('grant/earlier','acme',NULL,1000000,'2026-10-10T00:00:00Z');
 				UPDATE customer_billing_state SET credit_balance_ticks=1000000,state_version=2 WHERE customer_id='acme'`,
 			steps: []accountingUsageStep{
 				{name: "accumulate earlier group", customer: "acme", eventID: "one", units: 60_000, wantProcessed: true},
@@ -369,7 +369,10 @@ func testCreditEntryIdentities(t *testing.T) {
 		},
 		{
 			name: "earlier grant ID survives replay",
-			setupSQL: `INSERT INTO credit_entries VALUES ('grant/earlier','acme','grant/one',NULL,1000000,'2026-10-01T00:00:00Z');
+			setupSQL: `INSERT INTO credit_entries VALUES ('grant/earlier','acme',NULL,1000000,'2026-10-01T00:00:00Z');
+				INSERT INTO api_idempotency_operations VALUES ('credits/acme','one',
+				'{"idempotency_key":"one","amount_cents":1,"recorded_at":"2026-10-01T00:00:00Z"}',
+				'{"credit_entry_id":"grant/earlier","grant":{"idempotency_key":"one","amount_cents":1,"recorded_at":"2026-10-01T00:00:00Z"}}','2026-10-01T00:00:00Z');
 				UPDATE customer_billing_state SET credit_balance_ticks=1000000,state_version=1 WHERE customer_id='acme'`,
 			steps: []grantStep{
 				{name: "replay earlier grant", customer: "acme", key: "one", cents: 1},

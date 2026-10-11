@@ -298,15 +298,14 @@ func recordCreditDebit(ctx context.Context, tx pgx.Tx, e usage.Event, group stri
 		return nil
 	}
 
-	operation := identity("usage/", e.Source, e.EventID)
 	entryID, err := nextAccountingID(ctx, tx, creditEntryIDSequence, creditEntryIDPrefix)
 	if err != nil {
 		return err
 	}
 
 	_, err = tx.Exec(ctx, `INSERT INTO credit_entries
-        (credit_entry_id,customer_id,operation_id,group_id,amount_ticks,recorded_at)
-        VALUES ($1,$2,$3,$4,$5::numeric,$6)`, entryID, e.CustomerID, operation, group,
+		(credit_entry_id,customer_id,group_id,amount_ticks,recorded_at)
+		VALUES ($1,$2,$3,$4::numeric,$5)`, entryID, e.CustomerID, group,
 		"-"+used.Ticks().String(), time.Now().UTC().Truncate(time.Microsecond))
 
 	return err

@@ -15,6 +15,7 @@ import (
 // private account verifies replay or conflict without changing another case.
 func TestGrantCredit(t *testing.T) {
 	t.Run("sequence IDs and replay", testCreditEntryIdentities)
+	t.Run("timestamp identity", testCreditGrantTimestampIdentity)
 	cases := []struct {
 		name        string
 		customer    string

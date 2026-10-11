@@ -57,7 +57,7 @@ These decisions describe the current implementation. Assignment requirements and
 
 `UsageReceipt` maps to `usage_inbox` plus the separate `usage_ratings` link. Invoices use immutable JSON snapshots and frozen-group links rather than the separate line table proposed in the logical ERD.
 
-This diagram shows all 17 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `012`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
+This diagram shows all 16 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `012`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
 
 ![Implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
 
@@ -76,16 +76,15 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 | `customers` | Customer identity, name, country, and current billing address. |
 | `customer_billing_state` | One account row per customer with exact credit balance, optional spend limit, state version, and next invoice number. Financial writers serialize on this row. |
 | `metrics` | Supported metering identifiers. |
-| `api_idempotency_operations` | Append-only scoped request keys, normalized original inputs, successful resource results, and creation times. Written atomically with prices and subscriptions; keys are retained indefinitely. |
+| `api_idempotency_operations` | Append-only scoped request keys, normalized original inputs, successful resource results, and creation times. Written atomically with prices, subscriptions, credit grants, and spend-limit changes; keys are retained indefinitely. |
 | `price_versions` | Historical prices for a metric, either a default (`customer_id IS NULL`) or a customer override. Each version has an explicit effective timestamp. |
 | `rated_usage_groups` | Totals grouped by customer, price version, original usage month, and billing month; stores exact units/gross ticks, booked gross cents, and allocated credit ticks. |
 | `usage_ratings` | Links one `(source, event_id)` from `usage_inbox` to exactly one group. Many events can share a group. |
 | `monthly_usage` | Gross usage charges in exact ticks per customer and original UTC month, before credit and add-ons. |
-| `credit_entries` | Exact signed tick history: positive grants without a group and negative usage debits referencing a group owned by the same customer. `(customer_id, operation_id)` prevents duplicate operations. |
+| `credit_entries` | Exact signed tick history: positive grants without a group and negative usage debits referencing a group owned by the same customer. Server-generated `credit_entry_id` identifies each row; API keys live in the shared command history. Usage effects commit with the unique event rating and receipt checkpoint. |
 | `addons` | Add-on catalog and monthly price in cents. |
 | `addon_subscriptions` | Customer purchases with a monthly price snapshot and the UTC purchase month. One subscription per customer and add-on is supported; cancellation and multiple quantities are future work. |
 | `closed_billing_months` | Immutable customer/month closures used to route late consumption forward. |
-| `spend_limit_operations` | Immutable operation results; replaying an old identity cannot undo a newer limit. |
 | `invoices` | One immutable snapshot per customer/month, with unique per-customer number and total cents. Buyer details, ordered lines, exact audit ticks, and issue time are in `snapshot`. |
 | `invoiced_usage_groups` | Links issued invoices to groups; a trigger rejects changes to frozen groups. |
 
@@ -183,9 +182,9 @@ The migration runner applies schema, seed, and version records in one transactio
 
 The worker locks the customer's state row and commits the rating link, group totals, credit debit/balance, original month's gross spend, state version, and inbox `processed_at` together. Constraints represent those records but do not automatically reconcile ledger sums, projection totals, or the calculated price and booked cents. The unique rating link alone does not prove that a complete financial transaction ran exactly once.
 
-Migrations 005–007 persist accounting, closed months, spend-limit results, invoices and group freezes. Migration 008 introduced error exclusions for the former pending-usage capture flow; migration 009 retires that flow and all three supporting tables. Closing now publishes only already processed groups in one atomic transaction. Usage processed later routes forward without rewriting issued invoices.
+Migrations 005 and 007 persist accounting, closed months, invoices and group freezes; version 006 is a reserved no-op. Migration 008 introduced error exclusions for the former pending-usage capture flow; migration 009 retires that flow and all three supporting tables. Closing now publishes only already processed groups in one atomic transaction. Usage processed later routes forward without rewriting issued invoices.
 
-Migration `010_api_idempotency.sql` adds durable request-key history for generated price and subscription IDs. It preserves existing resource IDs, financial history, and seed data. Price and add-on bodies require `idempotency_key`. Migration `011_spend_limit_idempotency_key.sql` renames the spend-limit history column without changing rows, uniqueness, or append-only protection. Credit and limit bodies replace `operation_id` with `idempotency_key`; existing values remain replayable. The credit ledger retains internal grant/debit `operation_id` values.
+Migration `010_api_idempotency.sql` creates shared durable request-key history for prices, add-ons, credit grants, and spend-limit changes. The caller supplies only `idempotency_key`; internal resource and ledger IDs are generated independently on the server. Versions 006 and 011 are reserved no-ops. The revised foundation requires a clean database schema and supplies no upgrade or backfill for the previous split storage.
 
 Migration `012_accounting_id_sequences.sql` adds owned, noncycling `bigint`
 sequences for new `grp_<number>` group IDs and `crd_<number>` credit entry IDs.

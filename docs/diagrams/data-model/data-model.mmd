@@ -70,7 +70,6 @@ erDiagram
     CreditEntry {
         string credit_entry_id PK
         string customer_id FK
-        string operation_id UK
         string group_id FK "Nullable for grants"
         bigint signed_cents
         datetime created_at_utc

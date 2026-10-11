@@ -143,15 +143,19 @@ its contents. Different billing months retain separate group rounding boundaries
 
 ## Durable API operation keys
 
-Migration `010_api_idempotency.sql` adds append-only `api_idempotency_operations`.
-Apply it with `make migrate` before starting the updated API. Existing prices,
-subscriptions, and invoices retain their IDs. Price and add-on creation bodies replace caller resource IDs with required JSON
-`idempotency_key`; old resource commands do not acquire inferred keys. Migration
-`011_spend_limit_idempotency_key.sql`
-renames the spend-limit history column, preserving its rows, primary key, and
-append-only trigger. Credit and limit callers send their previous `operation_id`
-value as `idempotency_key`; the credit ledger retains internal grant/debit operation
-IDs. Run `make migrate` before rebuilding API and worker services.
+Migration `010_api_idempotency.sql` creates append-only
+`api_idempotency_operations` for prices, add-ons, credit grants, and spend-limit
+changes. All caller keys use the column name `idempotency_key`. Credit entries
+contain only server-generated ledger IDs and financial data; there is no separate
+spend-limit history table. The shared history stores the original input and result,
+including the internal ledger ID of a credit grant.
+
+The existing foundation migrations were revised during local review. Migration
+versions 006 and 011 are reserved no-ops, preserving the remaining version numbers.
+A database built from the previous definitions must have its schema recreated
+before applying the revised foundation. Clearing `schema_migrations` alone does
+not remove old tables or columns. Ordinary `make migrate` skips applied versions;
+this change provides no upgrade or historical-key backfill for an old schema.
 
 ```sql
 SELECT operation_scope, idempotency_key, request_payload, response_payload, created_at

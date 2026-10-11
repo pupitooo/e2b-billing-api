@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const spendLimitOperationScopePrefix = "spend-limit/"
+
 // SetSpendLimit records each operation once. Replaying an old operation returns
 // its original result while preserving the limit set by any newer operation.
 func (s *Store) SetSpendLimit(ctx context.Context, customer string, change billing.SpendLimitChange) error {
@@ -27,32 +29,33 @@ func (s *Store) SetSpendLimit(ctx context.Context, customer string, change billi
 		}
 	}
 
+	scope := spendLimitOperationScopePrefix + customer
+
 	return s.transact(ctx, func(tx pgx.Tx) error {
-		if _, err := lockAccount(ctx, tx, customer); err != nil {
+		var previous billing.SpendLimitChange
+		found, err := operationResponse(ctx, tx, scope, change.IdempotencyKey, &previous)
+		if err != nil {
 			return err
 		}
 
-		var previous *int64
-		err := tx.QueryRow(ctx, "SELECT limit_cents FROM spend_limit_operations WHERE customer_id=$1 AND idempotency_key=$2", customer, change.IdempotencyKey).Scan(&previous)
-		if err == nil {
-			if equalLimit(previous, change.LimitCents) {
+		if found {
+			if equalLimit(previous.LimitCents, change.LimitCents) {
 				return nil
 			}
 
 			return billing.ErrConflict
 		}
 
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-
-		if _, err := tx.Exec(ctx, "INSERT INTO spend_limit_operations VALUES ($1,$2,$3,$4)", customer, change.IdempotencyKey, change.LimitCents, s.now().UTC().Truncate(time.Microsecond)); err != nil {
+		if _, err := lockAccount(ctx, tx, customer); err != nil {
 			return err
 		}
 
 		_, err = tx.Exec(ctx, "UPDATE customer_billing_state SET spend_limit_cents=$2,state_version=state_version+1 WHERE customer_id=$1", customer, change.LimitCents)
+		if err != nil {
+			return err
+		}
 
-		return err
+		return recordOperation(ctx, tx, scope, change.IdempotencyKey, change, change, s.now().UTC().Truncate(time.Microsecond))
 	})
 }
 
