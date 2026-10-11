@@ -335,6 +335,10 @@ from cents. Credit and add-ons are excluded. `NULL` means unlimited; zero is rea
 even with no spend. All measured usage remains billable after reaching a limit.
 Raising the limit or selecting the new UTC month's gross total can clear it.
 
+Limit status reflects committed accounting and can lag measured or accepted usage.
+The [delayed-status limitation](limitations.md#l1-delayed-spend-limit-status)
+records the rationale, unmeasured delay and financial impact, and investigation plan.
+
 `AddonCharge` bills the full purchased price from the UTC purchase month onward,
 including purchases at month end. Earlier months cost zero. Cancellation,
 quantities, and proration remain outside the assignment's contract.
@@ -366,6 +370,11 @@ billing month, never processes pending `usage_inbox`, and does not wait
 for the worker to drain a backlog. Pending and quarantined usage in the target
 month cannot block a valid chronological issuance. This explicitly accepts an incomplete usage invoice in exchange for a
 simpler closing operation independent of the pending usage count.
+
+The [deferred-invoicing limitation](limitations.md#l2-accepted-usage-on-a-later-invoice)
+records how to measure the additional deferral beyond late platform delivery.
+The [rounding limitation](limitations.md#l3-rounding-across-groups-and-invoices)
+records the possible cent impact of separate invoice boundaries.
 
 Closing owns one transaction and holds the same account lock used by the worker
 until commit or rollback. An in-flight worker that already holds the lock must

@@ -6,6 +6,10 @@ This is a proof of concept for the E2B assignment, intended for local demonstrat
 and technical review. Production deployment requires further operational
 specification, validation, and hardening; production capacity has not been established.
 
+[Known limitations and investigation plans](docs/architecture/limitations.md)
+describe delayed limit visibility, deferred invoicing, and rounding across invoices,
+including what to measure and when mitigation is needed.
+
 ## Overview
 
 A billing service built with Go and PostgreSQL. It implements durable usage
