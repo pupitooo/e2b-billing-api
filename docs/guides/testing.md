@@ -93,3 +93,28 @@ and replay without ledger, balance, version, or command-history changes.
 The GUI's `calendarDate` and `buildCommand` tests verify the same wire format;
 credit commands contain no timestamp. The executable billing simulator checks
 unchanged literal assignment totals using the updated public commands.
+
+## Rejection and recovery assertions
+
+The financial API tests compare complete catalog, receipt, rating, group, monthly
+usage, ledger, subscription, command, account and invoice rows before and after
+rejected commands. The scenarios pair zero grants with one cent, negative prices
+with free prices, invalid calendar days with valid month-end purchases, and
+changed-content retries with the original operation. Valid recovery retains the
+same operation key and creates only the declared financial effect.
+
+`TestCloseMonth/rejection_preserves_complete_financial_state` rejects a skipped
+month with nonempty credit, ledger, rated usage and subscription rows. It then
+compares every field of the adjacent valid invoice, including price identity,
+units, original month, exact gross/credit, all lines, number and buyer snapshot.
+`TestPostgresInsertBatch/conflict_preserves_rated_financial_state` checks complete
+rollback of a batch containing both new input and a conflicting rated receipt.
+
+`TestSpendLimitAPI` verifies the persisted value and command count after changes,
+explicit `null` for unlimited configuration, unchanged state after invalid input,
+and concrete response fields on both sides of the UTC month boundary. The clock
+has an explicit offset to distinguish the local calendar from the UTC month.
+
+```sh
+make inbox-test RUN='^(TestSpendLimitAPI|TestPriceAPI|TestCreditAPI|TestAddonAPI|TestCloseMonth|TestPostgresInsertBatch)$'
+```

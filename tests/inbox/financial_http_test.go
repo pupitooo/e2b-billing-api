@@ -18,6 +18,7 @@ import (
 // PostgreSQL store; status, resolved times, and errors are declared beside each request.
 // Every scenario owns a seeded schema and cannot affect application accounts.
 func TestPriceAPI(t *testing.T) {
+	t.Run("rejection preserves complete financial state", testPriceRejectedState)
 	t.Run("request key scopes", testResourceKeyScopes)
 	t.Run("resource idempotency", func(t *testing.T) {
 		testResourceIdempotency(t, resourceEndpoint{
@@ -77,6 +78,7 @@ func TestPriceAPI(t *testing.T) {
 			}
 			serverTime := parseBillingTime(t, serverTimeText)
 			handler := newBillingHandler(t, newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }}), 5*time.Second, 8)
+			before := addonFinancialSnapshot(t, pool)
 			response := financialRequest(t, handler, http.MethodPost, "/prices", tc.body, tc.key)
 			if response.Code != tc.wantStatus {
 				t.Fatalf("POST /prices(%s): status=%d body=%s want %d", tc.body, response.Code, response.Body, tc.wantStatus)
@@ -93,6 +95,11 @@ func TestPriceAPI(t *testing.T) {
 				}
 				if actual.Error.Code != tc.wantCode || actual.Error.Field != tc.wantField {
 					t.Fatalf("POST /prices: error=%+v want code=%s field=%s", actual.Error, tc.wantCode, tc.wantField)
+				}
+			}
+			if tc.wantStatus != 200 {
+				if after := addonFinancialSnapshot(t, pool); after != before {
+					t.Fatalf("Rejected price(%s) changed state: before=%s after=%s", tc.body, before, after)
 				}
 			}
 			if tc.wantEffectiveFrom != "" {

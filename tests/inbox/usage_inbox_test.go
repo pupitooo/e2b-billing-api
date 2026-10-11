@@ -21,6 +21,7 @@ import (
 // Postgres.InsertBatch preserves explicit values and durable receipts, rolls
 // back failed batches, and resolves identical or conflicting concurrent retries.
 func TestPostgresInsertBatch(t *testing.T) {
+	t.Run("conflict preserves rated financial state", testBatchFinancialState)
 	t.Run("inbox insert batch", func(t *testing.T) {
 		tt := struct {
 			events         []usage.Event

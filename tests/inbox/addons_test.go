@@ -73,6 +73,7 @@ func TestPurchaseAddon(t *testing.T) {
 // TestAddonAPI verifies the public purchase response, including the price and
 // UTC activation month; validation cases cannot create a subscription.
 func TestAddonAPI(t *testing.T) {
+	t.Run("rejection preserves complete financial state", testAddonRejectedState)
 	t.Run("readable subscription IDs", testReadableAddonIdentities)
 	t.Run("resource idempotency", func(t *testing.T) {
 		testResourceIdempotency(t, resourceEndpoint{
@@ -100,9 +101,16 @@ func TestAddonAPI(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			response := financialRequest(t, financialHandler(t), "POST", "/customers/acme/addons", tc.body, tc.key)
+			pool := billingDatabase(t)
+			before := addonFinancialSnapshot(t, pool)
+			response := financialRequest(t, resourceHandler(t, pool), "POST", "/customers/acme/addons", tc.body, tc.key)
 			if response.Code != tc.wantStatus {
 				t.Fatalf("POST addons(%s): status=%d body=%s want %d", tc.body, response.Code, response.Body, tc.wantStatus)
+			}
+			if tc.wantStatus != 200 {
+				if after := addonFinancialSnapshot(t, pool); after != before {
+					t.Fatalf("Rejected command(%s) changed state: before=%s after=%s", tc.body, before, after)
+				}
 			}
 			var actual map[string]any
 			if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
