@@ -27,6 +27,28 @@ Keep the intended `COMPOSE_PROJECT_NAME` and port exports for migrations and
 its internal `postgres` hostname connects to the database in the same project.
 Changing a host port alone does not select another database.
 
+## Integer display in Adminer
+
+Adminer groups integer result values with underscores: `1_500` or
+`1_300_000_000`. This applies to PostgreSQL `smallint`, `integer`, and `bigint`
+columns, the integer-only `billing_ticks` and `billing_signed_ticks` domains,
+and whole-number `numeric` results without a decimal point, including negative
+values. Both table browsing and SQL query results use this presentation.
+Grouping operates on strings, preserving every digit of large microcent balances.
+Values with a decimal point (including `1000.00`), floating-point values, text,
+and `NULL` keep Adminer's normal presentation.
+
+The [display plugin](../../adminer/plugins-enabled/integer-format.php) changes
+presentation only. Row forms and Ctrl/Cmd-click inline editing use the original
+ungrouped integer; exports, stored data, comparisons, and ordering retain the
+original values. Copying a displayed cell includes its underscores; use an
+export when you need raw values.
+
+Apply the Compose plugin mount with `make up SERVICE=adminer`, then refresh the
+database page. Subsequent plugin edits require only a browser refresh.
+Run `make adminer-check` to verify syntax, grouping boundaries, the full bigint
+range, type selection, and foreign key links using the pinned Adminer PHP runtime.
+
 ## Explore the database with psql
 
 `psql` is PostgreSQL's interactive command-line client. It runs inside the container, so no additional database tool needs to be installed locally.

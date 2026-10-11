@@ -27,7 +27,9 @@ The `api-docs` service mounts only that diagram's directory and serves its PNG
 and Mermaid source through explicit routes under `/reference/diagrams/api-endpoints/`.
 
 The same portal serves the [static billing console](demo-console.md) at `/demo/`
-and proxies standard Adminer at `/database/`. Refresh the browser after editing
+and proxies Adminer at `/database/`, with
+[grouped integer results](database-operations.md#integer-display-in-adminer).
+Refresh the browser after editing
 the separate `demo/` files; they do not require a build.
 
 Both Make targets start the same portal and its API/PostgreSQL/Adminer dependencies.

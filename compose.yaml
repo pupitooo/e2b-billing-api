@@ -112,6 +112,8 @@ services:
     environment:
       ADMINER_DEFAULT_SERVER: postgres
       ADMINER_DESIGN: nette
+    volumes:
+      - ./adminer/plugins-enabled:/var/www/html/plugins-enabled:ro
     # Adminer is reached through the loopback-bound documentation gateway.
     healthcheck:
       test: ["CMD", "php", "-r", "exit(file_get_contents('http://127.0.0.1:8080/') === false ? 1 : 0);"]

@@ -34,9 +34,11 @@ The console consists of buildless HTML, CSS and JavaScript in the repository's
 forwards `/api/` to billing. No additional Go handlers, custom backend, frontend
 build, or local Node installation is required to use the console.
 
-Standard Adminer is the only added Compose runtime service. Its version and image
+Adminer is the only added Compose runtime service. Its version and image
 digest are pinned in `compose.yaml`; PostgreSQL support and the SQL editor come
-from the stock image. Adminer is reachable through the loopback-bound portal,
+from the stock image. A mounted [display plugin](database-operations.md#integer-display-in-adminer)
+groups integer result values with underscores while preserving raw edits and
+exports. Adminer is reachable through the loopback-bound portal,
 without a separate published port. Its session and redirects retain the
 `/database/` prefix. All financial commands go through the existing public API;
 database reads and maintenance are separate manual SQL operations.
