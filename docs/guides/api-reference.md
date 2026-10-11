@@ -29,7 +29,7 @@ without querying storage.
 
 ## Money units
 
-Fields named `*_ticks` contain **integer amounts in microcents**:
+Fields named `*_microcents` contain **integer amounts in microcents**:
 `1 cent = 1_000_000 microcents`. They are decimal strings to preserve large exact
 integers in JSON clients. Catalog rates use whole cents per million resource
 units; invoice lines, add-ons, grants, and limit inputs retain their whole-cent
@@ -62,7 +62,7 @@ limit; the platform owns enforcement. See [limit rules](../architecture/accounti
 
 An invoice may have `total_cents: 0` despite positive measured usage and no credit.
 Half-up rounding is applied to each cumulative group, and usage lines retain
-their complete `units`, `gross_ticks`, and `credit_ticks` even when `amount_cents`
+their complete `units`, `gross_microcents`, and `credit_microcents` even when `amount_cents`
 is zero. Zero-total invoices close and freeze the month with an ordinary invoice
 number. There is no minimum charge or rounding-remainder carry into another group
 or invoice. Reads and retries return the same snapshot. See the

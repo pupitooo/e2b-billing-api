@@ -351,7 +351,7 @@ func testCommandHistoryScopes(t *testing.T) {
 	err := pool.QueryRow(context.Background(), `SELECT
 		(SELECT string_agg(operation_scope,',' ORDER BY operation_scope) FROM api_idempotency_operations WHERE idempotency_key=$1),
 		(SELECT string_agg(credit_entry_id,',' ORDER BY credit_entry_id) FROM credit_entries),
-		credit_balance_ticks::text,spend_limit_cents,state_version FROM customer_billing_state WHERE customer_id='acme'`, scenario.key).Scan(&scopes, &ids, &balance, &limit, &version)
+		credit_balance_microcents::text,spend_limit_cents,state_version FROM customer_billing_state WHERE customer_id='acme'`, scenario.key).Scan(&scopes, &ids, &balance, &limit, &version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func assertCommandHistoryState(t *testing.T, pool *pgxpool.Pool, want commandHis
 	var actual commandHistoryState
 	err := pool.QueryRow(context.Background(), `SELECT
 		(SELECT COALESCE(string_agg(credit_entry_id,',' ORDER BY credit_entry_id),'') FROM credit_entries),
-		credit_balance_ticks::text,spend_limit_cents,state_version,
+		credit_balance_microcents::text,spend_limit_cents,state_version,
 		(SELECT count(*) FROM api_idempotency_operations)
 		FROM customer_billing_state WHERE customer_id='acme'`).Scan(&actual.creditIDs, &actual.balance, &actual.limit, &actual.version, &actual.commands)
 	if err != nil {

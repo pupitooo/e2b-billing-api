@@ -17,18 +17,18 @@ import (
 )
 
 type accountingIdentityState struct {
-	groupIDs       string
-	creditIDs      string
-	units          string
-	grossTicks     string
-	allocatedTicks string
-	monthlyTicks   string
-	balanceTicks   string
-	ratings        int
-	pending        int
-	stateVersion   int64
-	groupSequence  int64
-	creditSequence int64
+	groupIDs            string
+	creditIDs           string
+	units               string
+	grossMicrocents     string
+	allocatedMicrocents string
+	monthlyMicrocents   string
+	balanceMicrocents   string
+	ratings             int
+	pending             int
+	stateVersion        int64
+	groupSequence       int64
+	creditSequence      int64
 }
 
 // assertAccountingIdentityState reads identities, exact financial effects,
@@ -40,17 +40,17 @@ func assertAccountingIdentityState(t *testing.T, pool *pgxpool.Pool, want accoun
 		(SELECT COALESCE(string_agg(group_id,',' ORDER BY group_id),'') FROM rated_usage_groups),
 		(SELECT COALESCE(string_agg(credit_entry_id,',' ORDER BY credit_entry_id),'') FROM credit_entries),
 		(SELECT COALESCE(sum(total_units),0)::text FROM rated_usage_groups),
-		(SELECT COALESCE(sum(exact_charge_ticks),0)::text FROM rated_usage_groups),
-		(SELECT COALESCE(sum(allocated_credit_ticks),0)::text FROM rated_usage_groups),
-		(SELECT COALESCE(sum(gross_charge_ticks),0)::text FROM monthly_usage),
-		(SELECT sum(credit_balance_ticks)::text FROM customer_billing_state),
+		(SELECT COALESCE(sum(exact_charge_microcents),0)::text FROM rated_usage_groups),
+		(SELECT COALESCE(sum(allocated_credit_microcents),0)::text FROM rated_usage_groups),
+		(SELECT COALESCE(sum(gross_charge_microcents),0)::text FROM monthly_usage),
+		(SELECT sum(credit_balance_microcents)::text FROM customer_billing_state),
 		(SELECT count(*) FROM usage_ratings),
 		(SELECT count(*) FROM usage_inbox WHERE processed_at IS NULL),
 		(SELECT sum(state_version)::bigint FROM customer_billing_state),
 		(SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM rated_usage_group_id_seq),
 		(SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM credit_entry_id_seq)`).
-		Scan(&actual.groupIDs, &actual.creditIDs, &actual.units, &actual.grossTicks, &actual.allocatedTicks,
-			&actual.monthlyTicks, &actual.balanceTicks, &actual.ratings, &actual.pending, &actual.stateVersion,
+		Scan(&actual.groupIDs, &actual.creditIDs, &actual.units, &actual.grossMicrocents, &actual.allocatedMicrocents,
+			&actual.monthlyMicrocents, &actual.balanceMicrocents, &actual.ratings, &actual.pending, &actual.stateVersion,
 			&actual.groupSequence, &actual.creditSequence)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ type accountingUsageStep struct {
 
 // testAccountingGroupIdentities accumulates repeated and split receipts by the
 // financial tuple. Earlier IDs are reused without sequence allocation or lost
-// cumulative ticks, and replay leaves both ledger and sequence state unchanged.
+// cumulative microcents, and replay leaves both ledger and sequence state unchanged.
 func testAccountingGroupIdentities(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -81,24 +81,24 @@ func testAccountingGroupIdentities(t *testing.T) {
 	}{
 		{
 			name:     "split usage and replay reuse one group",
-			setupSQL: "UPDATE customer_billing_state SET credit_balance_ticks=1000000 WHERE customer_id='acme'",
+			setupSQL: "UPDATE customer_billing_state SET credit_balance_microcents=1000000 WHERE customer_id='acme'",
 			steps: []accountingUsageStep{
 				{name: "first receipt", customer: "acme", eventID: "one", units: 60_000, wantProcessed: true},
 				{name: "second receipt", customer: "acme", eventID: "two", units: 60_000, wantProcessed: true},
 				{name: "identical replay", customer: "acme", eventID: "one", units: 60_000, wantProcessed: false},
 			},
-			wantState: accountingIdentityState{groupIDs: "grp_1", creditIDs: "crd_1,crd_2", units: "120000", grossTicks: "480000",
-				allocatedTicks: "480000", monthlyTicks: "480000", balanceTicks: "520000", ratings: 2, stateVersion: 2, groupSequence: 1, creditSequence: 2},
+			wantState: accountingIdentityState{groupIDs: "grp_1", creditIDs: "crd_1,crd_2", units: "120000", grossMicrocents: "480000",
+				allocatedMicrocents: "480000", monthlyMicrocents: "480000", balanceMicrocents: "520000", ratings: 2, stateVersion: 2, groupSequence: 1, creditSequence: 2},
 		},
 		{
 			name:     "different customers share the sequence",
-			setupSQL: "UPDATE customer_billing_state SET credit_balance_ticks=1000000",
+			setupSQL: "UPDATE customer_billing_state SET credit_balance_microcents=1000000",
 			steps: []accountingUsageStep{
 				{name: "override group", customer: "acme", eventID: "one", units: 60_000, wantProcessed: true},
 				{name: "default group", customer: "cyberdyne", eventID: "two", units: 60_000, wantProcessed: true},
 			},
-			wantState: accountingIdentityState{groupIDs: "grp_1,grp_2", creditIDs: "crd_1,crd_2", units: "120000", grossTicks: "540000",
-				allocatedTicks: "540000", monthlyTicks: "540000", balanceTicks: "1460000", ratings: 2, stateVersion: 2, groupSequence: 2, creditSequence: 2},
+			wantState: accountingIdentityState{groupIDs: "grp_1,grp_2", creditIDs: "crd_1,crd_2", units: "120000", grossMicrocents: "540000",
+				allocatedMicrocents: "540000", monthlyMicrocents: "540000", balanceMicrocents: "1460000", ratings: 2, stateVersion: 2, groupSequence: 2, creditSequence: 2},
 		},
 		{
 			name: "earlier group and grant keep their IDs",
@@ -106,13 +106,13 @@ func testAccountingGroupIdentities(t *testing.T) {
 				('group/earlier','acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',60000,240000,0,0);
 				INSERT INTO monthly_usage VALUES ('acme','2026-10-01',240000);
 				INSERT INTO credit_entries VALUES ('grant/earlier','acme',NULL,1000000,'2026-10-10T00:00:00Z');
-				UPDATE customer_billing_state SET credit_balance_ticks=1000000,state_version=2 WHERE customer_id='acme'`,
+				UPDATE customer_billing_state SET credit_balance_microcents=1000000,state_version=2 WHERE customer_id='acme'`,
 			steps: []accountingUsageStep{
 				{name: "accumulate earlier group", customer: "acme", eventID: "one", units: 60_000, wantProcessed: true},
 				{name: "identical replay", customer: "acme", eventID: "one", units: 60_000, wantProcessed: false},
 			},
-			wantState: accountingIdentityState{groupIDs: "group/earlier", creditIDs: "crd_1,grant/earlier", units: "120000", grossTicks: "480000",
-				allocatedTicks: "240000", monthlyTicks: "480000", balanceTicks: "760000", ratings: 1, stateVersion: 3, creditSequence: 1},
+			wantState: accountingIdentityState{groupIDs: "group/earlier", creditIDs: "crd_1,grant/earlier", units: "120000", grossMicrocents: "480000",
+				allocatedMicrocents: "240000", monthlyMicrocents: "480000", balanceMicrocents: "760000", ratings: 1, stateVersion: 3, creditSequence: 1},
 		},
 	}
 	for _, tc := range cases {
@@ -155,7 +155,7 @@ func testAccountingIdentityConcurrency(t *testing.T) {
 		events    []accountingUsageStep
 		wantState accountingIdentityState
 	}{
-		workers: 8, setupSQL: "UPDATE customer_billing_state SET credit_balance_ticks=10000000",
+		workers: 8, setupSQL: "UPDATE customer_billing_state SET credit_balance_microcents=10000000",
 		events: []accountingUsageStep{
 			{customer: "acme", eventID: "one", units: 60_000}, {customer: "cyberdyne", eventID: "two", units: 60_000},
 			{customer: "acme", eventID: "three", units: 60_000}, {customer: "cyberdyne", eventID: "four", units: 60_000},
@@ -163,7 +163,7 @@ func testAccountingIdentityConcurrency(t *testing.T) {
 			{customer: "acme", eventID: "seven", units: 60_000}, {customer: "cyberdyne", eventID: "eight", units: 60_000},
 		},
 		wantState: accountingIdentityState{groupIDs: "grp_1,grp_2", creditIDs: "crd_1,crd_2,crd_3,crd_4,crd_5,crd_6,crd_7,crd_8",
-			units: "480000", grossTicks: "2160000", allocatedTicks: "2160000", monthlyTicks: "2160000", balanceTicks: "17840000",
+			units: "480000", grossMicrocents: "2160000", allocatedMicrocents: "2160000", monthlyMicrocents: "2160000", balanceMicrocents: "17840000",
 			ratings: 8, stateVersion: 8, groupSequence: 2, creditSequence: 8},
 	}
 	pool := billingDatabase(t)
@@ -232,27 +232,27 @@ func testAccountingSequenceExhaustion(t *testing.T) {
 	}{
 		{
 			name: "last group number is usable", sequenceSQL: "ALTER SEQUENCE rated_usage_group_id_seq MAXVALUE 2; SELECT setval('rated_usage_group_id_seq',2,false)",
-			wantState: accountingIdentityState{groupIDs: "grp_2", creditIDs: "crd_1", units: "60000", grossTicks: "240000",
-				allocatedTicks: "240000", monthlyTicks: "240000", balanceTicks: "760000", ratings: 1, stateVersion: 1, groupSequence: 2, creditSequence: 1},
+			wantState: accountingIdentityState{groupIDs: "grp_2", creditIDs: "crd_1", units: "60000", grossMicrocents: "240000",
+				allocatedMicrocents: "240000", monthlyMicrocents: "240000", balanceMicrocents: "760000", ratings: 1, stateVersion: 1, groupSequence: 2, creditSequence: 1},
 		},
 		{
 			name:        "exhausted group sequence has no financial effects",
 			sequenceSQL: "ALTER SEQUENCE rated_usage_group_id_seq MAXVALUE 2; SELECT setval('rated_usage_group_id_seq',2,true)",
 			wantError:   true, wantSQLState: "2200H",
-			wantState: accountingIdentityState{units: "0", grossTicks: "0", allocatedTicks: "0", monthlyTicks: "0", balanceTicks: "1000000", pending: 1, groupSequence: 2},
+			wantState: accountingIdentityState{units: "0", grossMicrocents: "0", allocatedMicrocents: "0", monthlyMicrocents: "0", balanceMicrocents: "1000000", pending: 1, groupSequence: 2},
 		},
 		{
 			name:        "exhausted debit sequence rolls back its group",
 			sequenceSQL: "ALTER SEQUENCE credit_entry_id_seq MAXVALUE 2; SELECT setval('credit_entry_id_seq',2,true)",
 			wantError:   true, wantSQLState: "2200H",
-			wantState: accountingIdentityState{units: "0", grossTicks: "0", allocatedTicks: "0", monthlyTicks: "0", balanceTicks: "1000000", pending: 1, groupSequence: 1, creditSequence: 2},
+			wantState: accountingIdentityState{units: "0", grossMicrocents: "0", allocatedMicrocents: "0", monthlyMicrocents: "0", balanceMicrocents: "1000000", pending: 1, groupSequence: 1, creditSequence: 2},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
 			ctx := context.Background()
-			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=1000000 WHERE customer_id='acme'"); err != nil {
+			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=1000000 WHERE customer_id='acme'"); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := pool.Exec(ctx, tc.sequenceSQL); err != nil {
@@ -294,19 +294,19 @@ func testAccountingIdentityRollback(t *testing.T) {
 			name:      "completion failure consumes numbers without financial effects",
 			setupSQL:  "ALTER TABLE usage_inbox ADD CONSTRAINT identity_completion_failure CHECK (processed_at IS NULL)",
 			wantError: true, wantSQLState: "23514",
-			wantState: accountingIdentityState{units: "0", grossTicks: "0", allocatedTicks: "0", monthlyTicks: "0",
-				balanceTicks: "1000000", pending: 1, groupSequence: 1, creditSequence: 1},
+			wantState: accountingIdentityState{units: "0", grossMicrocents: "0", allocatedMicrocents: "0", monthlyMicrocents: "0",
+				balanceMicrocents: "1000000", pending: 1, groupSequence: 1, creditSequence: 1},
 		},
 		{
 			name:     "retry uses new numbers and accounts once",
 			setupSQL: "ALTER TABLE usage_inbox DROP CONSTRAINT identity_completion_failure",
-			wantState: accountingIdentityState{groupIDs: "grp_2", creditIDs: "crd_2", units: "60000", grossTicks: "240000",
-				allocatedTicks: "240000", monthlyTicks: "240000", balanceTicks: "760000", ratings: 1, stateVersion: 1, groupSequence: 2, creditSequence: 2},
+			wantState: accountingIdentityState{groupIDs: "grp_2", creditIDs: "crd_2", units: "60000", grossMicrocents: "240000",
+				allocatedMicrocents: "240000", monthlyMicrocents: "240000", balanceMicrocents: "760000", ratings: 1, stateVersion: 1, groupSequence: 2, creditSequence: 2},
 		},
 	}
 	pool := billingDatabase(t)
 	ctx := context.Background()
-	if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=1000000 WHERE customer_id='acme'"); err != nil {
+	if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=1000000 WHERE customer_id='acme'"); err != nil {
 		t.Fatal(err)
 	}
 	event := usage.Event{Source: "identity-rollback", EventID: "one", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox",
@@ -364,8 +364,8 @@ func testCreditEntryIdentities(t *testing.T) {
 				{name: "retry first grant", customer: "acme", key: "one", cents: 1},
 				{name: "changed-content conflict", customer: "acme", key: "one", cents: 2, wantError: billing.ErrConflict},
 			},
-			wantState: accountingIdentityState{creditIDs: "crd_1,crd_2", units: "0", grossTicks: "0", allocatedTicks: "0",
-				monthlyTicks: "0", balanceTicks: "2000000", stateVersion: 2, creditSequence: 2},
+			wantState: accountingIdentityState{creditIDs: "crd_1,crd_2", units: "0", grossMicrocents: "0", allocatedMicrocents: "0",
+				monthlyMicrocents: "0", balanceMicrocents: "2000000", stateVersion: 2, creditSequence: 2},
 		},
 		{
 			name: "earlier grant ID survives replay",
@@ -373,13 +373,13 @@ func testCreditEntryIdentities(t *testing.T) {
 				INSERT INTO api_idempotency_operations VALUES ('credits/acme','one',
 				'{"idempotency_key":"one","amount_cents":1,"recorded_at":"2026-10-01T00:00:00Z"}',
 				'{"credit_entry_id":"grant/earlier","grant":{"idempotency_key":"one","amount_cents":1,"recorded_at":"2026-10-01T00:00:00Z"}}','2026-10-01T00:00:00Z');
-				UPDATE customer_billing_state SET credit_balance_ticks=1000000,state_version=1 WHERE customer_id='acme'`,
+				UPDATE customer_billing_state SET credit_balance_microcents=1000000,state_version=1 WHERE customer_id='acme'`,
 			steps: []grantStep{
 				{name: "replay earlier grant", customer: "acme", key: "one", cents: 1},
 				{name: "new grant", customer: "acme", key: "two", cents: 1},
 			},
-			wantState: accountingIdentityState{creditIDs: "crd_1,grant/earlier", units: "0", grossTicks: "0", allocatedTicks: "0",
-				monthlyTicks: "0", balanceTicks: "2000000", stateVersion: 2, creditSequence: 1},
+			wantState: accountingIdentityState{creditIDs: "crd_1,grant/earlier", units: "0", grossMicrocents: "0", allocatedMicrocents: "0",
+				monthlyMicrocents: "0", balanceMicrocents: "2000000", stateVersion: 2, creditSequence: 1},
 		},
 		{
 			name:     "last credit number and exhausted allocation",
@@ -389,8 +389,8 @@ func testCreditEntryIdentities(t *testing.T) {
 				{name: "retry still succeeds", customer: "acme", key: "one", cents: 1},
 				{name: "exhaustion", customer: "acme", key: "two", cents: 1, wantSQLState: "2200H"},
 			},
-			wantState: accountingIdentityState{creditIDs: "crd_2", units: "0", grossTicks: "0", allocatedTicks: "0",
-				monthlyTicks: "0", balanceTicks: "1000000", stateVersion: 1, creditSequence: 2},
+			wantState: accountingIdentityState{creditIDs: "crd_2", units: "0", grossMicrocents: "0", allocatedMicrocents: "0",
+				monthlyMicrocents: "0", balanceMicrocents: "1000000", stateVersion: 1, creditSequence: 2},
 		},
 	}
 	for _, tc := range cases {

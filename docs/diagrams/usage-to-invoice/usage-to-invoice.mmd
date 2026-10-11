@@ -12,7 +12,7 @@ config:
 %% Example: one customer, metric, price version, usage month, and billing month.
 %% All 1_000 events are processed before October closes; no add-ons are included.
 %% The 2-cent starting credit is illustrative; 1 cent = 1_000_000 microcents.
-%% Existing *_ticks fields store integer microcent amounts.
+%% Existing *_microcents fields store integer microcent amounts.
 %% Group and credit boxes show cumulative results after all events are processed.
 %% Steps 2-4 commit together for each event; credit uses exact microcents.
 %% The worker also maintains booked_charge_cents as a running gross projection.

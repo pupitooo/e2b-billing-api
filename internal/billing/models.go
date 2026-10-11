@@ -21,11 +21,11 @@ type CreditGrant struct {
 // CreditSnapshot reports exact balance and asynchronous accounting visibility.
 // Counts describe committed receipts in the same database statement snapshot.
 type CreditSnapshot struct {
-	CustomerID       string `json:"customer_id"`
-	BalanceTicks     string `json:"credit_balance_ticks"`
-	StateVersion     int64  `json:"state_version"`
-	PendingEvents    int64  `json:"pending_events"`
-	ProcessingErrors int64  `json:"processing_errors"`
+	CustomerID        string `json:"customer_id"`
+	BalanceMicrocents string `json:"credit_balance_microcents"`
+	StateVersion      int64  `json:"state_version"`
+	PendingEvents     int64  `json:"pending_events"`
+	ProcessingErrors  int64  `json:"processing_errors"`
 }
 
 // AddonPurchase starts at midnight UTC on the caller-supplied calendar date.
@@ -49,42 +49,42 @@ type SpendLimitChange struct {
 }
 
 type LimitStatus struct {
-	CustomerID       string `json:"customer_id"`
-	Month            string `json:"month"`
-	LimitCents       *int64 `json:"limit_cents"`
-	GrossChargeTicks string `json:"gross_charge_ticks"`
-	LimitReached     bool   `json:"limit_reached"`
-	StateVersion     int64  `json:"state_version"`
-	PendingEvents    int64  `json:"pending_events"`
-	ProcessingErrors int64  `json:"processing_errors"`
+	CustomerID            string `json:"customer_id"`
+	Month                 string `json:"month"`
+	LimitCents            *int64 `json:"limit_cents"`
+	GrossChargeMicrocents string `json:"gross_charge_microcents"`
+	LimitReached          bool   `json:"limit_reached"`
+	StateVersion          int64  `json:"state_version"`
+	PendingEvents         int64  `json:"pending_events"`
+	ProcessingErrors      int64  `json:"processing_errors"`
 }
 
 type InvoiceLine struct {
-	Kind           string `json:"kind"`
-	Description    string `json:"description"`
-	AmountCents    int64  `json:"amount_cents"`
-	PriceVersionID string `json:"price_version_id,omitempty"`
-	Metric         string `json:"metric,omitempty"`
-	UsageMonth     string `json:"usage_month,omitempty"`
-	Units          string `json:"units,omitempty"`
-	GrossTicks     string `json:"gross_ticks,omitempty"`
-	CreditTicks    string `json:"credit_ticks,omitempty"`
-	SubscriptionID string `json:"subscription_id,omitempty"`
+	Kind             string `json:"kind"`
+	Description      string `json:"description"`
+	AmountCents      int64  `json:"amount_cents"`
+	PriceVersionID   string `json:"price_version_id,omitempty"`
+	Metric           string `json:"metric,omitempty"`
+	UsageMonth       string `json:"usage_month,omitempty"`
+	Units            string `json:"units,omitempty"`
+	GrossMicrocents  string `json:"gross_microcents,omitempty"`
+	CreditMicrocents string `json:"credit_microcents,omitempty"`
+	SubscriptionID   string `json:"subscription_id,omitempty"`
 }
 
 // Invoice is an immutable buyer and financial snapshot, including exact audit
-// ticks and the whole-cent presentation that sums to TotalCents.
+// microcents and the whole-cent presentation that sums to TotalCents.
 type Invoice struct {
-	CustomerID      string        `json:"customer_id"`
-	Number          string        `json:"number"`
-	Month           string        `json:"month"`
-	CustomerName    string        `json:"customer_name"`
-	Country         string        `json:"country"`
-	BillingAddress  string        `json:"billing_address"`
-	Currency        string        `json:"currency"`
-	Lines           []InvoiceLine `json:"lines"`
-	TotalCents      int64         `json:"total_cents"`
-	GrossUsageTicks string        `json:"gross_usage_ticks"`
-	CreditUsedTicks string        `json:"credit_used_ticks"`
-	IssuedAt        time.Time     `json:"issued_at"`
+	CustomerID           string        `json:"customer_id"`
+	Number               string        `json:"number"`
+	Month                string        `json:"month"`
+	CustomerName         string        `json:"customer_name"`
+	Country              string        `json:"country"`
+	BillingAddress       string        `json:"billing_address"`
+	Currency             string        `json:"currency"`
+	Lines                []InvoiceLine `json:"lines"`
+	TotalCents           int64         `json:"total_cents"`
+	GrossUsageMicrocents string        `json:"gross_usage_microcents"`
+	CreditUsedMicrocents string        `json:"credit_used_microcents"`
+	IssuedAt             time.Time     `json:"issued_at"`
 }

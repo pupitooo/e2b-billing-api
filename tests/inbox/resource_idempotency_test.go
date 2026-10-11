@@ -29,12 +29,12 @@ type resourceEndpoint struct {
 }
 
 type resourceState struct {
-	prices        int
-	subscriptions int
-	operations    int
-	stateVersion  int64
-	creditTicks   string
-	ratings       int
+	prices           int
+	subscriptions    int
+	operations       int
+	stateVersion     int64
+	creditMicrocents string
+	ratings          int
 }
 
 // testResourceIdempotency runs transport, durable replay, rollback, and races
@@ -59,23 +59,23 @@ func testResourceBodyValidation(t *testing.T, endpoint resourceEndpoint) {
 		wantField  string
 		wantState  resourceState
 	}{
-		{name: "missing", wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "header alone does not supply the JSON key", headerKey: "old-header", wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "null", body: `{"idempotency_key":null,` + endpoint.body[1:], wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "numeric key", body: `{"idempotency_key":1,` + endpoint.body[1:], wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "boolean key", body: `{"idempotency_key":true,` + endpoint.body[1:], wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "case alias", body: `{"Idempotency_Key":"key",` + endpoint.body[1:], wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "empty", keys: []string{""}, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "space", keys: []string{"a b"}, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "tab", keys: []string{"a\tb"}, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "Unicode", keys: []string{"ž"}, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "repeated equal values", keys: []string{"one", "one"}, wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "repeated unequal values", keys: []string{"one", "two"}, wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "above byte limit", keys: []string{strings.Repeat("a", 257)}, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditTicks: "0"}},
-		{name: "at byte limit", keys: []string{strings.Repeat("a", 256)}, wantStatus: 200, wantState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditTicks: "0"}},
-		{name: "single character", keys: []string{"!"}, wantStatus: 200, wantState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditTicks: "0"}},
-		{name: "body key is authoritative", keys: []string{"body-key"}, headerKey: "different-header-key", wantStatus: 200, wantState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditTicks: "0"}},
-		{name: "caller resource ID rejected", keys: []string{"legacy"}, body: endpoint.legacyBody, wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditTicks: "0"}},
+		{name: "missing", wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "header alone does not supply the JSON key", headerKey: "old-header", wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "null", body: `{"idempotency_key":null,` + endpoint.body[1:], wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "numeric key", body: `{"idempotency_key":1,` + endpoint.body[1:], wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "boolean key", body: `{"idempotency_key":true,` + endpoint.body[1:], wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "case alias", body: `{"Idempotency_Key":"key",` + endpoint.body[1:], wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "empty", keys: []string{""}, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "space", keys: []string{"a b"}, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "tab", keys: []string{"a\tb"}, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "Unicode", keys: []string{"ž"}, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "repeated equal values", keys: []string{"one", "one"}, wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "repeated unequal values", keys: []string{"one", "two"}, wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "above byte limit", keys: []string{strings.Repeat("a", 257)}, wantStatus: 422, wantCode: "invalid_command", wantField: "idempotency_key", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
+		{name: "at byte limit", keys: []string{strings.Repeat("a", 256)}, wantStatus: 200, wantState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditMicrocents: "0"}},
+		{name: "single character", keys: []string{"!"}, wantStatus: 200, wantState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditMicrocents: "0"}},
+		{name: "body key is authoritative", keys: []string{"body-key"}, headerKey: "different-header-key", wantStatus: 200, wantState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditMicrocents: "0"}},
+		{name: "caller resource ID rejected", keys: []string{"legacy"}, body: endpoint.legacyBody, wantStatus: 400, wantCode: "invalid_json", wantState: resourceState{prices: 3, creditMicrocents: "0"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -131,7 +131,7 @@ func testResourceDurableReplay(t *testing.T, endpoint resourceEndpoint) {
 		{name: "changed content", key: "durable-command", body: endpoint.changedBody, wantStatus: 409, wantCode: "billing_conflict"},
 		{name: "original content still replays", key: "durable-command", body: endpoint.body, wantStatus: 200, wantSameResponse: true},
 	}
-	wantState := resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditTicks: "0"}
+	wantState := resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditMicrocents: "0"}
 	pool := billingDatabase(t)
 	var originalResponse, originalID string
 	for _, step := range steps {
@@ -204,8 +204,8 @@ func testResourceOperationRollback(t *testing.T, endpoint resourceEndpoint) {
 		setupSQL: `CREATE FUNCTION fail_operation_record() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected operation persistence failure'; END $$;
             CREATE TRIGGER fail_operation_record BEFORE INSERT ON api_idempotency_operations FOR EACH ROW EXECUTE FUNCTION fail_operation_record()`,
 		recoverySQL:       "DROP TRIGGER fail_operation_record ON api_idempotency_operations",
-		wantFailureStatus: 503, wantFailureCode: "billing_unavailable", wantFailedState: resourceState{prices: 3, creditTicks: "0"},
-		wantRetryStatus: 200, wantRetriedState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditTicks: "0"}}
+		wantFailureStatus: 503, wantFailureCode: "billing_unavailable", wantFailedState: resourceState{prices: 3, creditMicrocents: "0"},
+		wantRetryStatus: 200, wantRetriedState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditMicrocents: "0"}}
 	pool := billingDatabase(t)
 	if _, err := pool.Exec(context.Background(), scenario.setupSQL); err != nil {
 		t.Fatal(err)
@@ -251,8 +251,8 @@ func testResourceConcurrentRequests(t *testing.T, endpoint resourceEndpoint) {
 		wantConflicts int
 		wantState     resourceState
 	}{
-		{name: "identical", key: "concurrent", bodies: []string{endpoint.body, endpoint.body}, wantSuccesses: 2, wantState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditTicks: "0"}},
-		{name: "changed content", key: "concurrent", bodies: []string{endpoint.body, endpoint.changedBody}, wantSuccesses: 1, wantConflicts: 1, wantState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditTicks: "0"}},
+		{name: "identical", key: "concurrent", bodies: []string{endpoint.body, endpoint.body}, wantSuccesses: 2, wantState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditMicrocents: "0"}},
+		{name: "changed content", key: "concurrent", bodies: []string{endpoint.body, endpoint.changedBody}, wantSuccesses: 1, wantConflicts: 1, wantState: resourceState{prices: endpoint.wantPrices, subscriptions: endpoint.wantSubscriptions, operations: 1, stateVersion: endpoint.wantVersion, creditMicrocents: "0"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -338,9 +338,9 @@ func assertResourceState(t *testing.T, pool *pgxpool.Pool, want resourceState, c
 	var got resourceState
 	err := pool.QueryRow(context.Background(), `SELECT (SELECT count(*) FROM price_versions),
         (SELECT count(*) FROM addon_subscriptions), (SELECT count(*) FROM api_idempotency_operations),
-        state_version,credit_balance_ticks::text,(SELECT count(*) FROM usage_ratings)
+        state_version,credit_balance_microcents::text,(SELECT count(*) FROM usage_ratings)
         FROM customer_billing_state WHERE customer_id=$1`, customer).
-		Scan(&got.prices, &got.subscriptions, &got.operations, &got.stateVersion, &got.creditTicks, &got.ratings)
+		Scan(&got.prices, &got.subscriptions, &got.operations, &got.stateVersion, &got.creditMicrocents, &got.ratings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func testResourceKeyScopes(t *testing.T) {
 		{path: "/prices", body: `{"customer_id":null,"metric":"cpu_seconds","price_per_million_cents":7,"effective_from":"2026-11-01"}`, idField: "price_version_id", wantStatus: 200},
 		{path: "/customers/acme/addons", body: `{"addon_name":"concurrency_pack","purchased_at":"2026-10-05"}`, idField: "subscription_id", wantStatus: 200},
 		{path: "/customers/cyberdyne/addons", body: `{"addon_name":"concurrency_pack","purchased_at":"2026-10-05"}`, idField: "subscription_id", wantStatus: 200},
-	}, wantState: resourceState{prices: 4, subscriptions: 2, operations: 3, stateVersion: 1, creditTicks: "0"}}
+	}, wantState: resourceState{prices: 4, subscriptions: 2, operations: 3, stateVersion: 1, creditMicrocents: "0"}}
 	pool := billingDatabase(t)
 	seen := map[string]bool{}
 	for _, step := range scenario.steps {
@@ -410,7 +410,7 @@ func testAddonReplayAfterClosing(t *testing.T) {
 		purchase:         billing.AddonPurchase{AddonName: "concurrency_pack", PurchasedAt: time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)},
 		catalogUpdateSQL: "UPDATE addons SET monthly_price_cents=3000 WHERE addon_name='concurrency_pack'",
 		invoiceMonth:     "2026-10", wantInvoiceCents: 2000, wantMonthlyPrice: 2000,
-		wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 2, creditTicks: "0"}}
+		wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 2, creditMicrocents: "0"}}
 	pool := billingDatabase(t)
 	store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) }})
 	original, err := store.PurchaseAddon(context.Background(), scenario.customer, scenario.key, scenario.purchase)

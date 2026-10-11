@@ -5,7 +5,7 @@ import {
   calendarDate,
   expectationDifferences,
   formatCents,
-  formatTicks,
+  formatMicrocents,
   parseExactJSON,
   invoiceEligible,
   timestampMicroseconds,
@@ -69,8 +69,8 @@ test("usdToCents", async (t) => {
     });
 });
 
-// formatTicks covers the adjacent half-cent boundary and exact fractional-credit display.
-test("formatTicks", async (t) => {
+// formatMicrocents covers the adjacent half-cent boundary and exact fractional-credit display.
+test("formatMicrocents", async (t) => {
   const cases = [
     {
       scenario: "below half cent",
@@ -112,9 +112,9 @@ test("formatTicks", async (t) => {
   for (const c of cases)
     await t.test(c.scenario, () => {
       assert.equal(
-        formatTicks(c.input, c.exact),
+        formatMicrocents(c.input, c.exact),
         c.want,
-        `formatTicks input=${c.input} exact=${c.exact}`,
+        `formatMicrocents input=${c.input} exact=${c.exact}`,
       );
     });
 });

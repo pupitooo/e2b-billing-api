@@ -88,7 +88,7 @@ func TestInvoiceClosingExclusionsMigration(t *testing.T) {
 			var credit string
 			if err := tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM invoice_closing_exclusions),
                 (SELECT count(*) FROM invoice_closing_receipts),(SELECT count(*) FROM usage_ratings),
-                credit_balance_ticks::text FROM customer_billing_state WHERE customer_id='cyberdyne'`).Scan(&exclusions, &cohort, &ratings, &credit); err != nil {
+                credit_balance_microcents::text FROM customer_billing_state WHERE customer_id='cyberdyne'`).Scan(&exclusions, &cohort, &ratings, &credit); err != nil {
 				t.Fatal(err)
 			}
 			if exclusions != tc.wantExclusions || cohort != tc.wantCohort || ratings != tc.wantRatings || credit != tc.wantCredit {

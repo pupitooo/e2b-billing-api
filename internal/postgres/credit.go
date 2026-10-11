@@ -34,7 +34,7 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.
 		return err
 	}
 
-	ticks, _ := accounting.FromCents(grant.AmountCents)
+	grantAmount, _ := accounting.FromCents(grant.AmountCents)
 	scope := creditOperationScopePrefix + customer
 
 	return s.transact(ctx, func(tx pgx.Tx) error {
@@ -68,15 +68,15 @@ func (s *Store) GrantCredit(ctx context.Context, customer string, grant billing.
 		}
 
 		_, err = tx.Exec(ctx, `INSERT INTO credit_entries
-            (credit_entry_id,customer_id,group_id,amount_ticks,recorded_at)
+            (credit_entry_id,customer_id,group_id,amount_microcents,recorded_at)
             VALUES ($1,$2,NULL,$3::numeric,$4)`, entryID,
-			customer, ticks.Ticks().String(), recordedAt)
+			customer, grantAmount.Microcents().String(), recordedAt)
 		if err != nil {
 			return err
 		}
 
-		_, err = tx.Exec(ctx, `UPDATE customer_billing_state SET credit_balance_ticks=credit_balance_ticks+$2::numeric,
-            state_version=state_version+1 WHERE customer_id=$1`, customer, ticks.Ticks().String())
+		_, err = tx.Exec(ctx, `UPDATE customer_billing_state SET credit_balance_microcents=credit_balance_microcents+$2::numeric,
+            state_version=state_version+1 WHERE customer_id=$1`, customer, grantAmount.Microcents().String())
 		if err != nil {
 			return err
 		}
@@ -93,11 +93,11 @@ func (s *Store) Credit(ctx context.Context, customer string) (billing.CreditSnap
 	}
 
 	var snapshot billing.CreditSnapshot
-	err := s.pool.QueryRow(ctx, `SELECT customer_id,credit_balance_ticks::text,state_version,
+	err := s.pool.QueryRow(ctx, `SELECT customer_id,credit_balance_microcents::text,state_version,
         (SELECT count(*) FROM usage_inbox WHERE customer_id=$1 AND processed_at IS NULL AND processing_error IS NULL),
         (SELECT count(*) FROM usage_inbox WHERE customer_id=$1 AND processing_error IS NOT NULL)
         FROM customer_billing_state WHERE customer_id=$1`, customer).
-		Scan(&snapshot.CustomerID, &snapshot.BalanceTicks, &snapshot.StateVersion, &snapshot.PendingEvents, &snapshot.ProcessingErrors)
+		Scan(&snapshot.CustomerID, &snapshot.BalanceMicrocents, &snapshot.StateVersion, &snapshot.PendingEvents, &snapshot.ProcessingErrors)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return snapshot, billing.ErrNotFound
 	}

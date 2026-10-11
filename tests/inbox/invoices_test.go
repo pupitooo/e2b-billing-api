@@ -22,13 +22,13 @@ type measuredHour struct {
 	units   int64
 }
 type invoiceExpectation struct {
-	month           string
-	number          string
-	totalCents      int64
-	lineCents       []int64
-	grossTicks      string
-	creditTicks     string
-	remainingCredit string
+	month            string
+	number           string
+	totalCents       int64
+	lineCents        []int64
+	grossMicrocents  string
+	creditMicrocents string
+	remainingCredit  string
 }
 
 // TestCloseMonth reproduces literal assignment invoice values in private schemas.
@@ -64,11 +64,11 @@ func TestCloseMonth(t *testing.T) {
 		{name: "Acme October and late November assignment", wantOctoberWork: []bool{true, true}, wantNovemberWork: []bool{true, true}, customer: "acme", invoiceTime: "2026-12-01T00:00:00Z", creditCents: 2500, purchaseTime: "2026-10-05T00:00:00Z",
 			october:      []measuredHour{{eventID: "oct-first", start: "2026-10-10T12:00:00Z", units: 100_000_000}, {eventID: "oct-second", start: "2026-10-20T12:00:00Z", units: 200_000_000}},
 			later:        []measuredHour{{eventID: "late-oct", start: "2026-10-30T12:00:00Z", units: 50_000_000}, {eventID: "nov", start: "2026-11-03T12:00:00Z", units: 100_000_000}},
-			wantOctober:  invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 2000, lineCents: []int64{1200, 2000, -1200}, grossTicks: "1200000000", creditTicks: "1200000000", remainingCredit: "1300000000"},
-			wantNovember: &invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 2000, lineCents: []int64{200, 400, 2000, -600}, grossTicks: "600000000", creditTicks: "600000000", remainingCredit: "700000000"}},
+			wantOctober:  invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 2000, lineCents: []int64{1200, 2000, -1200}, grossMicrocents: "1200000000", creditMicrocents: "1200000000", remainingCredit: "1300000000"},
+			wantNovember: &invoiceExpectation{month: "2026-11", number: "ACME-0002", totalCents: 2000, lineCents: []int64{200, 400, 2000, -600}, grossMicrocents: "600000000", creditMicrocents: "600000000", remainingCredit: "700000000"}},
 		{name: "Cyberdyne October historical prices", wantOctoberWork: []bool{true, true}, customer: "cyberdyne", invoiceTime: "2026-11-01T00:00:00Z",
 			october:     []measuredHour{{eventID: "oct-first", start: "2026-10-10T12:00:00Z", units: 123_456_789}, {eventID: "oct-second", start: "2026-10-20T12:00:00Z", units: 200_000_000}},
-			wantOctober: invoiceExpectation{month: "2026-10", number: "CYBERDYNE-0001", totalCents: 1817, lineCents: []int64{617, 1200, 0}, grossTicks: "1817283945", creditTicks: "0", remainingCredit: "0"}},
+			wantOctober: invoiceExpectation{month: "2026-10", number: "CYBERDYNE-0001", totalCents: 1817, lineCents: []int64{617, 1200, 0}, grossMicrocents: "1817283945", creditMicrocents: "0", remainingCredit: "0"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -122,78 +122,78 @@ func TestCloseMonth(t *testing.T) {
 	}
 	t.Run("UTC month boundary", func(t *testing.T) {
 		type closingState struct {
-			invoices             int
-			closedMonths         int
-			frozenGroups         int
-			groups               int
-			ratings              int
-			monthlyUsageRows     int
-			creditEntries        int
-			nextInvoiceNumber    int64
-			stateVersion         int64
-			remainingCreditTicks string
+			invoices                  int
+			closedMonths              int
+			frozenGroups              int
+			groups                    int
+			ratings                   int
+			monthlyUsageRows          int
+			creditEntries             int
+			nextInvoiceNumber         int64
+			stateVersion              int64
+			remainingCreditMicrocents string
 		}
 
 		cases := []struct {
-			name                string
-			customer            string
-			invoiceTime         string
-			start               string
-			end                 string
-			units               int64
-			receiptTime         string
-			initialCreditTicks  string
-			closingMonths       []string
-			wantError           bool
-			wantCloseError      error
-			wantCompleted       bool
-			wantProcessingError string
-			wantInvoice         invoiceExpectation
-			wantClosingState    closingState
+			name                    string
+			customer                string
+			invoiceTime             string
+			start                   string
+			end                     string
+			units                   int64
+			receiptTime             string
+			initialCreditMicrocents string
+			closingMonths           []string
+			wantError               bool
+			wantCloseError          error
+			wantCompleted           bool
+			wantProcessingError     string
+			wantInvoice             invoiceExpectation
+			wantClosingState        closingState
 		}{
 			{
-				name:                "cross-month receipt is quarantined without blocking invoice or retry",
-				customer:            "acme",
-				invoiceTime:         "2026-11-01T00:02:00Z",
-				start:               "2026-10-31T23:59:00Z",
-				end:                 "2026-11-01T00:01:00Z",
-				units:               100_000_000,
-				receiptTime:         "2026-11-01T00:02:00Z",
-				initialCreditTicks:  "2500000000",
-				closingMonths:       []string{"2026-10", "2026-10"},
-				wantError:           false,
-				wantCloseError:      nil,
-				wantCompleted:       false,
-				wantProcessingError: "usage interval must fit within one UTC month",
-				wantInvoice:         invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossTicks: "0", creditTicks: "0", remainingCredit: "2500000000"},
+				name:                    "cross-month receipt is quarantined without blocking invoice or retry",
+				customer:                "acme",
+				invoiceTime:             "2026-11-01T00:02:00Z",
+				start:                   "2026-10-31T23:59:00Z",
+				end:                     "2026-11-01T00:01:00Z",
+				units:                   100_000_000,
+				receiptTime:             "2026-11-01T00:02:00Z",
+				initialCreditMicrocents: "2500000000",
+				closingMonths:           []string{"2026-10", "2026-10"},
+				wantError:               false,
+				wantCloseError:          nil,
+				wantCompleted:           false,
+				wantProcessingError:     "usage interval must fit within one UTC month",
+				wantInvoice:             invoiceExpectation{month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossMicrocents: "0", creditMicrocents: "0", remainingCredit: "2500000000"},
 				wantClosingState: closingState{
 					invoices: 1, closedMonths: 1, frozenGroups: 0, groups: 0,
 					ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
-					nextInvoiceNumber: 2, stateVersion: 1, remainingCreditTicks: "2500000000",
+					nextInvoiceNumber: 2, stateVersion: 1, remainingCreditMicrocents: "2500000000",
 				},
 			},
 			{
-				name:                "receipt ending at UTC month boundary closes October exactly once",
-				customer:            "acme",
-				invoiceTime:         "2026-11-01T00:02:00Z",
-				start:               "2026-10-31T23:59:00Z",
-				end:                 "2026-11-01T00:00:00Z",
-				units:               100_000_000,
-				receiptTime:         "2026-11-01T00:02:00Z",
-				initialCreditTicks:  "2500000000",
-				closingMonths:       []string{"2026-10", "2026-10"},
-				wantError:           false,
-				wantCloseError:      nil,
-				wantCompleted:       true,
-				wantProcessingError: "",
+				name:                    "receipt ending at UTC month boundary closes October exactly once",
+				customer:                "acme",
+				invoiceTime:             "2026-11-01T00:02:00Z",
+				start:                   "2026-10-31T23:59:00Z",
+				end:                     "2026-11-01T00:00:00Z",
+				units:                   100_000_000,
+				receiptTime:             "2026-11-01T00:02:00Z",
+				initialCreditMicrocents: "2500000000",
+				closingMonths:           []string{"2026-10", "2026-10"},
+				wantError:               false,
+				wantCloseError:          nil,
+				wantCompleted:           true,
+				wantProcessingError:     "",
 				wantInvoice: invoiceExpectation{
 					month: "2026-10", number: "ACME-0001", totalCents: 0, lineCents: []int64{400, -400},
-					grossTicks: "400000000", creditTicks: "400000000", remainingCredit: "2100000000",
+					grossMicrocents: "400000000", creditMicrocents: "400000000", remainingCredit: "2100000000",
 				},
 				wantClosingState: closingState{
 					invoices: 1, closedMonths: 1, frozenGroups: 1, groups: 1,
 					ratings: 1, monthlyUsageRows: 1, creditEntries: 1,
-					nextInvoiceNumber: 2, stateVersion: 2, remainingCreditTicks: "2100000000",
+					nextInvoiceNumber: 2, stateVersion: 2, remainingCreditMicrocents: "2100000000",
 				},
 			},
 		}
@@ -202,8 +202,8 @@ func TestCloseMonth(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				pool := billingDatabase(t)
 				ctx := context.Background()
-				if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric WHERE customer_id=$1", tc.customer, tc.initialCreditTicks); err != nil {
-					t.Fatalf("Set initial credit for customer %q to %s ticks: %v", tc.customer, tc.initialCreditTicks, err)
+				if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=$2::numeric WHERE customer_id=$1", tc.customer, tc.initialCreditMicrocents); err != nil {
+					t.Fatalf("Set initial credit for customer %q to %s microcents: %v", tc.customer, tc.initialCreditMicrocents, err)
 				}
 
 				event := usage.Event{
@@ -253,11 +253,11 @@ func TestCloseMonth(t *testing.T) {
 						(SELECT count(*) FROM usage_ratings),
 						(SELECT count(*) FROM monthly_usage),
 						(SELECT count(*) FROM credit_entries),
-						next_invoice_number,state_version,credit_balance_ticks::text
+						next_invoice_number,state_version,credit_balance_microcents::text
 						FROM customer_billing_state WHERE customer_id=$1`, tc.customer).Scan(
 						&got.invoices, &got.closedMonths, &got.frozenGroups, &got.groups,
 						&got.ratings, &got.monthlyUsageRows, &got.creditEntries,
-						&got.nextInvoiceNumber, &got.stateVersion, &got.remainingCreditTicks,
+						&got.nextInvoiceNumber, &got.stateVersion, &got.remainingCreditMicrocents,
 					)
 					if err != nil {
 						t.Fatalf("Read closing state after CloseMonth(%q, %q) step %d: %v", tc.customer, month, step+1, err)
@@ -275,13 +275,13 @@ func TestCloseMonth(t *testing.T) {
 			invoices, closedMonths, frozenGroups, ratedGroups int
 			ratings, monthlyUsageRows, creditEntries          int
 			nextInvoiceNumber, stateVersion                   int64
-			creditTicks, receiptError                         string
+			creditMicrocents, receiptError                    string
 			receiptProcessed                                  bool
 		}
 
 		cases := []struct {
 			name, customer, month, serverTime              string
-			initialCreditTicks                             string
+			initialCreditMicrocents                        string
 			usageStart, usageEnd, receivedAt               string
 			units                                          int64
 			wantError                                      bool
@@ -291,47 +291,47 @@ func TestCloseMonth(t *testing.T) {
 		}{
 			{
 				name: "January cannot close on January twentieth", customer: "acme", month: "2027-01", serverTime: "2027-01-20T12:00:00Z",
-				initialCreditTicks: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
+				initialCreditMicrocents: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
 				wantError: true, wantErrorField: "month", wantErrorMessage: "Only completed UTC calendar months can be closed.",
 				wantState: financialState{invoices: 0, closedMonths: 0, frozenGroups: 0, ratedGroups: 0, ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
-					nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "1000000000", receiptProcessed: false, receiptError: ""},
+					nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "1000000000", receiptProcessed: false, receiptError: ""},
 			},
 			{
 				name: "last microsecond of January is still too early", customer: "acme", month: "2027-01", serverTime: "2027-01-31T23:59:59.999999Z",
-				initialCreditTicks: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
+				initialCreditMicrocents: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
 				wantError: true, wantErrorField: "month", wantErrorMessage: "Only completed UTC calendar months can be closed.",
 				wantState: financialState{invoices: 0, closedMonths: 0, frozenGroups: 0, ratedGroups: 0, ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
-					nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "1000000000", receiptProcessed: false, receiptError: ""},
+					nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "1000000000", receiptProcessed: false, receiptError: ""},
 			},
 			{
 				name: "February local date cannot bypass January UTC boundary", customer: "acme", month: "2027-01", serverTime: "2027-02-01T07:59:59.999999+08:00",
-				initialCreditTicks: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
+				initialCreditMicrocents: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
 				wantError: true, wantErrorField: "month", wantErrorMessage: "Only completed UTC calendar months can be closed.",
 				wantState: financialState{invoices: 0, closedMonths: 0, frozenGroups: 0, ratedGroups: 0, ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
-					nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "1000000000", receiptProcessed: false, receiptError: ""},
+					nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "1000000000", receiptProcessed: false, receiptError: ""},
 			},
 			{
 				name: "future February cannot close in January", customer: "acme", month: "2027-02", serverTime: "2027-01-20T12:00:00Z",
-				initialCreditTicks: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
+				initialCreditMicrocents: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
 				wantError: true, wantErrorField: "month", wantErrorMessage: "Only completed UTC calendar months can be closed.",
 				wantState: financialState{invoices: 0, closedMonths: 0, frozenGroups: 0, ratedGroups: 0, ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
-					nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "1000000000", receiptProcessed: false, receiptError: ""},
+					nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "1000000000", receiptProcessed: false, receiptError: ""},
 			},
 			{
 				name: "January closes exactly at February UTC start", customer: "acme", month: "2027-01", serverTime: "2027-02-01T00:00:00Z",
-				initialCreditTicks: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
+				initialCreditMicrocents: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
 				wantError: false, wantIssuedAt: "2027-02-01T00:00:00Z",
-				wantInvoice: invoiceExpectation{month: "2027-01", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossTicks: "0", creditTicks: "0", remainingCredit: "1000000000"},
+				wantInvoice: invoiceExpectation{month: "2027-01", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossMicrocents: "0", creditMicrocents: "0", remainingCredit: "1000000000"},
 				wantState: financialState{invoices: 1, closedMonths: 1, frozenGroups: 0, ratedGroups: 0, ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
-					nextInvoiceNumber: 2, stateVersion: 1, creditTicks: "1000000000", receiptProcessed: false, receiptError: ""},
+					nextInvoiceNumber: 2, stateVersion: 1, creditMicrocents: "1000000000", receiptProcessed: false, receiptError: ""},
 			},
 			{
 				name: "offset clock closes January at the same UTC instant", customer: "acme", month: "2027-01", serverTime: "2027-02-01T08:00:00+08:00",
-				initialCreditTicks: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
+				initialCreditMicrocents: "1000000000", usageStart: "2027-01-10T12:00:00Z", usageEnd: "2027-01-10T13:00:00Z", receivedAt: "2027-01-11T00:00:00Z", units: 100_000_000,
 				wantError: false, wantIssuedAt: "2027-02-01T00:00:00Z",
-				wantInvoice: invoiceExpectation{month: "2027-01", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossTicks: "0", creditTicks: "0", remainingCredit: "1000000000"},
+				wantInvoice: invoiceExpectation{month: "2027-01", number: "ACME-0001", totalCents: 0, lineCents: []int64{0}, grossMicrocents: "0", creditMicrocents: "0", remainingCredit: "1000000000"},
 				wantState: financialState{invoices: 1, closedMonths: 1, frozenGroups: 0, ratedGroups: 0, ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
-					nextInvoiceNumber: 2, stateVersion: 1, creditTicks: "1000000000", receiptProcessed: false, receiptError: ""},
+					nextInvoiceNumber: 2, stateVersion: 1, creditMicrocents: "1000000000", receiptProcessed: false, receiptError: ""},
 			},
 		}
 
@@ -341,8 +341,8 @@ func TestCloseMonth(t *testing.T) {
 				ctx := context.Background()
 				serverTime := parseBillingTime(t, tc.serverTime)
 				store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }})
-				if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric WHERE customer_id=$1", tc.customer, tc.initialCreditTicks); err != nil {
-					t.Fatalf("Set initial credit for %q to %s ticks: %v", tc.customer, tc.initialCreditTicks, err)
+				if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=$2::numeric WHERE customer_id=$1", tc.customer, tc.initialCreditMicrocents); err != nil {
+					t.Fatalf("Set initial credit for %q to %s microcents: %v", tc.customer, tc.initialCreditMicrocents, err)
 				}
 
 				event := usage.Event{Source: "closing-clock-boundary", EventID: "one", SchemaVersion: 1, CustomerID: tc.customer, SandboxID: "sandbox", Metric: "cpu_seconds",
@@ -384,13 +384,13 @@ func TestCloseMonth(t *testing.T) {
 						(SELECT count(*) FROM closed_billing_months), (SELECT count(*) FROM invoiced_usage_groups),
 						(SELECT count(*) FROM rated_usage_groups), (SELECT count(*) FROM usage_ratings),
 						(SELECT count(*) FROM monthly_usage), (SELECT count(*) FROM credit_entries),
-						next_invoice_number,state_version,credit_balance_ticks::text,
+						next_invoice_number,state_version,credit_balance_microcents::text,
 						(SELECT processed_at IS NOT NULL FROM usage_inbox WHERE source=$2 AND event_id=$3),
 						(SELECT COALESCE(processing_error,'') FROM usage_inbox WHERE source=$2 AND event_id=$3)
 						FROM customer_billing_state WHERE customer_id=$1`, tc.customer, event.Source, event.EventID).Scan(
 						&got.invoices, &got.closedMonths, &got.frozenGroups, &got.ratedGroups,
 						&got.ratings, &got.monthlyUsageRows, &got.creditEntries,
-						&got.nextInvoiceNumber, &got.stateVersion, &got.creditTicks, &got.receiptProcessed, &got.receiptError,
+						&got.nextInvoiceNumber, &got.stateVersion, &got.creditMicrocents, &got.receiptProcessed, &got.receiptError,
 					)
 					if err != nil {
 						t.Fatalf("Read state after CloseMonth(%q, %q) at %s attempt %d: %v", tc.customer, tc.month, tc.serverTime, attempt+1, err)
@@ -596,15 +596,15 @@ func assertInvoiceExpectation(t testing.TB, store *postgres.Store, actual billin
 	for _, line := range actual.Lines {
 		lines = append(lines, line.AmountCents)
 	}
-	if actual.Month != want.month || actual.Number != want.number || actual.TotalCents != want.totalCents || !reflect.DeepEqual(lines, want.lineCents) || actual.GrossUsageTicks != want.grossTicks || actual.CreditUsedTicks != want.creditTicks {
+	if actual.Month != want.month || actual.Number != want.number || actual.TotalCents != want.totalCents || !reflect.DeepEqual(lines, want.lineCents) || actual.GrossUsageMicrocents != want.grossMicrocents || actual.CreditUsedMicrocents != want.creditMicrocents {
 		t.Fatalf("invoice=%+v lines=%v want %+v", actual, lines, want)
 	}
 	credit, err := store.Credit(context.Background(), actual.CustomerID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if credit.BalanceTicks != want.remainingCredit {
-		t.Fatalf("credit after %s=%s want %s", actual.Number, credit.BalanceTicks, want.remainingCredit)
+	if credit.BalanceMicrocents != want.remainingCredit {
+		t.Fatalf("credit after %s=%s want %s", actual.Number, credit.BalanceMicrocents, want.remainingCredit)
 	}
 }
 
@@ -619,7 +619,7 @@ func TestInvoiceAPI(t *testing.T) {
 		closedMonths      int
 		nextInvoiceNumber int64
 		stateVersion      int64
-		creditTicks       string
+		creditMicrocents  string
 		pendingUsage      int
 	}
 
@@ -638,60 +638,60 @@ func TestInvoiceAPI(t *testing.T) {
 		wantErrorField  string
 		wantState       invoiceAPIState
 	}{
-		{name: "first November cannot skip pending October", pendingUsage: true, method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-11"}`, serverTime: "2026-12-01T00:00:00Z", wantStatus: 409, wantError: true, wantErrorCode: "billing_conflict", wantState: invoiceAPIState{nextInvoiceNumber: 1, creditTicks: "0", pendingUsage: 1}},
-		{name: "first November cannot skip quarantined October", pendingUsage: true, processingError: stringPointer("investigated failure"), method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-11"}`, serverTime: "2026-12-01T00:00:00Z", wantStatus: 409, wantError: true, wantErrorCode: "billing_conflict", wantState: invoiceAPIState{nextInvoiceNumber: 1, creditTicks: "0", pendingUsage: 1}},
-		{name: "first invoice can start with an empty November", method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-11"}`, serverTime: "2027-01-01T00:00:00Z", wantStatus: 200, wantState: invoiceAPIState{invoices: 1, closedMonths: 1, nextInvoiceNumber: 2, stateVersion: 1, creditTicks: "0"}},
-		{name: "December requires closed November even without usage", closeFirst: []string{"2026-10"}, method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-12"}`, serverTime: "2027-01-01T00:00:00Z", wantStatus: 409, wantError: true, wantErrorCode: "billing_conflict", wantState: invoiceAPIState{invoices: 1, closedMonths: 1, nextInvoiceNumber: 2, stateVersion: 1, creditTicks: "0"}},
-		{name: "November follows a closed empty October", closeFirst: []string{"2026-10"}, method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-11"}`, serverTime: "2027-01-01T00:00:00Z", wantStatus: 200, wantState: invoiceAPIState{invoices: 2, closedMonths: 2, nextInvoiceNumber: 3, stateVersion: 2, creditTicks: "0"}},
+		{name: "first November cannot skip pending October", pendingUsage: true, method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-11"}`, serverTime: "2026-12-01T00:00:00Z", wantStatus: 409, wantError: true, wantErrorCode: "billing_conflict", wantState: invoiceAPIState{nextInvoiceNumber: 1, creditMicrocents: "0", pendingUsage: 1}},
+		{name: "first November cannot skip quarantined October", pendingUsage: true, processingError: stringPointer("investigated failure"), method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-11"}`, serverTime: "2026-12-01T00:00:00Z", wantStatus: 409, wantError: true, wantErrorCode: "billing_conflict", wantState: invoiceAPIState{nextInvoiceNumber: 1, creditMicrocents: "0", pendingUsage: 1}},
+		{name: "first invoice can start with an empty November", method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-11"}`, serverTime: "2027-01-01T00:00:00Z", wantStatus: 200, wantState: invoiceAPIState{invoices: 1, closedMonths: 1, nextInvoiceNumber: 2, stateVersion: 1, creditMicrocents: "0"}},
+		{name: "December requires closed November even without usage", closeFirst: []string{"2026-10"}, method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-12"}`, serverTime: "2027-01-01T00:00:00Z", wantStatus: 409, wantError: true, wantErrorCode: "billing_conflict", wantState: invoiceAPIState{invoices: 1, closedMonths: 1, nextInvoiceNumber: 2, stateVersion: 1, creditMicrocents: "0"}},
+		{name: "November follows a closed empty October", closeFirst: []string{"2026-10"}, method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-11"}`, serverTime: "2027-01-01T00:00:00Z", wantStatus: 200, wantState: invoiceAPIState{invoices: 2, closedMonths: 2, nextInvoiceNumber: 3, stateVersion: 2, creditMicrocents: "0"}},
 		{
 			name: "issue empty month", method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-10"}`, serverTime: "2026-11-01T00:00:00Z",
 			wantStatus: 200, wantError: false,
-			wantState: invoiceAPIState{invoices: 1, closedMonths: 1, nextInvoiceNumber: 2, stateVersion: 1, creditTicks: "0"},
+			wantState: invoiceAPIState{invoices: 1, closedMonths: 1, nextInvoiceNumber: 2, stateVersion: 1, creditMicrocents: "0"},
 		},
 		{
 			name: "missing invoice", method: "GET", path: "/customers/acme/invoices/2026-10", serverTime: "2026-11-01T00:00:00Z",
 			wantStatus: 404, wantError: true, wantErrorCode: "not_found", wantErrorField: "",
-			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "0"},
+			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "0"},
 		},
 		{
 			name: "invalid month", method: "POST", path: "/customers/acme/invoices", body: `{"month":"2026-13"}`, serverTime: "2026-11-01T00:00:00Z",
 			wantStatus: 422, wantError: true, wantErrorCode: "invalid_command", wantErrorField: "month",
-			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "0"},
+			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "0"},
 		},
 		{
 			name: "missing customer", method: "POST", path: "/customers/missing/invoices", body: `{"month":"2026-10"}`, serverTime: "2026-11-01T00:00:00Z",
 			wantStatus: 404, wantError: true, wantErrorCode: "not_found", wantErrorField: "",
-			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "0"},
+			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "0"},
 		},
 		{
 			name: "future month is rejected with the real server clock", method: "POST", path: "/customers/acme/invoices", body: `{"month":"9999-11"}`, serverTime: "",
 			wantStatus: 422, wantError: true, wantErrorCode: "invalid_command", wantErrorField: "month",
-			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "0"},
+			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "0"},
 		},
 		{
 			name: "January is rejected on January twentieth", method: "POST", path: "/customers/acme/invoices", body: `{"month":"2027-01"}`, serverTime: "2027-01-20T12:00:00Z",
 			wantStatus: 422, wantError: true, wantErrorCode: "invalid_command", wantErrorField: "month",
-			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "0"},
+			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "0"},
 		},
 		{
 			name: "January is rejected one microsecond before February", method: "POST", path: "/customers/acme/invoices", body: `{"month":"2027-01"}`, serverTime: "2027-01-31T23:59:59.999999Z",
 			wantStatus: 422, wantError: true, wantErrorCode: "invalid_command", wantErrorField: "month",
-			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "0"},
+			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "0"},
 		},
 		{
 			name: "January is accepted exactly at February UTC start", method: "POST", path: "/customers/acme/invoices", body: `{"month":"2027-01"}`, serverTime: "2027-02-01T00:00:00Z",
 			wantStatus: 200, wantError: false,
-			wantState: invoiceAPIState{invoices: 1, closedMonths: 1, nextInvoiceNumber: 2, stateVersion: 1, creditTicks: "0"},
+			wantState: invoiceAPIState{invoices: 1, closedMonths: 1, nextInvoiceNumber: 2, stateVersion: 1, creditMicrocents: "0"},
 		},
 		{
 			name: "month cannot contain a closing day", method: "POST", path: "/customers/acme/invoices", body: `{"month":"2027-01-20"}`, serverTime: "2027-02-01T00:00:00Z",
 			wantStatus: 422, wantError: true, wantErrorCode: "invalid_command", wantErrorField: "month",
-			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "0"},
+			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "0"},
 		},
 		{
 			name: "explicit closing timestamp is unsupported", method: "POST", path: "/customers/acme/invoices", body: `{"month":"2027-01","closed_at":"2027-01-20T00:00:00Z"}`, serverTime: "2027-02-01T00:00:00Z",
 			wantStatus: 400, wantError: true, wantErrorCode: "invalid_json", wantErrorField: "",
-			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditTicks: "0"},
+			wantState: invoiceAPIState{invoices: 0, closedMonths: 0, nextInvoiceNumber: 1, stateVersion: 0, creditMicrocents: "0"},
 		},
 	}
 
@@ -742,11 +742,11 @@ func TestInvoiceAPI(t *testing.T) {
 			err := pool.QueryRow(context.Background(), `SELECT
                 (SELECT count(*) FROM invoices),
                 (SELECT count(*) FROM closed_billing_months),
-                next_invoice_number,state_version,credit_balance_ticks::text,
+                next_invoice_number,state_version,credit_balance_microcents::text,
                 (SELECT count(*) FROM usage_inbox WHERE processed_at IS NULL)
                 FROM customer_billing_state WHERE customer_id='acme'`).Scan(
 				&actual.invoices, &actual.closedMonths,
-				&actual.nextInvoiceNumber, &actual.stateVersion, &actual.creditTicks, &actual.pendingUsage,
+				&actual.nextInvoiceNumber, &actual.stateVersion, &actual.creditMicrocents, &actual.pendingUsage,
 			)
 			if err != nil {
 				t.Fatalf("Read state after %s %s(%s): %v", tc.method, tc.path, tc.body, err)

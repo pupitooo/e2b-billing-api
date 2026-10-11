@@ -56,6 +56,13 @@ before applying the revised foundation. Clearing `schema_migrations` alone does
 not remove old tables or columns. Ordinary `make migrate` skips applied versions;
 this change provides no upgrade or historical-key backfill for an old schema.
 
+The foundation also defines financial domains, columns and JSON fields with
+explicit `microcents` names. This is a naming change: amounts retain the same
+integer values and resolution. There is no additional upgrade migration or
+fallback JSON format. Databases created from definitions with other financial
+names require operator cleanup and recreation before running this application;
+stored invoice and command-response JSON must use the same microcent field names.
+
 ## Migration and verification
 
 For migration `009_processed_usage_closing.sql`, stop the API and worker before
@@ -69,9 +76,9 @@ Earlier migration `004_exact_credit.sql` converts:
 
 | Previous column | Current column | Conversion |
 | --- | --- | --- |
-| `customer_billing_state.credit_balance_cents` | `credit_balance_ticks` | cents × 1_000_000 |
-| `rated_usage_groups.allocated_credit_cents` | `allocated_credit_ticks` | cents × 1_000_000 |
-| `credit_entries.amount_cents` | `amount_ticks` | signed cents × 1_000_000 |
+| `customer_billing_state.credit_balance_cents` | `credit_balance_microcents` | cents × 1_000_000 |
+| `rated_usage_groups.allocated_credit_cents` | `allocated_credit_microcents` | cents × 1_000_000 |
+| `credit_entries.amount_cents` | `amount_microcents` | signed cents × 1_000_000 |
 
 Identities, signs, timestamps, operation keys, row counts, limits, and state
 versions survive. The runner commits schema changes and the version together
@@ -83,9 +90,9 @@ The migration stops before changing history and rolls back atomically. On the
 old schema, inspect affected groups with:
 
 ```sql
-SELECT group_id, exact_charge_ticks, allocated_credit_cents
+SELECT group_id, exact_charge_microcents, allocated_credit_cents
 FROM rated_usage_groups
-WHERE allocated_credit_cents::numeric * 1_000_000 > exact_charge_ticks;
+WHERE allocated_credit_cents::numeric * 1_000_000 > exact_charge_microcents;
 ```
 
 Go tests cover arbitrary precision, half-cent boundaries, exact credit, split

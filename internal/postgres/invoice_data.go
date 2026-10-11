@@ -54,7 +54,7 @@ func loadInvoiceCharges(ctx context.Context, tx pgx.Tx, customer string, month t
 
 func loadInvoiceUsage(ctx context.Context, tx pgx.Tx, customer string, month time.Time) ([]billing.InvoiceUsage, error) {
 	rows, err := tx.Query(ctx, `SELECT price_version_id,metric,usage_month,total_units::text,
-        exact_charge_ticks::text,allocated_credit_ticks::text FROM rated_usage_groups
+        exact_charge_microcents::text,allocated_credit_microcents::text FROM rated_usage_groups
         WHERE customer_id=$1 AND billing_month=$2 ORDER BY usage_month,metric,price_version_id`, customer, month)
 	if err != nil {
 		return nil, err
@@ -77,18 +77,18 @@ func loadInvoiceUsage(ctx context.Context, tx pgx.Tx, customer string, month tim
 // presentation. The DTO carries exact amounts rather than database text.
 func scanInvoiceUsage(row pgx.Row) (billing.InvoiceUsage, error) {
 	var group billing.InvoiceUsage
-	var grossTicks, creditTicks string
-	if err := row.Scan(&group.PriceVersionID, &group.Metric, &group.UsageMonth, &group.Units, &grossTicks, &creditTicks); err != nil {
+	var grossMicrocents, creditMicrocents string
+	if err := row.Scan(&group.PriceVersionID, &group.Metric, &group.UsageMonth, &group.Units, &grossMicrocents, &creditMicrocents); err != nil {
 		return group, err
 	}
 
 	var err error
-	group.Gross, err = amount(grossTicks)
+	group.Gross, err = amount(grossMicrocents)
 	if err != nil {
 		return group, err
 	}
 
-	group.Credit, err = amount(creditTicks)
+	group.Credit, err = amount(creditMicrocents)
 
 	return group, err
 }

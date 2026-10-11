@@ -29,28 +29,28 @@ func TestAccountingIDSequencesMigration(t *testing.T) {
 		{
 			name: "earlier opaque IDs start new sequences at one", oldGroupID: "group/earlier", oldGrantID: "grant/earlier",
 			wantNextGroups: []string{"grp_1", "grp_2"}, wantNextCredits: []string{"crd_1", "crd_2"}, wantInvoiceCents: 0, wantFrozenGroups: 1,
-			wantState: accountingIdentityState{groupIDs: "group/earlier", creditIDs: "grant/earlier,usage/earlier", units: "250000", grossTicks: "1000000",
-				allocatedTicks: "1000000", monthlyTicks: "1000000", balanceTicks: "1000000", ratings: 1, stateVersion: 3, groupSequence: 2, creditSequence: 2},
+			wantState: accountingIdentityState{groupIDs: "group/earlier", creditIDs: "grant/earlier,usage/earlier", units: "250000", grossMicrocents: "1000000",
+				allocatedMicrocents: "1000000", monthlyMicrocents: "1000000", balanceMicrocents: "1000000", ratings: 1, stateVersion: 3, groupSequence: 2, creditSequence: 2},
 		},
 		{
 			name: "earlier decimal IDs are reserved", oldGroupID: "grp_7", oldGrantID: "crd_9",
 			wantNextGroups: []string{"grp_8", "grp_9"}, wantNextCredits: []string{"crd_10", "crd_11"}, wantInvoiceCents: 0, wantFrozenGroups: 1,
-			wantState: accountingIdentityState{groupIDs: "grp_7", creditIDs: "crd_9,usage/earlier", units: "250000", grossTicks: "1000000",
-				allocatedTicks: "1000000", monthlyTicks: "1000000", balanceTicks: "1000000", ratings: 1, stateVersion: 3, groupSequence: 9, creditSequence: 11},
+			wantState: accountingIdentityState{groupIDs: "grp_7", creditIDs: "crd_9,usage/earlier", units: "250000", grossMicrocents: "1000000",
+				allocatedMicrocents: "1000000", monthlyMicrocents: "1000000", balanceMicrocents: "1000000", ratings: 1, stateVersion: 3, groupSequence: 9, creditSequence: 11},
 		},
 		{
 			name: "last bigint numbers remain usable", oldGroupID: "grp_9223372036854775805", oldGrantID: "crd_9223372036854775805",
 			wantNextGroups:  []string{"grp_9223372036854775806", "grp_9223372036854775807"},
 			wantNextCredits: []string{"crd_9223372036854775806", "crd_9223372036854775807"}, wantInvoiceCents: 0, wantFrozenGroups: 1,
 			wantState: accountingIdentityState{groupIDs: "grp_9223372036854775805", creditIDs: "crd_9223372036854775805,usage/earlier",
-				units: "250000", grossTicks: "1000000", allocatedTicks: "1000000", monthlyTicks: "1000000", balanceTicks: "1000000",
+				units: "250000", grossMicrocents: "1000000", allocatedMicrocents: "1000000", monthlyMicrocents: "1000000", balanceMicrocents: "1000000",
 				ratings: 1, stateVersion: 3, groupSequence: 9_223_372_036_854_775_807, creditSequence: 9_223_372_036_854_775_807},
 		},
 		{
 			name: "oversized legacy suffixes remain opaque", oldGroupID: "grp_999999999999999999999999999999", oldGrantID: "crd_999999999999999999999999999999",
 			wantNextGroups: []string{"grp_1", "grp_2"}, wantNextCredits: []string{"crd_1", "crd_2"}, wantInvoiceCents: 0, wantFrozenGroups: 1,
 			wantState: accountingIdentityState{groupIDs: "grp_999999999999999999999999999999", creditIDs: "crd_999999999999999999999999999999,usage/earlier",
-				units: "250000", grossTicks: "1000000", allocatedTicks: "1000000", monthlyTicks: "1000000", balanceTicks: "1000000",
+				units: "250000", grossMicrocents: "1000000", allocatedMicrocents: "1000000", monthlyMicrocents: "1000000", balanceMicrocents: "1000000",
 				ratings: 1, stateVersion: 3, groupSequence: 2, creditSequence: 2},
 		},
 	}
@@ -87,7 +87,7 @@ func TestAccountingIDSequencesMigration(t *testing.T) {
 			if _, err := pool.Exec(ctx, `INSERT INTO usage_inbox VALUES
 				('id-migration','earlier',1,'acme','sandbox','cpu_seconds','2026-10-10T12:00:00Z','2026-10-10T13:00:00Z',250000,'2026-10-10T13:00:00Z','2026-10-10T13:00:00Z',NULL);
 				INSERT INTO monthly_usage VALUES ('acme','2026-10-01',1000000);
-				UPDATE customer_billing_state SET credit_balance_ticks=1000000,state_version=2 WHERE customer_id='acme'`); err != nil {
+				UPDATE customer_billing_state SET credit_balance_microcents=1000000,state_version=2 WHERE customer_id='acme'`); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := pool.Exec(ctx, "INSERT INTO usage_ratings VALUES ('id-migration','earlier',$1)", tc.oldGroupID); err != nil {

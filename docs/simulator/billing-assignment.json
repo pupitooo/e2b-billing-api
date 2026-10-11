@@ -11,7 +11,7 @@
         "status": 200,
         "body": {
           "customer_id": "acme",
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 0
@@ -28,7 +28,7 @@
         "status": 200,
         "body": {
           "customer_id": "cyberdyne",
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 0
@@ -143,7 +143,7 @@
         "status": 200,
         "body": {
           "customer_id": "acme",
-          "credit_balance_ticks": "2100000000",
+          "credit_balance_microcents": "2100000000",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 3
@@ -163,7 +163,7 @@
           "customer_id": "cyberdyne",
           "month": "2026-10",
           "limit_cents": 1500,
-          "gross_charge_ticks": "617283945",
+          "gross_charge_microcents": "617283945",
           "limit_reached": false,
           "pending_events": 0,
           "processing_errors": 0
@@ -259,7 +259,7 @@
         "status": 200,
         "body": {
           "customer_id": "acme",
-          "credit_balance_ticks": "1300000000",
+          "credit_balance_microcents": "1300000000",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 4
@@ -279,7 +279,7 @@
           "customer_id": "cyberdyne",
           "month": "2026-10",
           "limit_cents": 1500,
-          "gross_charge_ticks": "1817283945",
+          "gross_charge_microcents": "1817283945",
           "limit_reached": true,
           "pending_events": 0,
           "processing_errors": 0
@@ -304,16 +304,16 @@
           "month": "2026-10",
           "currency": "USD",
           "total_cents": 2000,
-          "gross_usage_ticks": "1200000000",
-          "credit_used_ticks": "1200000000",
+          "gross_usage_microcents": "1200000000",
+          "credit_used_microcents": "1200000000",
           "lines": [
             {
               "kind": "usage",
               "usage_month": "2026-10",
               "units": "300000000",
               "amount_cents": 1200,
-              "gross_ticks": "1200000000",
-              "credit_ticks": "1200000000"
+              "gross_microcents": "1200000000",
+              "credit_microcents": "1200000000"
             },
             {
               "kind": "addon",
@@ -348,22 +348,22 @@
           "number": "CYBERDYNE-0001",
           "month": "2026-10",
           "total_cents": 1817,
-          "gross_usage_ticks": "1817283945",
-          "credit_used_ticks": "0",
+          "gross_usage_microcents": "1817283945",
+          "credit_used_microcents": "0",
           "lines": [
             {
               "kind": "usage",
               "units": "123456789",
               "amount_cents": 617,
-              "gross_ticks": "617283945",
-              "credit_ticks": "0"
+              "gross_microcents": "617283945",
+              "credit_microcents": "0"
             },
             {
               "kind": "usage",
               "units": "200000000",
               "amount_cents": 1200,
-              "gross_ticks": "1200000000",
-              "credit_ticks": "0"
+              "gross_microcents": "1200000000",
+              "credit_microcents": "0"
             },
             {
               "kind": "credit",
@@ -443,7 +443,7 @@
         "status": 200,
         "body": {
           "customer_id": "acme",
-          "credit_balance_ticks": "700000000",
+          "credit_balance_microcents": "700000000",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 7
@@ -463,7 +463,7 @@
           "customer_id": "cyberdyne",
           "month": "2026-11",
           "limit_cents": 1500,
-          "gross_charge_ticks": "0",
+          "gross_charge_microcents": "0",
           "limit_reached": false,
           "pending_events": 0,
           "processing_errors": 0
@@ -487,8 +487,8 @@
           "number": "ACME-0002",
           "month": "2026-11",
           "total_cents": 2000,
-          "gross_usage_ticks": "600000000",
-          "credit_used_ticks": "600000000",
+          "gross_usage_microcents": "600000000",
+          "credit_used_microcents": "600000000",
           "lines": [
             {
               "kind": "usage",
@@ -496,16 +496,16 @@
               "description": "Late usage from 2026-10",
               "units": "50000000",
               "amount_cents": 200,
-              "gross_ticks": "200000000",
-              "credit_ticks": "200000000"
+              "gross_microcents": "200000000",
+              "credit_microcents": "200000000"
             },
             {
               "kind": "usage",
               "usage_month": "2026-11",
               "units": "100000000",
               "amount_cents": 400,
-              "gross_ticks": "400000000",
-              "credit_ticks": "400000000"
+              "gross_microcents": "400000000",
+              "credit_microcents": "400000000"
             },
             {
               "kind": "addon",
@@ -530,7 +530,7 @@
         "status": 200,
         "body": {
           "customer_id": "acme",
-          "credit_balance_ticks": "700000000",
+          "credit_balance_microcents": "700000000",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 8

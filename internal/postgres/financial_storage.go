@@ -21,9 +21,9 @@ const (
 
 // lockAccount precedes receipt locks and every mutable financial read.
 func lockAccount(ctx context.Context, tx pgx.Tx, customer string) (accounting.Amount, error) {
-	var ticks string
-	err := tx.QueryRow(ctx, `SELECT credit_balance_ticks::text FROM customer_billing_state
-        WHERE customer_id=$1 FOR UPDATE`, customer).Scan(&ticks)
+	var microcents string
+	err := tx.QueryRow(ctx, `SELECT credit_balance_microcents::text FROM customer_billing_state
+        WHERE customer_id=$1 FOR UPDATE`, customer).Scan(&microcents)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return accounting.Amount{}, billing.ErrNotFound
 	}
@@ -32,17 +32,17 @@ func lockAccount(ctx context.Context, tx pgx.Tx, customer string) (accounting.Am
 		return accounting.Amount{}, err
 	}
 
-	return amount(ticks)
+	return amount(microcents)
 }
 
 // amount rejects corrupt database values rather than silently rounding them.
-func amount(ticks string) (accounting.Amount, error) {
-	value, ok := new(big.Int).SetString(ticks, decimalRadix)
+func amount(microcents string) (accounting.Amount, error) {
+	value, ok := new(big.Int).SetString(microcents, decimalRadix)
 	if !ok {
-		return accounting.Amount{}, fmt.Errorf("invalid integer ticks: %q", ticks)
+		return accounting.Amount{}, fmt.Errorf("invalid integer microcents: %q", microcents)
 	}
 
-	return accounting.FromTicks(value)
+	return accounting.FromMicrocents(value)
 }
 
 // catalogLock serializes price insertion against rating and historical checks.

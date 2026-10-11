@@ -37,7 +37,7 @@ func TestProcessBatch(t *testing.T) {
 		start            string
 		end              string
 		receiptTime      string
-		creditTicks      string
+		creditMicrocents string
 		closedMonth      string
 		wantGross        string
 		wantCredit       string
@@ -47,23 +47,23 @@ func TestProcessBatch(t *testing.T) {
 		wantError        bool
 		wantBillingMonth string
 	}{
-		{name: "override survives default change", customer: "acme", units: []int64{200_000_000}, schemaVersion: 1, start: "2026-10-20T12:00:00Z", end: "2026-10-20T13:00:00Z", receiptTime: "2026-11-01T00:00:00Z", creditTicks: "2500000000", wantGross: "800000000", wantCredit: "800000000", wantRemaining: "1700000000", wantCents: 800, wantRatings: 1, wantBillingMonth: "2026-10-01"},
-		{name: "split receipts round cumulative group", customer: "cyberdyne", units: []int64{60_000, 60_000}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditTicks: "0", wantGross: "600000", wantCredit: "0", wantRemaining: "0", wantCents: 1, wantRatings: 2, wantBillingMonth: "2026-10-01"},
-		{name: "fractional credit stays exact", customer: "acme", units: []int64{1_250}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditTicks: "1000000", wantGross: "5000", wantCredit: "5000", wantRemaining: "995000", wantCents: 0, wantRatings: 1, wantBillingMonth: "2026-10-01"},
-		{name: "positive uncredited charge books zero cents and retains its exact value", customer: "acme", units: []int64{25_000}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditTicks: "0", wantGross: "100000", wantCredit: "0", wantRemaining: "0", wantCents: 0, wantRatings: 1, wantBillingMonth: "2026-10-01"},
-		{name: "uncredited charge just below half a cent books zero cents", customer: "acme", units: []int64{124_999}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditTicks: "0", wantGross: "499996", wantCredit: "0", wantRemaining: "0", wantCents: 0, wantRatings: 1, wantBillingMonth: "2026-10-01"},
-		{name: "uncredited exact half cent books one cent", customer: "acme", units: []int64{125_000}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditTicks: "0", wantGross: "500000", wantCredit: "0", wantRemaining: "0", wantCents: 1, wantRatings: 1, wantBillingMonth: "2026-10-01"},
-		{name: "late usage retains original price and spend month", customer: "acme", units: []int64{50_000_000}, schemaVersion: 1, start: "2026-10-30T12:00:00Z", end: "2026-10-30T13:00:00Z", receiptTime: "2026-11-01T00:00:00Z", creditTicks: "0", closedMonth: "2026-10-01", wantGross: "200000000", wantCredit: "0", wantRemaining: "0", wantCents: 200, wantRatings: 1, wantBillingMonth: "2026-11-01"},
-		{name: "open January retains usage after the twentieth", customer: "acme", units: []int64{100_000_000}, schemaVersion: 1, start: "2027-01-21T12:00:00Z", end: "2027-01-21T13:00:00Z", receiptTime: "2027-01-21T14:00:00Z", creditTicks: "0", wantGross: "400000000", wantCredit: "0", wantRemaining: "0", wantCents: 400, wantRatings: 1, wantError: false, wantBillingMonth: "2027-01-01"},
-		{name: "closed January routes a January receipt to February", customer: "acme", units: []int64{100_000_000}, schemaVersion: 1, start: "2027-01-21T12:00:00Z", end: "2027-01-21T13:00:00Z", receiptTime: "2027-01-21T14:00:00Z", creditTicks: "0", closedMonth: "2027-01-01", wantGross: "400000000", wantCredit: "0", wantRemaining: "0", wantCents: 400, wantRatings: 1, wantError: false, wantBillingMonth: "2027-02-01"},
-		{name: "unsupported schema is visible without charges", customer: "acme", units: []int64{100}, schemaVersion: 2, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditTicks: "1000000", wantGross: "0", wantCredit: "0", wantRemaining: "1000000", wantRatings: 0, wantError: true},
-		{name: "crossing price boundary is visible without charges", customer: "cyberdyne", units: []int64{100}, schemaVersion: 1, start: "2026-10-14T23:30:00Z", end: "2026-10-15T00:30:00Z", receiptTime: "2026-10-16T00:00:00Z", creditTicks: "0", wantGross: "0", wantCredit: "0", wantRemaining: "0", wantRatings: 0, wantError: true},
+		{name: "override survives default change", customer: "acme", units: []int64{200_000_000}, schemaVersion: 1, start: "2026-10-20T12:00:00Z", end: "2026-10-20T13:00:00Z", receiptTime: "2026-11-01T00:00:00Z", creditMicrocents: "2500000000", wantGross: "800000000", wantCredit: "800000000", wantRemaining: "1700000000", wantCents: 800, wantRatings: 1, wantBillingMonth: "2026-10-01"},
+		{name: "split receipts round cumulative group", customer: "cyberdyne", units: []int64{60_000, 60_000}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditMicrocents: "0", wantGross: "600000", wantCredit: "0", wantRemaining: "0", wantCents: 1, wantRatings: 2, wantBillingMonth: "2026-10-01"},
+		{name: "fractional credit stays exact", customer: "acme", units: []int64{1_250}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditMicrocents: "1000000", wantGross: "5000", wantCredit: "5000", wantRemaining: "995000", wantCents: 0, wantRatings: 1, wantBillingMonth: "2026-10-01"},
+		{name: "positive uncredited charge books zero cents and retains its exact value", customer: "acme", units: []int64{25_000}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditMicrocents: "0", wantGross: "100000", wantCredit: "0", wantRemaining: "0", wantCents: 0, wantRatings: 1, wantBillingMonth: "2026-10-01"},
+		{name: "uncredited charge just below half a cent books zero cents", customer: "acme", units: []int64{124_999}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditMicrocents: "0", wantGross: "499996", wantCredit: "0", wantRemaining: "0", wantCents: 0, wantRatings: 1, wantBillingMonth: "2026-10-01"},
+		{name: "uncredited exact half cent books one cent", customer: "acme", units: []int64{125_000}, schemaVersion: 1, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditMicrocents: "0", wantGross: "500000", wantCredit: "0", wantRemaining: "0", wantCents: 1, wantRatings: 1, wantBillingMonth: "2026-10-01"},
+		{name: "late usage retains original price and spend month", customer: "acme", units: []int64{50_000_000}, schemaVersion: 1, start: "2026-10-30T12:00:00Z", end: "2026-10-30T13:00:00Z", receiptTime: "2026-11-01T00:00:00Z", creditMicrocents: "0", closedMonth: "2026-10-01", wantGross: "200000000", wantCredit: "0", wantRemaining: "0", wantCents: 200, wantRatings: 1, wantBillingMonth: "2026-11-01"},
+		{name: "open January retains usage after the twentieth", customer: "acme", units: []int64{100_000_000}, schemaVersion: 1, start: "2027-01-21T12:00:00Z", end: "2027-01-21T13:00:00Z", receiptTime: "2027-01-21T14:00:00Z", creditMicrocents: "0", wantGross: "400000000", wantCredit: "0", wantRemaining: "0", wantCents: 400, wantRatings: 1, wantError: false, wantBillingMonth: "2027-01-01"},
+		{name: "closed January routes a January receipt to February", customer: "acme", units: []int64{100_000_000}, schemaVersion: 1, start: "2027-01-21T12:00:00Z", end: "2027-01-21T13:00:00Z", receiptTime: "2027-01-21T14:00:00Z", creditMicrocents: "0", closedMonth: "2027-01-01", wantGross: "400000000", wantCredit: "0", wantRemaining: "0", wantCents: 400, wantRatings: 1, wantError: false, wantBillingMonth: "2027-02-01"},
+		{name: "unsupported schema is visible without charges", customer: "acme", units: []int64{100}, schemaVersion: 2, start: "2026-10-10T12:00:00Z", end: "2026-10-10T13:00:00Z", receiptTime: "2026-10-11T00:00:00Z", creditMicrocents: "1000000", wantGross: "0", wantCredit: "0", wantRemaining: "1000000", wantRatings: 0, wantError: true},
+		{name: "crossing price boundary is visible without charges", customer: "cyberdyne", units: []int64{100}, schemaVersion: 1, start: "2026-10-14T23:30:00Z", end: "2026-10-15T00:30:00Z", receiptTime: "2026-10-16T00:00:00Z", creditMicrocents: "0", wantGross: "0", wantCredit: "0", wantRemaining: "0", wantRatings: 0, wantError: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
 			ctx := context.Background()
-			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric WHERE customer_id=$1", tc.customer, tc.creditTicks); err != nil {
+			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=$2::numeric WHERE customer_id=$1", tc.customer, tc.creditMicrocents); err != nil {
 				t.Fatal(err)
 			}
 			if tc.closedMonth != "" {
@@ -88,12 +88,12 @@ func TestProcessBatch(t *testing.T) {
 			var cents int64
 			var ratings int
 			var failed bool
-			err := pool.QueryRow(ctx, `SELECT COALESCE(sum(exact_charge_ticks),0)::text,
-            COALESCE(sum(allocated_credit_ticks),0)::text,COALESCE(sum(booked_charge_cents),0)::bigint FROM rated_usage_groups`).Scan(&gross, &credit, &cents)
+			err := pool.QueryRow(ctx, `SELECT COALESCE(sum(exact_charge_microcents),0)::text,
+            COALESCE(sum(allocated_credit_microcents),0)::text,COALESCE(sum(booked_charge_cents),0)::bigint FROM rated_usage_groups`).Scan(&gross, &credit, &cents)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := pool.QueryRow(ctx, "SELECT credit_balance_ticks::text FROM customer_billing_state WHERE customer_id=$1", tc.customer).Scan(&remaining); err != nil {
+			if err := pool.QueryRow(ctx, "SELECT credit_balance_microcents::text FROM customer_billing_state WHERE customer_id=$1", tc.customer).Scan(&remaining); err != nil {
 				t.Fatal(err)
 			}
 			if err := pool.QueryRow(ctx, "SELECT count(*) FROM usage_ratings").Scan(&ratings); err != nil {
@@ -118,117 +118,117 @@ func TestProcessBatch(t *testing.T) {
 	}
 	t.Run("UTC month boundary", func(t *testing.T) {
 		type financialState struct {
-			groups               int
-			ratings              int
-			monthlyUsageRows     int
-			creditEntries        int
-			totalUnits           string
-			grossTicks           string
-			creditTicks          string
-			monthlyGrossTicks    string
-			remainingCreditTicks string
-			stateVersion         int64
+			groups                    int
+			ratings                   int
+			monthlyUsageRows          int
+			creditEntries             int
+			totalUnits                string
+			grossMicrocents           string
+			creditMicrocents          string
+			monthlyGrossMicrocents    string
+			remainingCreditMicrocents string
+			stateVersion              int64
 		}
 
 		cases := []struct {
-			name                string
-			customer            string
-			start               string
-			end                 string
-			units               int64
-			receiptTime         string
-			initialCreditTicks  string
-			wantError           bool
-			wantProcessResults  []bool
-			wantCompleted       bool
-			wantProcessingError string
-			wantUsageMonth      string
-			wantBillingMonth    string
-			wantSpendMonth      string
-			wantFinancialState  financialState
+			name                    string
+			customer                string
+			start                   string
+			end                     string
+			units                   int64
+			receiptTime             string
+			initialCreditMicrocents string
+			wantError               bool
+			wantProcessResults      []bool
+			wantCompleted           bool
+			wantProcessingError     string
+			wantUsageMonth          string
+			wantBillingMonth        string
+			wantSpendMonth          string
+			wantFinancialState      financialState
 		}{
 			{
-				name:                "cross-month interval is quarantined without charges",
-				customer:            "acme",
-				start:               "2026-10-31T23:59:00Z",
-				end:                 "2026-11-01T00:01:00Z",
-				units:               100_000_000,
-				receiptTime:         "2026-11-01T00:02:00Z",
-				initialCreditTicks:  "2500000000",
-				wantError:           false,
-				wantProcessResults:  []bool{true, false},
-				wantCompleted:       false,
-				wantProcessingError: "usage interval must fit within one UTC month",
-				wantUsageMonth:      "",
-				wantBillingMonth:    "",
-				wantSpendMonth:      "",
+				name:                    "cross-month interval is quarantined without charges",
+				customer:                "acme",
+				start:                   "2026-10-31T23:59:00Z",
+				end:                     "2026-11-01T00:01:00Z",
+				units:                   100_000_000,
+				receiptTime:             "2026-11-01T00:02:00Z",
+				initialCreditMicrocents: "2500000000",
+				wantError:               false,
+				wantProcessResults:      []bool{true, false},
+				wantCompleted:           false,
+				wantProcessingError:     "usage interval must fit within one UTC month",
+				wantUsageMonth:          "",
+				wantBillingMonth:        "",
+				wantSpendMonth:          "",
 				wantFinancialState: financialState{
 					groups: 0, ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
-					totalUnits: "0", grossTicks: "0", creditTicks: "0", monthlyGrossTicks: "0",
-					remainingCreditTicks: "2500000000", stateVersion: 0,
+					totalUnits: "0", grossMicrocents: "0", creditMicrocents: "0", monthlyGrossMicrocents: "0",
+					remainingCreditMicrocents: "2500000000", stateVersion: 0,
 				},
 			},
 			{
-				name:                "one microsecond past UTC month is quarantined without charges",
-				customer:            "acme",
-				start:               "2026-10-31T23:59:00Z",
-				end:                 "2026-11-01T00:00:00.000001Z",
-				units:               100_000_000,
-				receiptTime:         "2026-11-01T00:02:00Z",
-				initialCreditTicks:  "2500000000",
-				wantError:           false,
-				wantProcessResults:  []bool{true, false},
-				wantCompleted:       false,
-				wantProcessingError: "usage interval must fit within one UTC month",
-				wantUsageMonth:      "",
-				wantBillingMonth:    "",
-				wantSpendMonth:      "",
+				name:                    "one microsecond past UTC month is quarantined without charges",
+				customer:                "acme",
+				start:                   "2026-10-31T23:59:00Z",
+				end:                     "2026-11-01T00:00:00.000001Z",
+				units:                   100_000_000,
+				receiptTime:             "2026-11-01T00:02:00Z",
+				initialCreditMicrocents: "2500000000",
+				wantError:               false,
+				wantProcessResults:      []bool{true, false},
+				wantCompleted:           false,
+				wantProcessingError:     "usage interval must fit within one UTC month",
+				wantUsageMonth:          "",
+				wantBillingMonth:        "",
+				wantSpendMonth:          "",
 				wantFinancialState: financialState{
 					groups: 0, ratings: 0, monthlyUsageRows: 0, creditEntries: 0,
-					totalUnits: "0", grossTicks: "0", creditTicks: "0", monthlyGrossTicks: "0",
-					remainingCreditTicks: "2500000000", stateVersion: 0,
+					totalUnits: "0", grossMicrocents: "0", creditMicrocents: "0", monthlyGrossMicrocents: "0",
+					remainingCreditMicrocents: "2500000000", stateVersion: 0,
 				},
 			},
 			{
-				name:                "interval ending at UTC month boundary is booked in October",
-				customer:            "acme",
-				start:               "2026-10-31T23:59:00Z",
-				end:                 "2026-11-01T00:00:00Z",
-				units:               100_000_000,
-				receiptTime:         "2026-11-01T00:02:00Z",
-				initialCreditTicks:  "2500000000",
-				wantError:           false,
-				wantProcessResults:  []bool{true, false},
-				wantCompleted:       true,
-				wantProcessingError: "",
-				wantUsageMonth:      "2026-10-01",
-				wantBillingMonth:    "2026-10-01",
-				wantSpendMonth:      "2026-10-01",
+				name:                    "interval ending at UTC month boundary is booked in October",
+				customer:                "acme",
+				start:                   "2026-10-31T23:59:00Z",
+				end:                     "2026-11-01T00:00:00Z",
+				units:                   100_000_000,
+				receiptTime:             "2026-11-01T00:02:00Z",
+				initialCreditMicrocents: "2500000000",
+				wantError:               false,
+				wantProcessResults:      []bool{true, false},
+				wantCompleted:           true,
+				wantProcessingError:     "",
+				wantUsageMonth:          "2026-10-01",
+				wantBillingMonth:        "2026-10-01",
+				wantSpendMonth:          "2026-10-01",
 				wantFinancialState: financialState{
 					groups: 1, ratings: 1, monthlyUsageRows: 1, creditEntries: 1,
-					totalUnits: "100000000", grossTicks: "400000000", creditTicks: "400000000", monthlyGrossTicks: "400000000",
-					remainingCreditTicks: "2100000000", stateVersion: 1,
+					totalUnits: "100000000", grossMicrocents: "400000000", creditMicrocents: "400000000", monthlyGrossMicrocents: "400000000",
+					remainingCreditMicrocents: "2100000000", stateVersion: 1,
 				},
 			},
 			{
-				name:                "interval starting at UTC month boundary is booked in November",
-				customer:            "acme",
-				start:               "2026-11-01T00:00:00Z",
-				end:                 "2026-11-01T00:01:00Z",
-				units:               100_000_000,
-				receiptTime:         "2026-11-01T00:02:00Z",
-				initialCreditTicks:  "2500000000",
-				wantError:           false,
-				wantProcessResults:  []bool{true, false},
-				wantCompleted:       true,
-				wantProcessingError: "",
-				wantUsageMonth:      "2026-11-01",
-				wantBillingMonth:    "2026-11-01",
-				wantSpendMonth:      "2026-11-01",
+				name:                    "interval starting at UTC month boundary is booked in November",
+				customer:                "acme",
+				start:                   "2026-11-01T00:00:00Z",
+				end:                     "2026-11-01T00:01:00Z",
+				units:                   100_000_000,
+				receiptTime:             "2026-11-01T00:02:00Z",
+				initialCreditMicrocents: "2500000000",
+				wantError:               false,
+				wantProcessResults:      []bool{true, false},
+				wantCompleted:           true,
+				wantProcessingError:     "",
+				wantUsageMonth:          "2026-11-01",
+				wantBillingMonth:        "2026-11-01",
+				wantSpendMonth:          "2026-11-01",
 				wantFinancialState: financialState{
 					groups: 1, ratings: 1, monthlyUsageRows: 1, creditEntries: 1,
-					totalUnits: "100000000", grossTicks: "400000000", creditTicks: "400000000", monthlyGrossTicks: "400000000",
-					remainingCreditTicks: "2100000000", stateVersion: 1,
+					totalUnits: "100000000", grossMicrocents: "400000000", creditMicrocents: "400000000", monthlyGrossMicrocents: "400000000",
+					remainingCreditMicrocents: "2100000000", stateVersion: 1,
 				},
 			},
 		}
@@ -237,8 +237,8 @@ func TestProcessBatch(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				pool := billingDatabase(t)
 				ctx := context.Background()
-				if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$2::numeric WHERE customer_id=$1", tc.customer, tc.initialCreditTicks); err != nil {
-					t.Fatalf("Set initial credit for customer %q to %s ticks: %v", tc.customer, tc.initialCreditTicks, err)
+				if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=$2::numeric WHERE customer_id=$1", tc.customer, tc.initialCreditMicrocents); err != nil {
+					t.Fatalf("Set initial credit for customer %q to %s microcents: %v", tc.customer, tc.initialCreditMicrocents, err)
 				}
 
 				event := usage.Event{
@@ -277,14 +277,14 @@ func TestProcessBatch(t *testing.T) {
 					(SELECT count(*) FROM monthly_usage),
 					(SELECT count(*) FROM credit_entries),
 					(SELECT COALESCE(sum(total_units),0)::text FROM rated_usage_groups),
-					(SELECT COALESCE(sum(exact_charge_ticks),0)::text FROM rated_usage_groups),
-					(SELECT COALESCE(sum(allocated_credit_ticks),0)::text FROM rated_usage_groups),
-					(SELECT COALESCE(sum(gross_charge_ticks),0)::text FROM monthly_usage),
-					credit_balance_ticks::text,state_version
+					(SELECT COALESCE(sum(exact_charge_microcents),0)::text FROM rated_usage_groups),
+					(SELECT COALESCE(sum(allocated_credit_microcents),0)::text FROM rated_usage_groups),
+					(SELECT COALESCE(sum(gross_charge_microcents),0)::text FROM monthly_usage),
+					credit_balance_microcents::text,state_version
 					FROM customer_billing_state WHERE customer_id=$1`, tc.customer).Scan(
 					&got.groups, &got.ratings, &got.monthlyUsageRows, &got.creditEntries,
-					&got.totalUnits, &got.grossTicks, &got.creditTicks, &got.monthlyGrossTicks,
-					&got.remainingCreditTicks, &got.stateVersion,
+					&got.totalUnits, &got.grossMicrocents, &got.creditMicrocents, &got.monthlyGrossMicrocents,
+					&got.remainingCreditMicrocents, &got.stateVersion,
 				)
 				if err != nil {
 					t.Fatalf("Read financial state after ProcessBatch(%+v): %v", event, err)
@@ -314,18 +314,18 @@ func TestProcessBatch(t *testing.T) {
 
 	t.Run("late database failure rolls back all financial effects", func(t *testing.T) {
 		scenario := struct {
-			units         int64
-			creditTicks   string
-			wantError     bool
-			wantRatings   int
-			wantCredit    string
-			wantCompleted bool
+			units            int64
+			creditMicrocents string
+			wantError        bool
+			wantRatings      int
+			wantCredit       string
+			wantCompleted    bool
 		}{
-			units: 100_000_000, creditTicks: "2500000000", wantError: true, wantRatings: 0, wantCredit: "2500000000", wantCompleted: false,
+			units: 100_000_000, creditMicrocents: "2500000000", wantError: true, wantRatings: 0, wantCredit: "2500000000", wantCompleted: false,
 		}
 		pool := billingDatabase(t)
 		ctx := context.Background()
-		if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=$1::numeric WHERE customer_id='acme'", scenario.creditTicks); err != nil {
+		if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=$1::numeric WHERE customer_id='acme'", scenario.creditMicrocents); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := pool.Exec(ctx, "ALTER TABLE usage_inbox ADD CHECK (processed_at IS NULL)"); err != nil {
@@ -345,7 +345,7 @@ func TestProcessBatch(t *testing.T) {
 		if err := pool.QueryRow(ctx, "SELECT count(*) FROM usage_ratings").Scan(&ratings); err != nil {
 			t.Fatal(err)
 		}
-		if err := pool.QueryRow(ctx, "SELECT credit_balance_ticks::text FROM customer_billing_state WHERE customer_id='acme'").Scan(&credit); err != nil {
+		if err := pool.QueryRow(ctx, "SELECT credit_balance_microcents::text FROM customer_billing_state WHERE customer_id='acme'").Scan(&credit); err != nil {
 			t.Fatal(err)
 		}
 		if err := pool.QueryRow(ctx, "SELECT processed_at IS NOT NULL FROM usage_inbox").Scan(&completed); err != nil {
@@ -394,7 +394,7 @@ func TestProcessBatch(t *testing.T) {
 		}
 		var count int
 		var gross string
-		if err := pool.QueryRow(ctx, "SELECT count(*),sum(exact_charge_ticks)::text FROM rated_usage_groups").Scan(&count, &gross); err != nil {
+		if err := pool.QueryRow(ctx, "SELECT count(*),sum(exact_charge_microcents)::text FROM rated_usage_groups").Scan(&count, &gross); err != nil {
 			t.Fatal(err)
 		}
 		if count != scenario.wantRatings || gross != scenario.wantGross {

@@ -46,9 +46,9 @@ INSERT INTO customers (customer_id, name, country, billing_address)
 VALUES
     ('billing-model-acme', 'Test Acme', 'US', 'Test address'),
     ('billing-model-cyberdyne', 'Test Cyberdyne', 'US', 'Test address');
-INSERT INTO customer_billing_state (customer_id, credit_balance_ticks, spend_limit_cents)
+INSERT INTO customer_billing_state (customer_id, credit_balance_microcents, spend_limit_cents)
 VALUES ('billing-model-acme', 0, NULL);
-INSERT INTO customer_billing_state (customer_id, credit_balance_ticks, spend_limit_cents, state_version)
+INSERT INTO customer_billing_state (customer_id, credit_balance_microcents, spend_limit_cents, state_version)
 VALUES ('billing-model-cyberdyne', 0, 1500, 7);
 
 SELECT pg_temp.assert_result(
@@ -75,7 +75,7 @@ INSERT INTO price_versions (
 
 INSERT INTO rated_usage_groups (
     group_id, customer_id, price_version_id, metric, usage_month, billing_month,
-    total_units, exact_charge_ticks, booked_charge_cents, allocated_credit_ticks
+    total_units, exact_charge_microcents, booked_charge_cents, allocated_credit_microcents
 ) VALUES
     ('billing-model-acme-oct', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu',
         '2026-10-01', '2026-10-01', 300000000, 1200000000, 1200, 1200000000),
@@ -115,14 +115,14 @@ SELECT pg_temp.assert_result(
     $want$::jsonb
 );
 
-INSERT INTO monthly_usage (customer_id, usage_month, gross_charge_ticks) VALUES
+INSERT INTO monthly_usage (customer_id, usage_month, gross_charge_microcents) VALUES
     ('billing-model-acme', '2026-10-01', 1400000000),
     ('billing-model-cyberdyne', '2026-10-01', 617283945);
-INSERT INTO credit_entries (credit_entry_id, customer_id, group_id, amount_ticks, recorded_at)
+INSERT INTO credit_entries (credit_entry_id, customer_id, group_id, amount_microcents, recorded_at)
 VALUES
     ('billing-model-grant', 'billing-model-acme', NULL, 2500000000, '2026-10-01T00:00:00Z'),
     ('billing-model-debit', 'billing-model-acme', 'billing-model-acme-oct', -1200000000, '2026-11-01T00:01:00Z');
-UPDATE customer_billing_state SET credit_balance_ticks = 1300000000, state_version = 1
+UPDATE customer_billing_state SET credit_balance_microcents = 1300000000, state_version = 1
 WHERE customer_id = 'billing-model-acme';
 INSERT INTO addons (addon_name, monthly_price_cents) VALUES ('billing-model-addon', 2000);
 INSERT INTO addon_subscriptions (
@@ -135,11 +135,11 @@ INSERT INTO addon_subscriptions (
 SELECT pg_temp.assert_result(
     scenario => 'exact sub-cent charge survives storage',
     input_sql => $input$
-        SELECT exact_charge_ticks FROM rated_usage_groups WHERE group_id = 'billing-model-cyberdyne-oct'
+        SELECT exact_charge_microcents FROM rated_usage_groups WHERE group_id = 'billing-model-cyberdyne-oct'
     $input$,
     want_result => $want$
     {
-        "exact_charge_ticks": 617283945
+        "exact_charge_microcents": 617283945
     }
     $want$::jsonb
 );
@@ -172,29 +172,29 @@ SELECT pg_temp.assert_result(
 SELECT pg_temp.assert_result(
     scenario => 'twenty-five USD credit less twelve USD usage leaves thirteen USD',
     input_sql => $input$
-        SELECT (SELECT sum(amount_ticks) FROM credit_entries WHERE customer_id = 'billing-model-acme') AS ledger_ticks,
-            (SELECT credit_balance_ticks FROM customer_billing_state WHERE customer_id = 'billing-model-acme') AS balance_ticks
+        SELECT (SELECT sum(amount_microcents) FROM credit_entries WHERE customer_id = 'billing-model-acme') AS ledger_microcents,
+            (SELECT credit_balance_microcents FROM customer_billing_state WHERE customer_id = 'billing-model-acme') AS balance_microcents
     $input$,
     want_result => $want$
     {
-        "ledger_ticks": 1300000000,
-        "balance_ticks": 1300000000
+        "ledger_microcents": 1300000000,
+        "balance_microcents": 1300000000
     }
     $want$::jsonb
 );
 
 -- Input: the maximum bigint usage multiplied by a five-cent rate exceeds bigint.
 UPDATE rated_usage_groups SET total_units = 9223372036854775807,
-    exact_charge_ticks = 46116860184273879035, booked_charge_cents = 46116860184274
+    exact_charge_microcents = 46116860184273879035, booked_charge_cents = 46116860184274
 WHERE group_id = 'billing-model-cyberdyne-oct';
 SELECT pg_temp.assert_result(
-    scenario => 'tick products above bigint remain exact',
+    scenario => 'microcent products above bigint remain exact',
     input_sql => $input$
-        SELECT exact_charge_ticks FROM rated_usage_groups WHERE group_id = 'billing-model-cyberdyne-oct'
+        SELECT exact_charge_microcents FROM rated_usage_groups WHERE group_id = 'billing-model-cyberdyne-oct'
     $input$,
     want_result => $want$
     {
-        "exact_charge_ticks": 46116860184273879035
+        "exact_charge_microcents": 46116860184273879035
     }
     $want$::jsonb
 );
@@ -220,7 +220,7 @@ DECLARE
 BEGIN
     PERFORM pg_temp.assert_rejection(
             scenario => 'Negative credit balance',
-            input_sql => $$UPDATE customer_billing_state SET credit_balance_ticks = -1 WHERE customer_id = 'billing-model-acme'$$,
+            input_sql => $$UPDATE customer_billing_state SET credit_balance_microcents = -1 WHERE customer_id = 'billing-model-acme'$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Negative spend limit',
@@ -286,7 +286,7 @@ BEGIN
             want_sqlstate => '23503');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Duplicate rounding group',
-            input_sql => $$INSERT INTO rated_usage_groups SELECT 'billing-model-duplicate-group', customer_id, price_version_id, metric, usage_month, billing_month, total_units, exact_charge_ticks, booked_charge_cents, allocated_credit_ticks FROM rated_usage_groups WHERE group_id = 'billing-model-acme-oct'$$,
+            input_sql => $$INSERT INTO rated_usage_groups SELECT 'billing-model-duplicate-group', customer_id, price_version_id, metric, usage_month, billing_month, total_units, exact_charge_microcents, booked_charge_cents, allocated_credit_microcents FROM rated_usage_groups WHERE group_id = 'billing-model-acme-oct'$$,
             want_sqlstate => '23505');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Changing group ownership',
@@ -294,7 +294,7 @@ BEGIN
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Credit exceeding exact gross usage',
-            input_sql => $$UPDATE rated_usage_groups SET allocated_credit_ticks = 1200000001 WHERE group_id = 'billing-model-acme-oct'$$,
+            input_sql => $$UPDATE rated_usage_groups SET allocated_credit_microcents = 1200000001 WHERE group_id = 'billing-model-acme-oct'$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Month must start on day one',
@@ -311,8 +311,8 @@ BEGIN
 
     FOREACH invalid_number IN ARRAY ARRAY['-1', '0.5', 'NaN', 'Infinity', '-Infinity'] LOOP
         PERFORM pg_temp.assert_rejection(
-            scenario => 'Invalid exact ticks: ' || invalid_number,
-            input_sql => format('UPDATE monthly_usage SET gross_charge_ticks = %L::numeric WHERE customer_id = %L', invalid_number, 'billing-model-acme'),
+            scenario => 'Invalid exact microcents: ' || invalid_number,
+            input_sql => format('UPDATE monthly_usage SET gross_charge_microcents = %L::numeric WHERE customer_id = %L', invalid_number, 'billing-model-acme'),
             want_sqlstate => '23514');
         PERFORM pg_temp.assert_rejection(
             scenario => 'Invalid aggregate units: ' || invalid_number,
@@ -351,7 +351,7 @@ BEGIN
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Editing credit history',
-            input_sql => $$UPDATE credit_entries SET amount_ticks = 2600000000 WHERE credit_entry_id = 'billing-model-grant'$$,
+            input_sql => $$UPDATE credit_entries SET amount_microcents = 2600000000 WHERE credit_entry_id = 'billing-model-grant'$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Deleting credit history',

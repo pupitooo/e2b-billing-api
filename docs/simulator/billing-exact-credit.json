@@ -11,7 +11,7 @@
         "status": 200,
         "body": {
           "customer_id": "acme",
-          "credit_balance_ticks": "0",
+          "credit_balance_microcents": "0",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 0
@@ -84,7 +84,7 @@
         "status": 200,
         "body": {
           "customer_id": "acme",
-          "credit_balance_ticks": "990000",
+          "credit_balance_microcents": "990000",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 3
@@ -93,7 +93,7 @@
       "await": true
     },
     {
-      "name": "issue a zero-cent presentation with exact audit ticks",
+      "name": "issue a zero-cent presentation with exact audit microcents",
       "request": {
         "method": "POST",
         "path": "/customers/acme/invoices",
@@ -106,15 +106,15 @@
         "body": {
           "number": "ACME-0001",
           "total_cents": 0,
-          "gross_usage_ticks": "10000",
-          "credit_used_ticks": "10000",
+          "gross_usage_microcents": "10000",
+          "credit_used_microcents": "10000",
           "lines": [
             {
               "kind": "usage",
               "units": "2500",
               "amount_cents": 0,
-              "gross_ticks": "10000",
-              "credit_ticks": "10000"
+              "gross_microcents": "10000",
+              "credit_microcents": "10000"
             },
             {
               "kind": "credit",
@@ -125,7 +125,7 @@
       }
     },
     {
-      "name": "invoice rounding did not consume another tick",
+      "name": "invoice rounding did not consume another microcent",
       "request": {
         "method": "GET",
         "path": "/customers/acme/credit"
@@ -134,7 +134,7 @@
         "status": 200,
         "body": {
           "customer_id": "acme",
-          "credit_balance_ticks": "990000",
+          "credit_balance_microcents": "990000",
           "pending_events": 0,
           "processing_errors": 0,
           "state_version": 4

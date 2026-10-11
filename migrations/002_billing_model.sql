@@ -1,6 +1,6 @@
--- One tick is one millionth of a USD cent (0.00000001 USD).
+-- One microcent is one millionth of a USD cent (0.00000001 USD).
 -- Unconstrained numeric retains integer products beyond bigint without rounding.
-CREATE DOMAIN billing_ticks AS numeric
+CREATE DOMAIN billing_microcents AS numeric
     CHECK (VALUE >= 0 AND VALUE < 'Infinity'::numeric AND VALUE = trunc(VALUE));
 
 CREATE TABLE customers (
@@ -46,7 +46,7 @@ CREATE TABLE rated_usage_groups (
     total_units numeric NOT NULL CHECK (
         total_units >= 0 AND total_units < 'Infinity'::numeric AND total_units = trunc(total_units)
     ),
-    exact_charge_ticks billing_ticks NOT NULL,
+    exact_charge_microcents billing_microcents NOT NULL,
     booked_charge_cents bigint NOT NULL CHECK (booked_charge_cents >= 0),
     allocated_credit_cents bigint NOT NULL CHECK (
         allocated_credit_cents >= 0 AND allocated_credit_cents <= booked_charge_cents
@@ -72,7 +72,7 @@ CREATE INDEX usage_ratings_group_idx ON usage_ratings (group_id);
 CREATE TABLE monthly_usage (
     customer_id text NOT NULL REFERENCES customers (customer_id),
     usage_month date NOT NULL CHECK (isfinite(usage_month) AND EXTRACT(DAY FROM usage_month) = 1),
-    gross_charge_ticks billing_ticks NOT NULL,
+    gross_charge_microcents billing_microcents NOT NULL,
     PRIMARY KEY (customer_id, usage_month)
 );
 

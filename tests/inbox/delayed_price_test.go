@@ -25,11 +25,11 @@ func testDelayedPriceProcessing(t *testing.T) {
 		wantCreditEntries    int
 		wantFirstInvoice     int64
 		wantLateBillingMonth string
-		wantGrossTicks       string
+		wantGrossMicrocents  string
 		wantRatings          int
 	}{
-		{name: "late delivery into an open month", lateReceivedAt: "2026-02-10T00:00:00Z", activationReceivedAt: "2026-02-10T00:01:00Z", wantLateInvoice: 0, wantCreditEntries: 0, wantFirstInvoice: 400, wantLateBillingMonth: "2026-02", wantGrossTicks: "400000000", wantRatings: 3},
-		{name: "late delivery after closure retains historical price", closeBeforeLate: true, lateReceivedAt: "2026-03-10T00:00:00Z", activationReceivedAt: "2026-03-10T00:01:00Z", wantLateInvoice: 300, wantCreditEntries: 0, wantFirstInvoice: 100, wantLateBillingMonth: "2026-03", wantGrossTicks: "400000000", wantRatings: 3},
+		{name: "late delivery into an open month", lateReceivedAt: "2026-02-10T00:00:00Z", activationReceivedAt: "2026-02-10T00:01:00Z", wantLateInvoice: 0, wantCreditEntries: 0, wantFirstInvoice: 400, wantLateBillingMonth: "2026-02", wantGrossMicrocents: "400000000", wantRatings: 3},
+		{name: "late delivery after closure retains historical price", closeBeforeLate: true, lateReceivedAt: "2026-03-10T00:00:00Z", activationReceivedAt: "2026-03-10T00:01:00Z", wantLateInvoice: 300, wantCreditEntries: 0, wantFirstInvoice: 100, wantLateBillingMonth: "2026-03", wantGrossMicrocents: "400000000", wantRatings: 3},
 	}
 	steps := []struct {
 		name        string
@@ -122,13 +122,13 @@ func testDelayedPriceProcessing(t *testing.T) {
 				t.Errorf("March invoice total=%d; want %d", lateInvoice.TotalCents, tc.wantLateInvoice)
 			}
 
-			var grossTicks string
+			var grossMicrocents string
 			var ratings, creditEntries int
-			if err := pool.QueryRow(ctx, `SELECT gross_charge_ticks::text,(SELECT count(*) FROM usage_ratings),(SELECT count(*) FROM credit_entries) FROM monthly_usage WHERE customer_id='cyberdyne' AND usage_month='2026-02-01'`).Scan(&grossTicks, &ratings, &creditEntries); err != nil {
+			if err := pool.QueryRow(ctx, `SELECT gross_charge_microcents::text,(SELECT count(*) FROM usage_ratings),(SELECT count(*) FROM credit_entries) FROM monthly_usage WHERE customer_id='cyberdyne' AND usage_month='2026-02-01'`).Scan(&grossMicrocents, &ratings, &creditEntries); err != nil {
 				t.Fatal(err)
 			}
-			if grossTicks != tc.wantGrossTicks || ratings != tc.wantRatings || creditEntries != tc.wantCreditEntries {
-				t.Errorf("Monthly gross=%s ratings=%d credit entries=%d; want %s,%d,%d", grossTicks, ratings, creditEntries, tc.wantGrossTicks, tc.wantRatings, tc.wantCreditEntries)
+			if grossMicrocents != tc.wantGrossMicrocents || ratings != tc.wantRatings || creditEntries != tc.wantCreditEntries {
+				t.Errorf("Monthly gross=%s ratings=%d credit entries=%d; want %s,%d,%d", grossMicrocents, ratings, creditEntries, tc.wantGrossMicrocents, tc.wantRatings, tc.wantCreditEntries)
 			}
 		})
 	}

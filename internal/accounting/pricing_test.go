@@ -48,7 +48,7 @@ func TestRate(t *testing.T) {
 		wantPriceID              string
 		wantPricePerMillionCents int64
 		wantUsageMonth           string
-		wantChargeTicks          string
+		wantChargeMicrocents     string
 		wantError                bool
 		wantMissingPrice         bool
 		wantErrorMessage         string
@@ -65,7 +65,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "acme-oct",
 			wantPricePerMillionCents: 4,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "400000000",
+			wantChargeMicrocents:     "400000000",
 			wantError:                false,
 		},
 		{
@@ -80,7 +80,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "acme-oct",
 			wantPricePerMillionCents: 4,
 			wantUsageMonth:           "2026-11-01T00:00:00Z",
-			wantChargeTicks:          "400000000",
+			wantChargeMicrocents:     "400000000",
 			wantError:                false,
 		},
 		{
@@ -95,7 +95,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "default-oct",
 			wantPricePerMillionCents: 5,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "500000000",
+			wantChargeMicrocents:     "500000000",
 			wantError:                false,
 		},
 		{
@@ -110,7 +110,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "default-mid-oct",
 			wantPricePerMillionCents: 6,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "600000000",
+			wantChargeMicrocents:     "600000000",
 			wantError:                false,
 		},
 		{
@@ -149,7 +149,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "default-oct",
 			wantPricePerMillionCents: 5,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "5000",
+			wantChargeMicrocents:     "5000",
 			wantError:                false,
 		},
 		{
@@ -164,7 +164,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "acme-oct",
 			wantPricePerMillionCents: 4,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "4000",
+			wantChargeMicrocents:     "4000",
 			wantError:                false,
 		},
 		{
@@ -243,7 +243,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "free",
 			wantPricePerMillionCents: 0,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "0",
+			wantChargeMicrocents:     "0",
 			wantError:                false,
 		},
 		{
@@ -346,7 +346,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "acme-oct",
 			wantPricePerMillionCents: 4,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "400000000",
+			wantChargeMicrocents:     "400000000",
 			wantError:                false,
 		},
 		{
@@ -361,7 +361,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "acme-oct",
 			wantPricePerMillionCents: 4,
 			wantUsageMonth:           "2026-11-01T00:00:00Z",
-			wantChargeTicks:          "400000000",
+			wantChargeMicrocents:     "400000000",
 			wantError:                false,
 		},
 		{
@@ -389,7 +389,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "acme-oct",
 			wantPricePerMillionCents: 4,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "800000000",
+			wantChargeMicrocents:     "800000000",
 			wantError:                false,
 		},
 		{
@@ -404,7 +404,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "acme-oct",
 			wantPricePerMillionCents: 4,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "200000000",
+			wantChargeMicrocents:     "200000000",
 			wantError:                false,
 		},
 		{
@@ -419,7 +419,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "default-oct",
 			wantPricePerMillionCents: 5,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "617283945",
+			wantChargeMicrocents:     "617283945",
 			wantError:                false,
 		},
 		{
@@ -434,7 +434,7 @@ func TestRate(t *testing.T) {
 			wantPriceID:              "default-mid-oct",
 			wantPricePerMillionCents: 6,
 			wantUsageMonth:           "2026-10-01T00:00:00Z",
-			wantChargeTicks:          "1200000000",
+			wantChargeMicrocents:     "1200000000",
 			wantError:                false,
 		},
 	}
@@ -484,8 +484,8 @@ func TestRate(t *testing.T) {
 				t.Errorf("Rate usage month = %s; want %s", got.UsageMonth, tt.wantUsageMonth)
 			}
 
-			if got.Charge.Ticks().String() != tt.wantChargeTicks {
-				t.Errorf("Rate charge = %s ticks; want %s ticks", got.Charge.Ticks(), tt.wantChargeTicks)
+			if got.Charge.Microcents().String() != tt.wantChargeMicrocents {
+				t.Errorf("Rate charge = %s microcents; want %s microcents", got.Charge.Microcents(), tt.wantChargeMicrocents)
 			}
 		})
 	}

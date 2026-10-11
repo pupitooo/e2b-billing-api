@@ -18,30 +18,30 @@ import (
 // usage is billed. Closing and retries never process a released usage.
 func testQuarantinedClosing(t *testing.T) {
 	cases := []struct {
-		name               string
-		metric             string
-		schemaVersion      int32
-		periodEnd          string
-		initialError       *string
-		wantErrorText      string
-		workerSteps        []bool
-		wantTotalCents     int64
-		wantGrossTicks     string
-		wantCreditTicks    string
-		wantRemainingTicks string
-		wantRatings        int
+		name                    string
+		metric                  string
+		schemaVersion           int32
+		periodEnd               string
+		initialError            *string
+		wantErrorText           string
+		workerSteps             []bool
+		wantTotalCents          int64
+		wantGrossMicrocents     string
+		wantCreditMicrocents    string
+		wantRemainingMicrocents string
+		wantRatings             int
 	}{
-		{name: "missing price discovered by worker", metric: "unpriced", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", wantErrorText: "P0 missing_valid_price:", workerSteps: []bool{true, true}, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
-		{name: "unsupported schema discovered by worker", metric: "cpu_seconds", schemaVersion: 2, periodEnd: "2026-10-10T13:00:00Z", wantErrorText: "unsupported usage schema version", workerSteps: []bool{true, true}, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
-		{name: "price crossing discovered by worker", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-16T00:00:00Z", wantErrorText: "usage interval crosses a price version boundary", workerSteps: []bool{true, true}, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
-		{name: "preexisting arbitrary processing error is excluded", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", initialError: stringPointer("investigated processing failure"), wantErrorText: "investigated processing failure", workerSteps: []bool{true}, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
-		{name: "even an empty nonnull error is excluded", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", initialError: stringPointer(""), wantErrorText: "", workerSteps: []bool{true}, wantTotalCents: 3, wantGrossTicks: "5000000", wantCreditTicks: "2000000", wantRemainingTicks: "0", wantRatings: 1},
+		{name: "missing price discovered by worker", metric: "unpriced", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", wantErrorText: "P0 missing_valid_price:", workerSteps: []bool{true, true}, wantTotalCents: 3, wantGrossMicrocents: "5000000", wantCreditMicrocents: "2000000", wantRemainingMicrocents: "0", wantRatings: 1},
+		{name: "unsupported schema discovered by worker", metric: "cpu_seconds", schemaVersion: 2, periodEnd: "2026-10-10T13:00:00Z", wantErrorText: "unsupported usage schema version", workerSteps: []bool{true, true}, wantTotalCents: 3, wantGrossMicrocents: "5000000", wantCreditMicrocents: "2000000", wantRemainingMicrocents: "0", wantRatings: 1},
+		{name: "price crossing discovered by worker", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-16T00:00:00Z", wantErrorText: "usage interval crosses a price version boundary", workerSteps: []bool{true, true}, wantTotalCents: 3, wantGrossMicrocents: "5000000", wantCreditMicrocents: "2000000", wantRemainingMicrocents: "0", wantRatings: 1},
+		{name: "preexisting arbitrary processing error is excluded", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", initialError: stringPointer("investigated processing failure"), wantErrorText: "investigated processing failure", workerSteps: []bool{true}, wantTotalCents: 3, wantGrossMicrocents: "5000000", wantCreditMicrocents: "2000000", wantRemainingMicrocents: "0", wantRatings: 1},
+		{name: "even an empty nonnull error is excluded", metric: "cpu_seconds", schemaVersion: 1, periodEnd: "2026-10-10T13:00:00Z", initialError: stringPointer(""), wantErrorText: "", workerSteps: []bool{true}, wantTotalCents: 3, wantGrossMicrocents: "5000000", wantCreditMicrocents: "2000000", wantRemainingMicrocents: "0", wantRatings: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
 			ctx := context.Background()
-			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_ticks=2000000 WHERE customer_id='cyberdyne'"); err != nil {
+			if _, err := pool.Exec(ctx, "UPDATE customer_billing_state SET credit_balance_microcents=2000000 WHERE customer_id='cyberdyne'"); err != nil {
 				t.Fatal(err)
 			}
 			transport := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second})
@@ -63,15 +63,15 @@ func testQuarantinedClosing(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CloseMonth with %+v error=%v; want nil", bad, err)
 			}
-			if invoice.TotalCents != tc.wantTotalCents || invoice.GrossUsageTicks != tc.wantGrossTicks || invoice.CreditUsedTicks != tc.wantCreditTicks {
-				t.Errorf("CloseMonth with %+v invoice=%+v; want total=%d gross=%s credit=%s", bad, invoice, tc.wantTotalCents, tc.wantGrossTicks, tc.wantCreditTicks)
+			if invoice.TotalCents != tc.wantTotalCents || invoice.GrossUsageMicrocents != tc.wantGrossMicrocents || invoice.CreditUsedMicrocents != tc.wantCreditMicrocents {
+				t.Errorf("CloseMonth with %+v invoice=%+v; want total=%d gross=%s credit=%s", bad, invoice, tc.wantTotalCents, tc.wantGrossMicrocents, tc.wantCreditMicrocents)
 			}
 			var processed bool
 			var processingError, remaining string
 			var ratings int
 			if err := pool.QueryRow(ctx, `SELECT i.processed_at IS NOT NULL,i.processing_error,
             (SELECT count(*) FROM usage_ratings),
-            (SELECT credit_balance_ticks::text FROM customer_billing_state WHERE customer_id='cyberdyne')
+            (SELECT credit_balance_microcents::text FROM customer_billing_state WHERE customer_id='cyberdyne')
             FROM usage_inbox i WHERE source=$1 AND event_id=$2`, bad.Source, bad.EventID).Scan(&processed, &processingError, &ratings, &remaining); err != nil {
 				t.Fatal(err)
 			}
@@ -79,8 +79,8 @@ func testQuarantinedClosing(t *testing.T) {
 				t.Errorf("Bad receipt processed=%t error=%q; want false and prefix=%q", processed, processingError, tc.wantErrorText)
 			}
 
-			if ratings != tc.wantRatings || remaining != tc.wantRemainingTicks {
-				t.Errorf("Ratings=%d credit=%s; want %d and %s", ratings, remaining, tc.wantRatings, tc.wantRemainingTicks)
+			if ratings != tc.wantRatings || remaining != tc.wantRemainingMicrocents {
+				t.Errorf("Ratings=%d credit=%s; want %d and %s", ratings, remaining, tc.wantRatings, tc.wantRemainingMicrocents)
 			}
 
 			// Releasing usage does not make closing or its retry process it.

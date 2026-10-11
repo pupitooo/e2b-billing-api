@@ -67,7 +67,7 @@ func equalLimit(a, b *int64) bool {
 	return *a == *b
 }
 
-// MonthlyLimitStatus uses original-month gross ticks. Credit, add-ons, and the
+// MonthlyLimitStatus uses original-month gross microcents. Credit, add-ons, and the
 // month on which late usage is invoiced cannot reduce this month's gross spend.
 func (s *Store) MonthlyLimitStatus(ctx context.Context, customer, monthValue string) (billing.LimitStatus, error) {
 	if err := billing.ValidateIdentifier("customer_id", customer); err != nil {
@@ -81,11 +81,11 @@ func (s *Store) MonthlyLimitStatus(ctx context.Context, customer, monthValue str
 
 	result := billing.LimitStatus{CustomerID: customer, Month: monthValue}
 	err = s.pool.QueryRow(ctx, `SELECT spend_limit_cents,state_version,
-        COALESCE((SELECT gross_charge_ticks::text FROM monthly_usage WHERE customer_id=$1 AND usage_month=$2),'0'),
+        COALESCE((SELECT gross_charge_microcents::text FROM monthly_usage WHERE customer_id=$1 AND usage_month=$2),'0'),
         (SELECT count(*) FROM usage_inbox WHERE customer_id=$1 AND processed_at IS NULL AND processing_error IS NULL),
         (SELECT count(*) FROM usage_inbox WHERE customer_id=$1 AND processing_error IS NOT NULL)
         FROM customer_billing_state WHERE customer_id=$1`, customer, month).
-		Scan(&result.LimitCents, &result.StateVersion, &result.GrossChargeTicks, &result.PendingEvents, &result.ProcessingErrors)
+		Scan(&result.LimitCents, &result.StateVersion, &result.GrossChargeMicrocents, &result.PendingEvents, &result.ProcessingErrors)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, billing.ErrNotFound
 	}
@@ -94,7 +94,7 @@ func (s *Store) MonthlyLimitStatus(ctx context.Context, customer, monthValue str
 		return result, err
 	}
 
-	gross, err := amount(result.GrossChargeTicks)
+	gross, err := amount(result.GrossChargeMicrocents)
 	if err != nil {
 		return result, err
 	}

@@ -24,14 +24,14 @@ func TestProcessedUsageClosingMigration(t *testing.T) {
 		(source,event_id,schema_version,customer_id,sandbox_id,metric,period_start,period_end,units,received_at,processed_at)
 		VALUES ('upgrade-history','accounted',1,'acme','sandbox','cpu_seconds','2026-10-10T12:00:00Z','2026-10-10T13:00:00Z',1000000,'2026-10-11T00:00:00Z','2026-10-11T00:00:00Z');
 		INSERT INTO rated_usage_groups
-		(group_id,customer_id,price_version_id,metric,usage_month,billing_month,total_units,exact_charge_ticks,booked_charge_cents,allocated_credit_ticks)
+		(group_id,customer_id,price_version_id,metric,usage_month,billing_month,total_units,exact_charge_microcents,booked_charge_cents,allocated_credit_microcents)
 		VALUES ('group/earlier','acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',1000000,4000000,4,4000000);
 		INSERT INTO usage_ratings (source,event_id,group_id) VALUES ('upgrade-history','accounted','group/earlier');
-		INSERT INTO credit_entries (credit_entry_id,customer_id,group_id,amount_ticks,recorded_at) VALUES
+		INSERT INTO credit_entries (credit_entry_id,customer_id,group_id,amount_microcents,recorded_at) VALUES
 		('grant/earlier','acme',NULL,6000000,'2026-10-01T00:00:00Z'),
 		('usage/earlier','acme','group/earlier',-4000000,'2026-10-11T00:00:00Z');
-		INSERT INTO monthly_usage (customer_id,usage_month,gross_charge_ticks) VALUES ('acme','2026-10-01',4000000);
-		UPDATE customer_billing_state SET credit_balance_ticks=2000000,state_version=2 WHERE customer_id='acme'`
+		INSERT INTO monthly_usage (customer_id,usage_month,gross_charge_microcents) VALUES ('acme','2026-10-01',4000000);
+		UPDATE customer_billing_state SET credit_balance_microcents=2000000,state_version=2 WHERE customer_id='acme'`
 	cases := []struct {
 		name                                  string
 		setupSQL                              string
@@ -130,7 +130,7 @@ func TestProcessedUsageClosingMigration(t *testing.T) {
                 to_regclass('invoice_closings') IS NULL AND to_regclass('invoice_closing_receipts') IS NULL AND to_regclass('invoice_closing_exclusions') IS NULL,
                 to_regclass('usage_inbox_customer_period_start_idx') IS NOT NULL,
                 (SELECT count(*) FROM invoices),(SELECT count(*) FROM rated_usage_groups),(SELECT count(*) FROM usage_ratings),
-                credit_balance_ticks::text,next_invoice_number,state_version,
+                credit_balance_microcents::text,next_invoice_number,state_version,
                 (SELECT processed_at IS NOT NULL FROM usage_inbox WHERE source='upgrade'),
                 (SELECT processing_error FROM usage_inbox WHERE source='upgrade')
                 FROM customer_billing_state WHERE customer_id='acme'`).Scan(&retired, &earlierUsageIndex, &invoices, &groups, &ratings, &credit, &next, &version, &processed, &pendingError); err != nil {

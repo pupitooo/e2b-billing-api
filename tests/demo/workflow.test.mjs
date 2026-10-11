@@ -69,18 +69,18 @@ test("AssignmentRunner.step", async (t) => {
         request: { method: "GET", path: "/customers/acme/credit" },
         want: {
           status: 200,
-          body: { credit_balance_ticks: "2100000000", pending_events: 0 },
+          body: { credit_balance_microcents: "2100000000", pending_events: 0 },
         },
         await: true,
       },
       inputResponses: [
         {
           status: 200,
-          data: { credit_balance_ticks: "2500000000", pending_events: 1 },
+          data: { credit_balance_microcents: "2500000000", pending_events: 1 },
         },
         {
           status: 200,
-          data: { credit_balance_ticks: "2100000000", pending_events: 0 },
+          data: { credit_balance_microcents: "2100000000", pending_events: 0 },
         },
       ],
       wantCalls: 2,
