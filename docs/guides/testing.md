@@ -144,3 +144,33 @@ does not promise general independence from arrival order or invoice timing.
 ```sh
 make inbox-test RUN='^TestProcessBatch$/(generated_accounting_sequences|partitioned_usage_preserves_one_financial_group)$'
 ```
+
+## Commit, response and checkpoint recovery
+
+`TestBillingSimulatorExecutable/committed_usage_survives_response_loss_and_producer_death`
+uses the real HTTP router, PostgreSQL and a separate simulator executable. One
+case closes the HTTP connection after committing the receipt; another withholds
+the reply and kills the producer only after observing that commit. Channels and
+the committed database row determine the failure point. Timeouts bound failures;
+sleeps do not choose which operation wins.
+
+Both cases retain the original unadvanced checkpoint, reopen storage through a
+new pool/store, process the receipt once, and resume a new producer process. The
+replayed request body must be identical. Full-row comparisons, literal balance
+and ledger counts and accounting invariants prove no additional financial effect
+and preserve the original receipt timestamp despite the restarted API clock.
+
+| Failure boundary | Automated scenario | Required outcome |
+| --- | --- | --- |
+| Before transaction commit | `TestProcessBatch/late_database_failure_rolls_back_all_financial_effects`; command/resource rollback cases | No partial financial write; valid retry succeeds. |
+| After commit, lost HTTP reply | `TestBillingSimulatorExecutable/committed_usage_survives_response_loss_and_producer_death/committed_HTTP_response_is_lost` | Original receipt survives; unchanged retry has no second effect. |
+| After commit, producer dies before checkpoint | `TestBillingSimulatorExecutable/committed_usage_survives_response_loss_and_producer_death/producer_killed_after_commit_before_checkpoint` | Durable cursor stays at zero; new process completes the same plan. |
+| Retained state and fresh producer | Both new cases and the existing lost committed grant workflow | Original identity, input, receipt timestamp, ledger and balance are preserved. |
+
+```sh
+make inbox-test RUN='^TestBillingSimulatorExecutable$/committed_usage_survives_response_loss_and_producer_death$'
+```
+
+These process and transport tests establish replay across the tested boundaries.
+They do not simulate disk loss, PostgreSQL crash recovery, every OS signal point,
+or failure of the database host itself.

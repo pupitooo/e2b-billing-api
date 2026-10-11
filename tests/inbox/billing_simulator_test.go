@@ -27,6 +27,7 @@ import (
 // Invoice clocks follow completed periods; price commands declare their own
 // insertion times when a scenario schedules versions before historical usage.
 func TestBillingSimulatorExecutable(t *testing.T) {
+	t.Run("committed usage survives response loss and producer death", testCommittedUsageRecovery)
 	cases := []struct {
 		name                string
 		file                string
