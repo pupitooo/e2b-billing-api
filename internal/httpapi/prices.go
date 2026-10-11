@@ -25,45 +25,54 @@ type priceResponse struct {
 	priceValues
 }
 
+type priceHandler struct {
+	store   Store
+	timeout time.Duration
+}
+
 func registerPriceRoutes(mux *http.ServeMux, store Store, timeout time.Duration) {
-	mux.HandleFunc("POST /prices", func(w http.ResponseWriter, r *http.Request) {
-		requiredFields := []string{
-			"idempotency_key",
-			"customer_id",
-			"metric",
-			"price_per_million_cents",
-			"effective_from",
-		}
-		nullableFields := []string{
-			"customer_id",
-			"effective_from",
-		}
+	handler := priceHandler{store: store, timeout: timeout}
 
-		var input priceCommand
-		if !commandJSON(w, r, &input, requiredFields, nullableFields...) {
-			return
-		}
+	mux.HandleFunc("POST /prices", handler.createPrice)
+}
 
-		command, err := parsePriceCommand(input)
-		if err != nil {
-			writeFinancialError(w, err)
-			return
-		}
+func (handler priceHandler) createPrice(w http.ResponseWriter, r *http.Request) {
+	requiredFields := []string{
+		"idempotency_key",
+		"customer_id",
+		"metric",
+		"price_per_million_cents",
+		"effective_from",
+	}
+	nullableFields := []string{
+		"customer_id",
+		"effective_from",
+	}
 
-		ctx, cancel := financialContext(r, timeout)
-		defer cancel()
+	var input priceCommand
+	if !commandJSON(w, r, &input, requiredFields, nullableFields...) {
+		return
+	}
 
-		var price accounting.PriceVersion
-		if input.EffectiveFrom == nil {
-			price, err = store.CreatePriceNow(ctx, input.IdempotencyKey, command)
-		} else {
-			price, err = store.CreatePrice(ctx, input.IdempotencyKey, command)
-		}
+	command, err := parsePriceCommand(input)
+	if err != nil {
+		writeFinancialError(w, err)
+		return
+	}
 
-		resolved := price.EffectiveFrom.Format(time.RFC3339Nano)
-		input.EffectiveFrom = &resolved
-		financialResult(w, priceResponse{ID: price.ID, priceValues: input.priceValues}, err)
-	})
+	ctx, cancel := financialContext(r, handler.timeout)
+	defer cancel()
+
+	var price accounting.PriceVersion
+	if input.EffectiveFrom == nil {
+		price, err = handler.store.CreatePriceNow(ctx, input.IdempotencyKey, command)
+	} else {
+		price, err = handler.store.CreatePrice(ctx, input.IdempotencyKey, command)
+	}
+
+	resolved := price.EffectiveFrom.Format(time.RFC3339Nano)
+	input.EffectiveFrom = &resolved
+	financialResult(w, priceResponse{ID: price.ID, priceValues: input.priceValues}, err)
 }
 
 // parsePriceCommand preserves explicit nulls while converting transport values.

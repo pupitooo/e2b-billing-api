@@ -7,46 +7,57 @@ import (
 	"e2b/billing-api/internal/billing"
 )
 
+type creditHandler struct {
+	store   Store
+	timeout time.Duration
+}
+
 func registerCreditRoutes(mux *http.ServeMux, store Store, timeout time.Duration) {
-	mux.HandleFunc("POST /customers/{customer_id}/credits", func(w http.ResponseWriter, r *http.Request) {
-		requiredFields := []string{
-			"idempotency_key",
-			"amount_cents",
-			"recorded_at",
-		}
+	handler := creditHandler{store: store, timeout: timeout}
 
-		var input struct {
-			IdempotencyKey string `json:"idempotency_key"`
-			AmountCents    int64  `json:"amount_cents"`
-			RecordedAt     string `json:"recorded_at"`
-		}
-		if !commandJSON(w, r, &input, requiredFields) {
-			return
-		}
+	mux.HandleFunc("POST /customers/{customer_id}/credits", handler.grantCredit)
+	mux.HandleFunc("GET /customers/{customer_id}/credit", handler.getCredit)
+}
 
-		recorded, err := commandTime(input.RecordedAt, "recorded_at")
-		if err != nil {
-			writeFinancialError(w, err)
-			return
-		}
+func (handler creditHandler) grantCredit(w http.ResponseWriter, r *http.Request) {
+	requiredFields := []string{
+		"idempotency_key",
+		"amount_cents",
+		"recorded_at",
+	}
 
-		grant := billing.CreditGrant{
-			IdempotencyKey: input.IdempotencyKey,
-			AmountCents:    input.AmountCents,
-			RecordedAt:     recorded,
-		}
+	var input struct {
+		IdempotencyKey string `json:"idempotency_key"`
+		AmountCents    int64  `json:"amount_cents"`
+		RecordedAt     string `json:"recorded_at"`
+	}
+	if !commandJSON(w, r, &input, requiredFields) {
+		return
+	}
 
-		ctx, cancel := financialContext(r, timeout)
-		defer cancel()
+	recorded, err := commandTime(input.RecordedAt, "recorded_at")
+	if err != nil {
+		writeFinancialError(w, err)
+		return
+	}
 
-		err = store.GrantCredit(ctx, r.PathValue("customer_id"), grant)
-		financialResult(w, grant, err)
-	})
-	mux.HandleFunc("GET /customers/{customer_id}/credit", func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := financialContext(r, timeout)
-		defer cancel()
+	grant := billing.CreditGrant{
+		IdempotencyKey: input.IdempotencyKey,
+		AmountCents:    input.AmountCents,
+		RecordedAt:     recorded,
+	}
 
-		snapshot, err := store.Credit(ctx, r.PathValue("customer_id"))
-		financialResult(w, snapshot, err)
-	})
+	ctx, cancel := financialContext(r, handler.timeout)
+	defer cancel()
+
+	err = handler.store.GrantCredit(ctx, r.PathValue("customer_id"), grant)
+	financialResult(w, grant, err)
+}
+
+func (handler creditHandler) getCredit(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := financialContext(r, handler.timeout)
+	defer cancel()
+
+	snapshot, err := handler.store.Credit(ctx, r.PathValue("customer_id"))
+	financialResult(w, snapshot, err)
 }
