@@ -3,19 +3,22 @@
 ## 🚧 ⚠️ DISCLAIMER — Proof of concept 🚧
 
 This application is a proof of concept for the assignment and requires further
-work before production deployment. My goal was to implement a broad billing
-workflow, prioritizing the core product logic: reliable usage delivery, historical
-pricing, credit allocation, add-on billing, spend-limit reporting, and consistent
-monthly invoices, including retries and late usage.
+work before production deployment. It focuses on architectural design and the
+billing processes defined by the assignment.
 
-Some supporting interfaces for testing and configuration are provisional. An
-internal CRM and other consuming systems are not implemented; their requirements
-would help define the operational workflows and acceptance criteria these
-interfaces still need. These areas require further specification, review, and
-validation before production use.
+My aim was also to deliver the standard of work I am used to: comprehensive tests
+and documentation covering operating instructions, binding system contracts,
+and diagrams explaining the structure and data flow. The project includes unit,
+database, HTTP integration, and complete billing workflow tests, operational
+guides, and an OpenAPI reference.
 
-The implementation makes the main assignment concept testable. Its limitations
-and the work needed to take it into production can be discussed during the interview.
+Given the limited time, I prioritized design quality and clear descriptions of
+the critical processes. The documentation primarily supports a guided
+presentation and technical review of the solution. The documentation portal
+groups startup, operations, API, billing, simulation, testing, development, and
+architecture, with direct links to common tasks. Production deployment still requires further
+operational specification, validation, and hardening beyond the documented local
+setup.
 
 ---
 
@@ -62,6 +65,13 @@ make up
 
 Migration is explicit, including on existing volumes; startup never applies it.
 The simulator container waits for `make simulate` before producing usage.
+
+These commands use the Compose project `e2b-local` unless you select another
+project. A project groups containers, its network, and its own database and
+simulator volumes. Keep the same selection for startup, migrations, and
+simulation; port settings only change host access. See
+[Compose projects and ports](docs/guides/local-development.md#compose-projects-and-ports)
+and the [complete isolated assignment setup](docs/simulator/billing-scenarios.md#start-an-isolated-assignment-environment).
 
 | Service | Default browser address |
 | --- | --- |
@@ -129,11 +139,18 @@ This creates additional usage. Use an isolated environment for independent
 experiments. The [transport simulator guide](docs/simulator/transport-scenarios.md)
 covers generation, delivery, replay, barriers, and failures.
 
-The [public billing scenarios](docs/simulator/billing-scenarios.md) exercise the
-complete assignment with literal invoices and balances. Run them against fresh
-seeded accounts with the API and worker running. Their fixed October/November
-2026 invoices require the server clock to have reached `2026-12-01T00:00:00Z`;
-private-schema integration tests declare their own clocks for earlier verification.
+The [billing scenario step tables](docs/simulator/billing-scenarios.md#scenarios-and-review-entry-points)
+document each action and expected result, including the
+[24-step assignment](docs/simulator/billing-scenarios.md#billing-assignment).
+Run them against fresh seeded accounts with the API and worker running; observe
+the [calendar and receipt-time prerequisites](docs/simulator/billing-scenarios.md#run-the-complete-assignment).
+Private-schema integration tests declare their own invoice clocks for earlier verification.
+
+The command below uses the currently selected Compose project. `make simulate`
+does not start its API or worker. For clean accounts, follow the
+[isolated setup](docs/simulator/billing-scenarios.md#start-an-isolated-assignment-environment)
+first and retain its project and port exports. For `lookup api ... no such host`,
+check [simulator connectivity](docs/guides/troubleshooting.md#troubleshoot-simulator-connectivity).
 
 ```sh
 make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json
@@ -152,8 +169,10 @@ make migrate
 make migration-status
 ```
 
-[Database operations](docs/guides/database-operations.md) cover connection strings,
-inspection queries, migration guarantees, and upgrade procedures.
+[Database](docs/guides/database-operations.md) covers connection strings and
+inspection queries. [Migrations](docs/guides/migrations.md) covers schema changes,
+upgrade prerequisites, and migration guarantees. For missing API names, occupied
+ports, or pending receipts, follow [troubleshooting](docs/guides/troubleshooting.md).
 
 | Command | Purpose |
 | --- | --- |

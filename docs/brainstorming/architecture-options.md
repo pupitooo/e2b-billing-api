@@ -93,7 +93,7 @@ Calculated rate = customers × average active sandboxes × metrics ÷ 60. Monthl
 | Implemented contract | Detail and verification |
 | --- | --- |
 | Strict measurement validation and atomic receipt | [OpenAPI](../api/openapi.yaml) defines JSON, time, identity, body and batch limits. [HTTP tests](../../tests/api/usage_batches_test.go) and [repository tests](../../tests/inbox/usage_inbox_test.go) verify retries, conflicts, cancellation and rollback. |
-| Exactly-once financial effects through retries | Account-first locking, pending-receipt recheck and one financial transaction are described in the [billing model](../architecture/billing-model.md#architectural-decisions-and-rationale); [accounting tests](../../tests/inbox/billing_test.go) cover concurrent workers and rollback. |
+| Exactly-once financial effects through retries | Account-first locking, pending-receipt recheck and one financial transaction are described in the [billing model](../architecture/decisions.md#architectural-decisions-and-rationale); [accounting tests](../../tests/inbox/billing_test.go) cover concurrent workers and rollback. |
 | Historical prices, exact credit and cumulative rounding | [Financial rules](../architecture/accounting-rules.md) distinguish consumption prices, ticks, group rounding and serialized credit allocation. [Primitive tests](../../internal/accounting/money_test.go) and [price tests](../../internal/accounting/pricing_test.go) cover boundaries and overflow. |
 | Closing from processed usage, immutable invoices and numbering | The [closing contract](../architecture/accounting-rules.md#transaction-and-closing-contract) and [processed-closing tests](../../tests/inbox/processed_closing_test.go) cover pending input, both lock orders, month order, retries and separate rounding groups. |
 | Assignment values and durable platform recovery | [Public workflows](../simulator/billing-scenarios.md) and [executable tests](../../tests/inbox/billing_simulator_test.go) reproduce invoices, balances, limits, lost committed replies and outages. |
@@ -137,7 +137,7 @@ OLAP is optional; no engine is selected. A Go aggregator prepares increments; Po
 
 Assuming 200 bytes/event, ten sandboxes/customer produce 4.32 TB per 30 days before indexes, WAL, replicas and backups. Retention must cover recovery and audit; [workload calculations](#workload-assumptions-for-further-analysis) do not establish capacity.
 
-References checked on 10 October 2026: [Kafka delivery semantics](https://kafka.apache.org/43/design/design/#message-delivery-semantics), [PostgreSQL transactions](https://www.postgresql.org/docs/18/tutorial-transactions.html), and [OLAP workloads](https://clickhouse.com/docs/get-started/about/intro). The OLAP reference illustrates the role; it does not select a product.
+References: [Kafka delivery semantics](https://kafka.apache.org/43/design/design/#message-delivery-semantics), [PostgreSQL transactions](https://www.postgresql.org/docs/18/tutorial-transactions.html), and [OLAP workloads](https://clickhouse.com/docs/get-started/about/intro). The OLAP reference illustrates the role; it does not select a product.
 
 The [capacity and measurement guide](../architecture/capacity-and-measurements.md)
 records the local ingestion sample, pool assumptions, and reproduction command.

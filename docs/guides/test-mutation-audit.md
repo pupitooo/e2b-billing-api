@@ -7,14 +7,14 @@ survivors. Production behavior and migrations remain unchanged.
 
 ## Evidence and scope
 
-Audit date: 10 October 2026. Go and SQL baseline:
+Go and SQL baseline:
 `8f5d601fff8f90ce800dd584eab5bcd7ec656327` (merged PR #65).
 The completed local GUI was inspected separately while it remained uncommitted
 for review. Its source and test hashes are recorded in the
 [mutation evidence](test-mutation-audit.json), together with every exact edit,
 before/after result, killing test name, SQL error and equivalent-mutant rationale.
 
-The 11 October 2026 idempotency refactor replaces the old credit operation
+The idempotency refactor replaces the old credit operation
 uniqueness and separate limit history with shared API command history. This audit
 remains evidence for its stated baseline; the retired ledger constraint mutation
 is historical, and a new mutation audit has not been run for the revised schema.

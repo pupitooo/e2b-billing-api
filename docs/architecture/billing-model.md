@@ -1,21 +1,19 @@
-# Billing model and assignment seed data
+# Data model
 
-## Summary
+This page describes the logical model, implemented PostgreSQL tables and
+relationships, seed catalog, and stored identities.
 
-This document explains the billing data model, the reasons behind its architecture,
-and how PostgreSQL stores and verifies the assignment's financial state:
+- [Logical model](#logical-data-model-erd) introduces the billing entities.
+- [Implemented schema](#implemented-postgresql-schema-erd-migrations-001012) and
+  [tables](#tables-and-relationships) describe SQL storage.
+- [Initial data](#initial-data-and-migrations) identifies the assignment seed.
+- [Command identities](#durable-api-operation-keys) and
+  [accounting IDs](#sequential-accounting-ids) describe persistent identity.
 
-- [Logical data model (ERD)](#logical-data-model-erd): billing concepts, their relationships, and an editable diagram.
-- [Architectural decisions and rationale](#architectural-decisions-and-rationale): database choice, customer locks, durable ingestion, retry identities, exact accounting, audit history, immutable invoices, and separation of responsibilities.
-- [Implemented PostgreSQL schema](#implemented-postgresql-schema-erd-migrations-001012): the complete schema through migration 012, SQL columns, keys, and cardinalities.
-- [Tables and relationships](#tables-and-relationships): table purposes, foreign keys, ownership checks, mutable projections, and append-only history.
-- [Money and months](#money-and-months): ticks and cents, the charge formula, arbitrary precision, UTC periods, and historical price selection.
-- [Initial data and migrations](#initial-data-and-migrations): startup commands, assignment catalog values, initial account state, exact-credit conversion, and transactional migration behavior.
-- [Transactional processing and verification](#transactional-processing-and-verification): time-zone checks, isolated fixtures, atomic worker updates, processed-usage closing, and public API simulator coverage.
-
-The schema stores the assignment catalog, transactional accounting, financial command identities, processed-usage closing, and immutable monthly invoices. [Shared financial rules and pure Go calculations](accounting-rules.md) define rating, exact credit, rounding, and UTC routing; the worker and public APIs implement those rules in `internal/billing`.
-
-Read the logical model first, then the architectural decisions and their trade-offs, followed by the PostgreSQL schema, financial representation, migrations, and transaction details. The [usage-to-invoice guide](usage-to-invoice.md) follows the accounting pipeline and explains the fields used at every stage.
+For calculations and calendar policies, read [financial rules](accounting-rules.md).
+Follow [usage to invoice](usage-to-invoice.md) for the worked accounting flow,
+[architecture decisions](decisions.md) for rationale and trade-offs, and
+[migrations](../guides/migrations.md) for operational schema changes.
 
 ## Logical data model (ERD)
 
@@ -26,32 +24,6 @@ The logical model introduces customers, metered usage, historical prices, credit
 [Editable Mermaid source](../diagrams/data-model/data-model.mmd).
 
 Conceptually, accepted usage is rated using historical prices, consumes available usage credit, and contributes to a monthly invoice alongside purchased add-ons. The architectural decisions below explain how these responsibilities map to durable input, financial state, and immutable output.
-
-## Architectural decisions and rationale
-
-These decisions describe the current implementation. Assignment requirements and implementation assumptions are distinguished in [the financial rules](accounting-rules.md); the trade-offs below do not imply measured production capacity.
-
-- **Use PostgreSQL for durable input and accounting.** Exact integer-valued `numeric`, row-level locks, and a partial index containing only pending inbox rows fit this billing model. Unlike [SQLite's single concurrent writer](https://www.sqlite.org/lang_transaction.html), PostgreSQL permits concurrent writes to different customer rows; its [unconstrained `numeric`](https://www.postgresql.org/docs/18/datatype-numeric.html#DATATYPE-NUMERIC-DECIMAL) also has a wider precision range than [MySQL `DECIMAL`](https://dev.mysql.com/doc/refman/8.4/en/precision-math-decimal-characteristics.html). Ingestion and accounting share database resources.
-
-- **Separate customer identity from billing state.** `customers` holds profile data; `customer_billing_state` holds the mutable financial account. Financial writers select the account by `customer_id` with `FOR UPDATE`, leaving ordinary profile updates independent of that row lock. At [READ COMMITTED](https://www.postgresql.org/docs/18/transaction-iso.html#XACT-READ-COMMITTED), a waiting writer rechecks `WHERE` against the committed row and reads the updated balance when the customer still matches. `state_version` is incremented with financial effects as a revision counter; it is not a lock filter. Separate tables require occasional joins and account creation alongside the customer: the PK/FK guarantees at most one account, not that every customer has one.
-
-- **Serialize financial changes per customer.** Usage accounting and credit allocation, credit grants, spend-limit changes, add-on purchases, and invoice closing acquire the account lock before reading mutable financial state, then commit their related changes together. The account row coordinates changes across the ledger, usage projections, subscriptions and invoices; for example, a new subscription cannot race with freezing the same billing month. Closing holds the lock throughout its single publication transaction. This shared protocol limits parallel financial writes for one busy customer.
-
-- **Persist usage before asynchronous accounting.** Ingestion acknowledges a durable receipt without waiting for rating and credit allocation. The inbox has no customer or metric foreign keys, so unknown catalog identifiers remain available for diagnosis rather than losing the submitted event. The trade-off is delayed financial visibility: acceptance does not mean successful accounting. Temporary database failures roll back and retry automatically; unsupported input is retained with `processing_error` and excluded from automatic processing. After diagnosing and correcting the cause, an operator must explicitly release the affected receipt for another attempt, as described in the [recovery instructions](../guides/accounting-recovery.md#investigate-and-release-a-receipt).
-
-- **Use stable identities and content checks for retries.** `(source, event_id)` identifies usage; financial commands have operation identities. Identical retries preserve the previous effect, while changed input under the same identity conflicts. After acquiring the account lock, the worker reselects the receipt with `processed_at IS NULL AND processing_error IS NULL`: completion or quarantine by another committed worker makes a stale candidate fail this filter and be skipped. The worker commits the rating link, financial projections, ledger changes, and receipt completion together, so a failed attempt cannot leave a partial charge. Unique constraints support this protocol but do not replace content comparison or the transaction.
-
-- **Keep exact ticks and round cumulative groups.** Integer ticks preserve sub-cent usage and credit; Go arbitrary-precision integers and PostgreSQL integer-valued `numeric` avoid floating-point error and intermediate `bigint` overflow. Grouping by customer, price version, usage month, and billing month prevents individual event or sandbox boundaries from introducing extra rounding. The cost is more explicit money conversion and group-level invoice presentation; intervals crossing supported month or price boundaries must currently be rejected.
-
-- **Append historical prices and snapshot purchased add-on prices.** Consumption uses the applicable historical price and customer override, while a subscription retains its purchased price. Later catalog changes therefore cannot silently reprice earlier usage or an existing purchase. Price history and ownership checks add storage and validation work; retroactive corrections need a separate policy.
-
-- **Keep audit history beside mutable projections.** `credit_entries` and `usage_ratings` preserve how balances and groups changed; account balances and `monthly_usage` make current-credit and monthly-limit reads direct. A separate original-month gross projection is necessary because limits exclude credit and add-ons, even when late usage is invoiced later. These duplicated totals must be maintained in the same transaction; constraints alone do not reconcile them with history.
-
-- **Separate the UTC usage month from the billing month.** Late consumption keeps its original price and spend-limit month but moves to an open billing month after closure. This preserves issued invoices without losing the consumption's origin. Explicit UTC calculation avoids dependence on session time zones, at the cost of carrying both month identities through groups and invoice lines.
-
-- **Publish invoices from processed groups.** One customer-account-locked transaction snapshots groups already accounted by the worker, freezes them, closes the month and advances numbering. Pending and quarantined usage do not delay issuance; later processing routes to an eligible open month. This accepts an incomplete current invoice for simpler closing independent of backlog size. Buyer and financial snapshots remain immutable.
-
-- **Separate pure calculations from persistence and transport.** `internal/accounting` calculates prices, credit, months, and invoice amounts without I/O; `internal/billing` owns locks and financial transactions, while HTTP code owns request and response handling. This makes financial rules directly testable and keeps transaction boundaries visible. Database constraints still protect structural integrity, so changes to a rule must keep calculations, persistence, and validation consistent.
 
 ## Implemented PostgreSQL schema (ERD, migrations 001–012)
 
@@ -93,73 +65,9 @@ Identifiers, balances, prices, and timestamps are supplied explicitly. `customer
 Foreign keys reject missing catalog records, missing receipts, and credit debits for another customer's group. A group's price must belong to its metric and be either a default or an override for that customer. Group identity cannot change after insertion; totals can increase as the worker processes more events. Rating links require the same customer and metric and an interval wholly within the original UTC month, including intervals ending exactly at the next month's boundary.
 
 Prices, credit entries and rating links reject row updates and deletes. Price changes append a new version; they do not rewrite past prices. Customer details, account projections, group totals, monthly totals, and the add-on catalog remain mutable. A subscription retains its purchased price when the catalog changes.
-
-## Money and months
-
-All amounts are USD. Credit balances, allocations, and ledger entries use exact integer ticks. Limits, add-on prices, and the booked gross projection use integer cents. The initial price contract supports whole cents per million units: `price_per_million_cents` is `5`, `6`, or `4` for the assignment prices of USD 0.05, 0.06, and 0.04 per million.
-
-One tick is one millionth of a cent, or USD 0.000_000_01. For this price contract:
-
-```text
-price_unit_count = 1_000_000
-ticks_per_cent = 1_000_000
-exact_charge_ticks = (((units × price_per_million_cents) × ticks_per_cent) / price_unit_count)
-```
-
-`accounting.PriceUnitCount` defines the resource units covered by the price; `accounting.TicksPerCent` defines monetary resolution. They currently have equal values and cancel in the formula. [Issue #29](https://github.com/pupitooo/e2b-billing-api/issues/29) proposes storing `price_unit_count` on each historical price version, backfilling existing versions with 1_000_000, and requiring new rates to be exactly representable in whole ticks. That proposal preserves the current tick scale; this implementation still uses a fixed price denominator.
-
-Integer-valued PostgreSQL `numeric` stores exact tick totals and aggregate units beyond the `bigint` range. Negative, fractional, infinite, and NaN values are rejected. The Go rater uses immutable arbitrary-precision integers and checks conversions to signed 64-bit cents. PostgreSQL documents the distinction between [exact numeric and floating-point types](https://www.postgresql.org/docs/18/datatype-numeric.html).
-
-Cyberdyne's first rate is USD 0.05 (5 cents) per 1_000_000 units. Its first 123_456_789 units are charged as follows:
-
-```text
-exact_charge_ticks = (((123_456_789 × 5) × 1_000_000) / 1_000_000)
-                   = (123_456_789 × 5)
-                   = 617_283_945 ticks
-ticks_per_dollar = (100 × 1_000_000) = 100_000_000
-exact_charge_usd = (617_283_945 / 100_000_000) = USD 6.172_839_45
-booked_gross_cents = floor(((617_283_945 + 500_000) / 1_000_000))
-                   = 617 cents = USD 6.17
-```
-
-First multiply units by the price in cents, then multiply by ticks per cent, and finally divide by the units covered by that price. The two million-valued constants cancel, so this rate charges 5 ticks per resource unit. The group stores the exact tick amount alongside its booked 617 gross cents; subsequent usage is added to the exact group total before rounding again.
-
-Credit is allocated against new exact ticks before rounding. The shared Go helpers round cumulative gross and net groups and derive a balancing credit line; migrations do not perform accounting. `allocated_credit_ticks` cannot exceed `exact_charge_ticks`, even when rounded gross cents are higher.
-
-`usage_month` and `billing_month` are finite first-of-month `date` values. Application code derives them in UTC. Late October usage billed in November retains `usage_month = 2026-10-01` and `billing_month = 2026-11-01`; its gross spend belongs to October. Billing months cannot precede usage months. Timestamps are finite `timestamptz` values. Subscription start months are checked against the purchase timestamp in UTC, independently of the SQL session's time zone.
-
-**The fixed billing contract is one immutable invoice per customer for a whole
-UTC calendar month.** A chosen generation or delivery day cannot change the
-period into a cycle starting on that day. `(customer_id, billing_month)` identifies
-both the final closure and invoice; `closed_at` records the actual closure time,
-not the end of a custom usage interval. See the [fixed calendar-month contract](accounting-rules.md#fixed-calendar-month-contract)
-and the [generation and delivery proposals, including the completed-month requirement](accounting-rules.md#invoice-generation-and-delivery-proposal).
-
-Default and customer prices can coexist at the same instant. `UNIQUE NULLS NOT DISTINCT (customer_id, metric, effective_from)` prevents two default prices at that instant as well as duplicate customer versions; see [PostgreSQL unique constraints](https://www.postgresql.org/docs/18/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS). The rater selects the latest eligible customer override first and otherwise the latest eligible default. It rejects unsupported segments crossing a price boundary; the database does not select the applicable price.
-
-Every price has a required finite `effective_from`; no undated baseline is supported.
-The seed preserves the assignment's original effective starts. Provision an additional
-metric and its applicable price before the platform generates its first usage, using
-a start covering that consumption. Missing a valid price is a P0 catalog incident:
-the receipt retains `P0 missing_valid_price: ...` without financial effects and the
-receipt orchestrator logs the incident after commit during worker processing.
-Invoice closing never processes input or emits this incident. Repair the historical
-catalog through [controlled operator SQL](../guides/accounting-recovery.md#controlled-historical-price-repair),
-then explicitly release the investigated receipt for another attempt. Ordinary
-`POST /prices` accepts `effective_from` as a required `YYYY-MM-DD` UTC date and rejects
-dates before today, with rated-history protection for today. Public purchase dates
-use the same date format and are stored at midnight UTC. Credit audit timestamps
-are generated by the backend and are absent from grant requests and responses. See the [provisioning and recovery contract](accounting-rules.md#catalog-provisioning-and-p0-recovery).
-
 ## Initial data and migrations
 
-Run the existing commands:
-
-```sh
-make up SERVICE=postgres
-make migrate
-make migration-status
-```
+Apply the schema and seed using the [migration procedure](../guides/migrations.md#database-migrations).
 
 Migration `002_billing_model.sql` creates the model. Migration `003_assignment_seed.sql` loads the assignment's initial data:
 
@@ -175,27 +83,27 @@ Migration `002_billing_model.sql` creates the model. Migration `003_assignment_s
 
 Both accounts start with zero credit, no spend limit, and state version zero. The example's USD 25 grant, purchase, USD 15 limit, metering events, and invoices are business actions performed by public APIs and the billing simulator, rather than initial catalog data. No financial history or usage is seeded.
 
-Migration `004_exact_credit.sql` converts existing cent credit values to ticks without rewriting migration 002 or its seed. It adds the finite signed-integer domain `billing_signed_ticks` for ledger amounts. See the [conversion and legacy-allocation limitation](accounting-rules.md#migration-and-verification).
+Migration `004_exact_credit.sql` converts existing cent credit values to ticks without rewriting migration 002 or its seed. It adds the finite signed-integer domain `billing_signed_ticks` for ledger amounts. See the [conversion and legacy-allocation limitation](../guides/migrations.md#migration-and-verification).
 
 The migration runner applies schema, seed, and version records in one transaction under the existing advisory lock. On an existing volume it applies only pending versions. Repeated runs skip the seed, preserving changed account state and customer details. A seed error rolls back the model migration and its version record too.
 
-## Transactional processing and verification
+## Durable API operation keys
 
-`make test` discovers all `tests/sql/*.sql` files and runs them in UTC and `Asia/Shanghai`. The non-UTC session checks that any values derived from the database session's default time zone remain correct when that zone differs from the application logic, which always uses UTC. This exposes accidental dependence on the session time zone, especially at month boundaries. Model tests roll back all fixtures. Seed tests reconstruct the catalog in a private schema inside a rolled-back transaction, so tests also preserve edited application data. The PostgreSQL service's existing read-only `/migrations` mount supplies the seed test scripts.
+Migration `010_api_idempotency.sql` creates append-only
+`api_idempotency_operations` for prices, add-ons, credit grants, and spend-limit
+changes. All caller keys use the column name `idempotency_key`. Credit entries
+contain only server-generated ledger IDs and financial data; there is no separate
+spend-limit history table. The shared history stores the original input and result,
+including the internal ledger ID of a credit grant.
 
-The worker locks the customer's state row and commits the rating link, group totals, credit debit/balance, original month's gross spend, state version, and inbox `processed_at` together. Constraints represent those records but do not automatically reconcile ledger sums, projection totals, or the calculated price and booked cents. The unique rating link alone does not prove that a complete financial transaction ran exactly once.
+Successful keys and results are retained indefinitely. They commit in the same
+transaction as their financial resource, so retry needs no in-memory API state.
 
-Migrations 005 and 007 persist accounting, closed months, invoices and group freezes; version 006 is a reserved no-op. Migration 008 introduced error exclusions for the former pending-usage capture flow; migration 009 retires that flow and all three supporting tables. Closing now publishes only already processed groups in one atomic transaction. Usage processed later routes forward without rewriting issued invoices.
+## Sequential accounting IDs
 
-Migration `010_api_idempotency.sql` creates shared durable request-key history for prices, add-ons, credit grants, and spend-limit changes. The caller supplies only `idempotency_key`; internal resource and ledger IDs are generated independently on the server. Versions 006 and 011 are reserved no-ops. The revised foundation requires a clean database schema and supplies no upgrade or backfill for the previous split storage.
-
-Migration `012_accounting_id_sequences.sql` adds owned, noncycling `bigint`
-sequences for new `grp_<number>` group IDs and `crd_<number>` credit entry IDs.
-Each namespace starts at one unless existing canonical decimal IDs reserve higher
-values. Existing rows and all references remain unchanged. Groups are located by
-their customer, price version, usage month and billing month before allocation;
-credit entries retain their separate operation identity for retries. Sequence
-numbers are not rolled back, so failed financial transactions can leave gaps.
-See the [accounting identity rules](accounting-rules.md#accounting-resource-identities).
-
-Public command and accounting tests use private schemas. The [billing simulator](../simulator/billing-scenarios.md) verifies the complete assignment through HTTP, including retries, unavailable replies, exact invoices and credit, and monthly-limit reads. Ingestion acknowledges receipt before asynchronous accounting finishes.
+Migration `012_accounting_id_sequences.sql` adds persistent, noncycling sequences
+for new `grp_<number>` and `crd_<number>` IDs. Apply `make migrate` before starting
+the updated API and worker. Existing group IDs, ledger entries, references and
+issued invoices retain their original values. Each sequence starts at one unless
+earlier canonical decimal IDs reserve numbers. Allocation may leave gaps after
+rollback; do not reset or cycle these sequences.

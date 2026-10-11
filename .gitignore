@@ -119,3 +119,15 @@ node_modules/
 !/docs/guides/test-mutation-audit.json
 !/docs/guides/gui-test-regressions.patch
 !/docs/guides/demo-console.md
+
+# Published navigation, operational procedures, and sequential acceptance parts.
+!/docs/guides/migrations.md
+!/docs/guides/troubleshooting.md
+!/docs/guides/acceptance/
+/docs/guides/acceptance/*
+!/docs/guides/acceptance/preparation.md
+!/docs/guides/acceptance/automated-checks.md
+!/docs/guides/acceptance/assignment.md
+!/docs/guides/acceptance/final-checks.md
+!/docs/architecture/decisions.md
+!/docs/brainstorming/invoice-scheduling.md

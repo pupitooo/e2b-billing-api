@@ -3,7 +3,16 @@
 ## Contents
 
 - [Run the complete assignment](#run-the-complete-assignment)
+- [Start an isolated assignment environment](#start-an-isolated-assignment-environment)
 - [Scenarios and review entry points](#scenarios-and-review-entry-points)
+- [Billing assignment](#billing-assignment)
+- [Command retries and conflicts](#command-retries-and-conflicts)
+- [Exact sub-cent credit](#exact-sub-cent-credit)
+- [Credit exhaustion](#credit-exhaustion)
+- [Monthly limit status](#monthly-limit-status)
+- [Price versions](#price-versions)
+- [Price boundary](#price-boundary)
+- [UTC month boundary](#utc-month-boundary)
 - [Durable retries, outages, and restart](#durable-retries-outages-and-restart)
 - [Verification](#verification)
 
@@ -27,59 +36,271 @@ scenario also requires its own fresh seed accounts; acceptance tests create priv
 schemas automatically. Changing `SOURCE` isolates receipt identities, not account balances.
 
 Invoice closure requires a completed UTC calendar month. The real API uses its
-server clock, so the fixed October/November 2026 assignment workflow can finish
-only from `2026-12-01T00:00:00Z`. Earlier runs stop at an invoice step with HTTP
-`422`; usage and financial commands already committed by earlier steps remain.
-For review before that date, run `make inbox-test RUN=BillingSimulator`. Those
+server clock: October closes no earlier than `2026-11-01T00:00:00Z`, and November
+no earlier than `2026-12-01T00:00:00Z`. Before the October boundary, the assignment
+completes steps 1–12 and stops at step 13 with HTTP `422`; earlier committed
+commands remain stored. After the October boundary but before the November
+boundary, it cannot issue the November invoice.
+The exact November invoice also requires the late October receipt to route to
+November. Receipt in December or later routes that charge to a later billing
+month, so waiting until December does not by itself reproduce every fixture result.
+For complete verification independent of the runtime calendar, run
+`make inbox-test RUN=BillingSimulator`. Those
 isolated integration servers declare an invoice clock at `2026-12-01T00:00:00Z`, while
 exercising the same month guard, router, worker, and persistence. The price-version
 case additionally declares separate insertion times, described below. Requests have no
 clock override.
 
+### Start an isolated assignment environment
+
+Run these commands from the repository root in the same terminal. The example
+requires a previously unused project name and free host ports; choose another
+name for a fresh run if this project already contains financial operations.
+[Compose projects and ports](../guides/local-development.md#compose-projects-and-ports)
+explains how the project selects an independent network, database, and simulator
+volume. Export the project once so startup, migrations, GUI, and simulator all
+use the same environment:
+
 ```sh
+export COMPOSE_PROJECT_NAME=e2b-assignment-01
+export E2B_API_PORT=8183
+export E2B_DOCS_PORT=8182
+export E2B_POSTGRES_PORT=5542
+
 make up SERVICE=postgres
 make migrate
-make up SERVICE=api
-make up SERVICE=worker
+make up
+make ps
+make links
+```
+
+Stop here if migration or startup fails. Check that PostgreSQL, API, worker, and
+portal are healthy before sending requests. Open the printed **Billing demo GUI**
+link, `http://127.0.0.1:8182/demo/` with these example ports. The development GUI
+on port `8082` shows another project's data when it uses the default settings.
+Do not perform independent financial commands on the scenario's accounts.
+
+Run the assignment against this same project:
+
+```sh
 make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json
 ```
 
-The scenario grants Acme USD 25, purchases its recurring add-on, sets Cyberdyne's
-USD 15 limit, sends both October measurements, and reads monthly limit status from
-the platform. It issues October invoices before delivering late October usage and
-November consumption. It then issues November and checks unchanged invoice snapshots.
+`make simulate` does not start dependent services. With no project override or
+environment selection, plain `make up` uses `e2b-local`; adding
+`COMPOSE='docker compose -p e2b-assignment-01'` only to the simulator selects
+another network, where its API may be absent. For `lookup api ... no such host`,
+follow [simulator connectivity troubleshooting](../guides/troubleshooting.md#troubleshoot-simulator-connectivity).
+Host port exports cannot repair that project mismatch.
 
-| Issued invoice | Usage lines, cents | Add-on, cents | Credit line, cents | Total, cents |
-| --- | --- | --- | --- | --- |
-| `ACME-0001`, October | 1_200 | 2_000 | −1_200 | 2_000 |
-| `CYBERDYNE-0001`, October | 617 + 1_200 | — | 0 | 1_817 |
-| `ACME-0002`, November | 200 late October + 400 November | 2_000 | −600 | 2_000 |
+The CLI prints `Passed step` for each completed step. After the process stops,
+inspect its checkpoint without sending requests:
 
-Acme's final exact balance is 700_000_000 ticks (USD 7). Cyberdyne's October gross
-usage is 1_817_283_945 ticks, above its 1_500_000_000-tick limit; November starts at
-zero gross usage. Invoice issuance and retries consume no additional credit.
+```sh
+make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json ACTION=status
+```
+
+Add `MODE=step` to a run command to complete one observed step per invocation.
+Repeat it with the same project, scenario, source, and state file to continue.
+Restore the project and port exports in each new terminal. A new state file or
+source does not reset account balances, subscriptions, or invoices.
+
+When the runtime calendar prevents October closure, expect `completed=12 steps=24`
+and HTTP `422` at step 13. Refresh the GUI for month `2026-10`: Acme has 13 USD
+credit and 12 USD gross usage; Cyberdyne has 18.17283945 USD gross usage and has
+reached its 15 USD limit. Both accounts have zero pending receipts and processing
+errors. These results remain in this project's database; the invoice has not
+been issued. Later steps still require the calendar and receipt-time conditions
+above.
+
+To verify all 24 steps with the integration runner in the selected project:
+
+```sh
+make inbox-test RUN='^TestBillingSimulatorExecutable$/^complete_assignment$'
+```
+
+The runner exercises the real simulator, HTTP router, worker, and PostgreSQL in a
+private seeded schema with controlled invoice and receipt times. Expect `PASS`.
+It removes the private schema after the test; the test's invoices do not appear
+in the GUI, and the live scenario's data remains unchanged.
 
 ## Scenarios and review entry points
 
-| Scenario JSON | Complete outcome |
-| --- | --- |
-| [billing-assignment](billing-assignment.json) | All assignment actions, exact October/November invoices and balances, late usage, immutable retry, and platform monthly status reads. |
-| [billing-command-retries](billing-command-retries.json) | Matching commands retain original results; changed content conflicts; replaying an older limit preserves the newer limit. |
-| [billing-exact-credit](billing-exact-credit.json) | Two 1_250-unit measurements use exactly 10_000 ticks; credit remains 990_000 ticks and the invoice is zero cents. |
-| [billing-credit-exhaustion](billing-credit-exhaustion.json) | One cent of credit pays one of two usage cents; the month-end add-on costs 2_000 cents; invoice total is 2_001 cents; a later grant preserves the issued invoice. |
-| [billing-limit-status](billing-limit-status.json) | Platform reads below/reached/raised/reset/zero/unlimited statuses; all measured consumption remains billable. |
-| [billing-price-versions](billing-price-versions.json) | An 8-cent default and 3-cent customer override produce a 1_100-cent invoice; two new backdated versions return `422` with `effective_from` and leave history unchanged. |
-| [billing-price-boundary](billing-price-boundary.json) | A receipt crossing the applicable price boundary becomes a visible processing error; issuance succeeds without billing the quarantined receipt. |
-| [billing-month-boundary](billing-month-boundary.json) | A receipt crossing a UTC month boundary becomes a visible processing error; issuance succeeds without billing the quarantined receipt. |
+| Step table | Executable JSON | Steps |
+| --- | --- | ---: |
+| [Billing assignment](#billing-assignment) | [billing-assignment](billing-assignment.json) | 24 |
+| [Command retries and conflicts](#command-retries-and-conflicts) | [billing-command-retries](billing-command-retries.json) | 16 |
+| [Exact sub-cent credit](#exact-sub-cent-credit) | [billing-exact-credit](billing-exact-credit.json) | 6 |
+| [Credit exhaustion](#credit-exhaustion) | [billing-credit-exhaustion](billing-credit-exhaustion.json) | 9 |
+| [Monthly limit status](#monthly-limit-status) | [billing-limit-status](billing-limit-status.json) | 15 |
+| [Price versions](#price-versions) | [billing-price-versions](billing-price-versions.json) | 8 |
+| [Price boundary](#price-boundary) | [billing-price-boundary](billing-price-boundary.json) | 5 |
+| [UTC month boundary](#utc-month-boundary) | [billing-month-boundary](billing-month-boundary.json) | 5 |
 
-The `billing-price-versions` file uses the automated private-schema runner: its
-first two price commands see `2026-10-01T00:00:00Z`, before their October activation
-dates, while rejected backdated commands and invoice issuance see
-`2026-12-01T00:00:00Z`. A live December API rejects those initial October versions
-as backdated. Use `make inbox-test RUN=BillingSimulator` for the fixed scenario;
-there is no public clock override. Identical price retries remain valid after
-activation. Investigated missing historical prices use [controlled operator SQL](../guides/accounting-recovery.md#controlled-historical-price-repair)
-and explicit receipt release, independently of invoice publication.
+Each numbered row corresponds to exactly one JSON step. The tables are the
+human-readable scenario descriptions; the linked JSON supplies the complete
+request and response assertions. All measurements use `cpu_seconds`, schema
+version 1, and UTC intervals. Amounts are USD unless labeled as cents or ticks;
+1 USD is 100_000_000 ticks. Fresh-account reads require zero credit, pending events,
+processing errors, and state version. Completed accounting reads require zero
+pending events and errors unless the row explicitly expects quarantine.
+HTTP `202` means durable receipt; financial processing is checked by later reads.
+
+## Billing assignment
+
+Source: [billing-assignment.json](billing-assignment.json).
+Use the [run prerequisites](#run-the-complete-assignment) for calendar and receipt times.
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Read Acme's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
+| 2 | Read Cyberdyne's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
+| 3 | Grant Acme 25 USD with key `welcome`; discard the committed reply and retry unchanged. | HTTP `200`; credit is granted once despite the lost reply. |
+| 4 | Purchase Acme's `concurrency_pack` with key `acme-pack` at `2026-10-05`. | HTTP `200`; monthly price 20 USD, start month `2026-10-01`; capture the subscription response. |
+| 5 | Set Cyberdyne's monthly limit to 15 USD with key `october-limit`. | HTTP `200`; stored limit is 1_500 cents. |
+| 6 | Send the October 10, 12:00–13:00 measurements: Acme `100_000_000` units and Cyberdyne `123_456_789` units. | HTTP `202`; both measurements are durably accepted. |
+| 7 | Poll Acme's credit after the first hour. | HTTP `200`; 4 USD consumed, 21 USD remaining (`2_100_000_000` ticks); state version 3. |
+| 8 | Poll Cyberdyne's October limit status. | HTTP `200`; gross usage `617_283_945` ticks (6.17283945 USD), limit 15 USD, `limit_reached=false`. |
+| 9 | Retry both first-hour measurements with unchanged identities and content. | HTTP `202`; no additional receipt, charge, or credit debit. |
+| 10 | Send the October 20, 12:00–13:00 measurements: `200_000_000` units for each customer. | HTTP `202`; two additional measurements are accepted. |
+| 11 | Poll Acme's credit after October usage. | HTTP `200`; another 8 USD consumed, 13 USD remaining (`1_300_000_000` ticks); state version 4. |
+| 12 | Poll Cyberdyne's October limit status. | HTTP `200`; gross usage `1_817_283_945` ticks (18.17283945 USD), limit 15 USD, `limit_reached=true`. |
+| 13 | Issue Acme's October invoice; discard the committed reply and retry unchanged. | HTTP `200`; one `ACME-0001` snapshot: usage 12 USD + add-on 20 USD − credit 12 USD = **20 USD**. Exact gross and used credit are each `1_200_000_000` ticks. |
+| 14 | Issue Cyberdyne's October invoice after its limit was reached. | HTTP `200`; `CYBERDYNE-0001`: usage lines 6.17 USD and 12 USD, credit 0, total **18.17 USD**. Exact gross is `1_817_283_945` ticks; all usage remains billable. |
+| 15 | Deliver Acme's late October 30, 12:00–13:00 measurement of `50_000_000` units after October closing; discard the committed reply and retry. | HTTP `202`; one receipt, priced using October consumption time; billing month November under the required receipt-time assumptions. |
+| 16 | Deliver Acme's November 3, 12:00–13:00 measurement of `100_000_000` units. | HTTP `202`; one additional receipt. |
+| 17 | Poll Acme's credit after late October and November usage. | HTTP `200`; 7 USD remaining (`700_000_000` ticks); state version 7. |
+| 18 | Poll Cyberdyne's November limit status. | HTTP `200`; gross usage 0, retained limit 15 USD, `limit_reached=false`. |
+| 19 | Issue Acme's November invoice. | HTTP `200`; `ACME-0002`: late October usage 2 USD + November usage 4 USD + add-on 20 USD − credit 6 USD = **20 USD**. Exact gross and used credit are each `600_000_000` ticks. |
+| 20 | Read Acme's credit after invoice issuance. | HTTP `200`; still 7 USD, state version 8; invoice issuance consumes no additional credit. |
+| 21 | Read Acme's October invoice after late usage. | HTTP `200`; complete response equals the snapshot captured at step 13. |
+| 22 | Retry Acme's October invoice issuance. | HTTP `200`; the same complete snapshot, number, and issue time; no second invoice. |
+| 23 | Read Acme's November invoice. | HTTP `200`; complete response equals the snapshot captured at step 19. |
+| 24 | Read Cyberdyne's October invoice. | HTTP `200`; complete response equals the snapshot captured at step 14. |
+
+## Command retries and conflicts
+
+Source: [billing-command-retries.json](billing-command-retries.json).
+The default-price activation date `2026-12-01` must not precede the server
+UTC date after catalog locking for a new command; unchanged retries retain their original result.
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Read Acme's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
+| 2 | Grant 25 USD with key `welcome`; discard the committed reply and retry unchanged. | HTTP `200`; one grant despite the lost reply. |
+| 3 | Repeat the same 25 USD grant and key. | HTTP `200`; original grant returned without another credit increase. |
+| 4 | Reuse `welcome` but change the amount to 26 USD. | HTTP `409`, `billing_conflict`; no additional grant. |
+| 5 | Poll Acme's credit. | HTTP `200`; exactly 25 USD (`2_500_000_000` ticks), state version 1. |
+| 6 | Buy `concurrency_pack` with key `acme-pack` at `2026-10-05T00:00:00Z`. | HTTP `200`; monthly price 20 USD; capture the subscription response. |
+| 7 | Retry the identical purchase with `acme-pack`. | HTTP `200`; original purchase returned; no duplicate subscription. |
+| 8 | Try the same add-on and purchase time using a new key, `another-pack`. | HTTP `409`, `billing_conflict`; a second subscription is rejected. |
+| 9 | Set a 15 USD limit with key `first-limit`. | HTTP `200`; limit 1_500 cents. |
+| 10 | Raise the limit to 20 USD with key `raised-limit`. | HTTP `200`; limit 2_000 cents. |
+| 11 | Retry the original 15 USD command with `first-limit`. | HTTP `200`; original 1_500-cent response, while the current limit remains 20 USD. |
+| 12 | Poll October limit status. | HTTP `200`; limit 20 USD, gross 0, `limit_reached=false`. |
+| 13 | Insert a default `cpu_seconds` price of 7 cents per million, effective `2026-12-01`, key `new-default`. | HTTP `200`; capture the new price-version ID. |
+| 14 | Retry the identical `new-default` price command. | HTTP `200`; the captured price-version ID and 7-cent price are returned. |
+| 15 | Reuse `new-default` but change the price to 8 cents per million. | HTTP `409`, `billing_conflict`; stored price remains unchanged. |
+| 16 | Poll Acme's final credit. | HTTP `200`; still 25 USD, state version 4; grants and purchases were not duplicated. |
+
+## Exact sub-cent credit
+
+Source: [billing-exact-credit.json](billing-exact-credit.json).
+October must be a completed UTC month before step 5.
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Read Acme's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
+| 2 | Grant 0.01 USD with key `one-cent`. | HTTP `200`; one-cent grant accepted. |
+| 3 | Send two `1_250`-unit increments on October 10, 12:00–12:01 and 12:01–12:02. | HTTP `202`; both increments accepted. |
+| 4 | Poll Acme's credit after processing. | HTTP `200`; `10_000` ticks consumed; `990_000` ticks (0.0099 USD) remain, state version 3. |
+| 5 | Issue the October invoice. | HTTP `200`; `ACME-0001`, total 0 cents; usage `2_500` units, displayed usage and credit lines each 0 cents. Exact gross and used credit are each `10_000` ticks. |
+| 6 | Read credit after invoice rounding. | HTTP `200`; still `990_000` ticks, state version 4; no additional tick consumed. |
+
+## Credit exhaustion
+
+Source: [billing-credit-exhaustion.json](billing-credit-exhaustion.json).
+October must be a completed UTC month before step 6.
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Read Acme's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
+| 2 | Grant 0.01 USD with key `one-cent`. | HTTP `200`; one-cent grant accepted. |
+| 3 | Buy `concurrency_pack` with key `acme-pack` at `2026-10-31T23:59:59Z`. | HTTP `200`; full monthly price 20 USD, start month `2026-10-01`, despite purchase in October's last second. |
+| 4 | Send `500_000` units for October 10, 12:00–13:00. | HTTP `202`; measurement accepted; gross usage is 0.02 USD when processed. |
+| 5 | Poll Acme's credit. | HTTP `200`; credit exhausted to 0 ticks, state version 3. |
+| 6 | Issue the October invoice and capture it. | HTTP `200`; `ACME-0001`: usage 0.02 USD + add-on 20 USD − credit 0.01 USD = **20.01 USD**. Exact gross `2_000_000` ticks, used credit `1_000_000` ticks. |
+| 7 | Grant another 0.05 USD with key `later`. | HTTP `200`; new grant accepted without rewriting previous allocations. |
+| 8 | Read the issued October invoice. | HTTP `200`; complete response equals the snapshot captured at step 6. |
+| 9 | Poll Acme's credit. | HTTP `200`; `5_000_000` ticks (0.05 USD), state version 5; no retroactive debit. |
+
+## Monthly limit status
+
+Source: [billing-limit-status.json](billing-limit-status.json).
+October must be a completed UTC month before step 15.
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Read Cyberdyne's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
+| 2 | Set a 15 USD monthly limit with key `first`. | HTTP `200`; limit 1_500 cents. |
+| 3 | Send `123_456_789` units for October 10, 12:00–13:00. | HTTP `202`; measurement accepted. |
+| 4 | Poll October limit status. | HTTP `200`; gross `617_283_945` ticks (6.17283945 USD), limit 15 USD, `limit_reached=false`. |
+| 5 | Send `200_000_000` units for October 20, 12:00–13:00. | HTTP `202`; measurement accepted even though total usage will exceed the limit. |
+| 6 | Poll October limit status. | HTTP `200`; gross `1_817_283_945` ticks (18.17283945 USD), limit 15 USD, `limit_reached=true`. |
+| 7 | Raise the limit to 20 USD with key `higher`. | HTTP `200`; limit 2_000 cents. |
+| 8 | Poll October limit status. | HTTP `200`; unchanged gross `1_817_283_945` ticks, limit 20 USD, `limit_reached=false`. |
+| 9 | Restore the 15 USD limit with key `restore`. | HTTP `200`; limit 1_500 cents. |
+| 10 | Read November limit status. | HTTP `200`; gross 0, retained limit 15 USD, `limit_reached=false`. |
+| 11 | Set the limit to 0 with key `zero`. | HTTP `200`; zero is stored as a real limit. |
+| 12 | Read November status with zero spend and a zero limit. | HTTP `200`; gross 0, limit 0, `limit_reached=true`. |
+| 13 | Remove the limit with key `unlimited` and `limit_cents=null`. | HTTP `200`; unlimited configuration stored. |
+| 14 | Read October status with the limit removed. | HTTP `200`; gross remains `1_817_283_945` ticks, limit NULL, `limit_reached=false`. |
+| 15 | Issue Cyberdyne's October invoice. | HTTP `200`; `CYBERDYNE-0001`, usage lines 6.17 USD and 12 USD, credit 0, total **18.17 USD**; exceeding the limit discarded no usage. |
+
+## Price versions
+
+Source: [billing-price-versions.json](billing-price-versions.json).
+Use the private-schema runner for this fixed scenario. Steps 2–3 use insertion
+time `2026-10-01T00:00:00Z`; steps 6–8 use `2026-12-01T00:00:00Z`.
+A live December API rejects steps 2–3 as backdated; HTTP has no clock override.
+Historical catalog repair uses [controlled operator SQL](../guides/accounting-recovery.md#controlled-historical-price-repair).
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Read Cyberdyne's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
+| 2 | Insert a default price of 8 cents per million, effective `2026-10-12`, key `new-default`. | HTTP `200`; price scheduled before activation; capture the new price-version ID. |
+| 3 | Insert Cyberdyne's override of 3 cents per million, effective `2026-10-19`, key `new-override`. | HTTP `200`; capture the customer price-version ID. |
+| 4 | Send Cyberdyne `100_000_000` units for each hour: October 13, 12:00–13:00 and October 20, 12:00–13:00. | HTTP `202`; two receipts accepted for the new default and customer override respectively. |
+| 5 | Poll Cyberdyne's credit after rating. | HTTP `200`; credit 0, state version 2; both receipts processed without errors. |
+| 6 | Try a new default of 9 cents per million, effective `2026-10-12`, key `retroactive-default`. | HTTP `422`, `invalid_command`, field `effective_from`; rated history remains unchanged. |
+| 7 | Try a new Cyberdyne override of 1 cent per million, effective `2026-10-10`, key `retroactive-override`. | HTTP `422`, `invalid_command`, field `effective_from`; rated history remains unchanged. |
+| 8 | Issue Cyberdyne's October invoice. | HTTP `200`; `CYBERDYNE-0001`, usage 8 USD and 3 USD, credit 0, total **11 USD**. Exact gross `1_100_000_000` ticks; line IDs match the captured prices, ordered by price-version ID. |
+
+## Price boundary
+
+Source: [billing-price-boundary.json](billing-price-boundary.json).
+October must be a completed UTC month before step 4.
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Read Cyberdyne's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
+| 2 | Send 100 units spanning `2026-10-14T23:30:00Z`–`2026-10-15T00:30:00Z`, across the seed price change. | HTTP `202`; the unsupported interval is durably accepted into the inbox. |
+| 3 | Poll Cyberdyne's credit after worker inspection. | HTTP `200`; credit 0, pending 0, processing errors 1, state version 0; quarantine creates no financial charge or credit effect. |
+| 4 | Issue Cyberdyne's October invoice with the receipt quarantined. | HTTP `200`; `CYBERDYNE-0001`, total 0, exact gross and used credit 0; only a zero-valued credit line. Quarantine does not block issuance. |
+| 5 | Read Cyberdyne's October invoice. | HTTP `200`; `CYBERDYNE-0001` remains readable with total 0. |
+
+## UTC month boundary
+
+Source: [billing-month-boundary.json](billing-month-boundary.json).
+October must be a completed UTC month before step 4.
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Read Acme's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
+| 2 | Send 100 units spanning `2026-10-31T23:30:00Z`–`2026-11-01T00:30:00Z`, across the UTC month boundary. | HTTP `202`; the unsupported interval is durably accepted into the inbox. |
+| 3 | Poll Acme's credit after worker inspection. | HTTP `200`; credit 0, pending 0, processing errors 1, state version 0; quarantine creates no financial charge or credit effect. |
+| 4 | Issue Acme's October invoice with the receipt quarantined. | HTTP `200`; `ACME-0001`, total 0, exact gross and used credit 0; only a zero-valued credit line. Quarantine does not block issuance. |
+| 5 | Read Acme's October invoice. | HTTP `200`; `ACME-0001` remains readable with total 0. |
 
 Financial command fixtures use the public calendar-date contract:
 `effective_from` and `purchased_at` contain `YYYY-MM-DD`, resolved by the backend
@@ -105,11 +326,37 @@ make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json
 make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json ACTION=status
 ```
 
-The first command fails at the intentionally lost grant reply, with two completed
-read steps. The next process confirms the same grant and finishes all 24 steps.
-To exercise service unavailability, stop the API before the first run, run with
-`MAX_ATTEMPTS=1`, restart the API, and repeat the same command with the normal retry
-budget. Preserve the database, scenario file, source, and state file throughout.
+Preserve the database, scenario file, source, and state file throughout recovery.
+Completing all 24 assignment steps requires the same calendar and receipt-time
+prerequisites as the [assignment table](#billing-assignment).
+
+### Lost committed grant and a new producer process
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Start the fresh assignment with `MAX_ATTEMPTS=1`. | Process fails at the injected lost grant reply; `completed=2 steps=24`, but the 25 USD grant has committed once. |
+| 2 | Start a new process with the same scenario, source, and state file, using the normal retry budget. | Original grant is confirmed without another increase; execution continues from step 3 and completes 24 steps when prerequisites hold. |
+| 3 | Read progress using `ACTION=status`, then run the completed workflow again. | `completed=24 steps=24`; status performs no HTTP request, and both commands preserve the completed checkpoint. |
+
+### HTTP outage and Retry-After
+
+Automated entry point: `TestBillingSimulatorExecutable/HTTP_outage_recovers_without_financial_drift`.
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Start the assignment through a test gateway that rejects its first two requests. | Two HTTP `503` responses with `Retry-After: 1`; neither request executes a financial command. |
+| 2 | Retry the current step, honoring the delay, after the gateway becomes available. | The [24 assignment steps](#billing-assignment) pass with their original financial results and unchanged command identities. |
+
+### Unavailable API and a new producer process
+
+Automated entry point: `TestBillingSimulatorExecutable/unavailable_API_retains_the_plan_for_a_new_process`.
+The automated case uses [exact sub-cent credit](#exact-sub-cent-credit);
+the same recovery controls can be applied to the assignment.
+
+| Step | Simulator action | Expected result |
+| --- | --- | --- |
+| 1 | Start `billing-exact-credit` against an unavailable endpoint with `MAX_ATTEMPTS=1`. | Process fails before its first successful read; completed steps 0; the original plan and failed-step error remain saved. |
+| 2 | Start a new process with the original plan, source, and state file against the available API. | All 6 steps pass; final credit `990_000` ticks, zero-cent invoice, no duplicated effects. |
 
 Network failures and unexpected HTTP `408`, `429`, or `5xx` responses retry with
 exponential backoff. `Retry-After` is a minimum delay. Other unexpected HTTP results
@@ -136,11 +383,10 @@ make test RUN=Simulator
 make test
 ```
 
-`TestBillingSimulatorExecutable` runs these files in independent seeded schemas with
-the real HTTP router and worker. Separate named cases cover two `503` replies with
-`Retry-After`, an unavailable endpoint followed by a new process, and a lost committed
-grant followed by a new process. All financial mutations and observations use public
-HTTP APIs. Existing transport tests preserve inbox, barrier, replay, and buffering checks.
+`TestBillingSimulatorExecutable` runs the step tables above in independent seeded
+schemas with the real HTTP router and worker. All financial mutations and observations
+use public HTTP APIs. The [transport tables](transport-scenarios.md) cover the
+separate usage-only executable scenarios.
 
 ## Generated resource IDs and request keys
 

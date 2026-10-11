@@ -1,4 +1,4 @@
-# Database connections, inspection, and migrations
+# Database
 
 ## Database connection
 
@@ -20,11 +20,18 @@ postgres://e2b:e2b_local_dev@127.0.0.1:5432/e2b_billing?sslmode=disable
 
 Use `postgres` as the host from another Compose service. If the host port changes, update the local application connection string accordingly.
 
+Each [Compose project](local-development.md#compose-projects-and-ports) has its own
+database volume, even though the database name and credentials can be identical.
+Keep the intended `COMPOSE_PROJECT_NAME` and port exports for migrations and
+`make psql`. Open Adminer through that project's portal link from `make links`;
+its internal `postgres` hostname connects to the database in the same project.
+Changing a host port alone does not select another database.
+
 ## Explore the database with psql
 
 `psql` is PostgreSQL's interactive command-line client. It runs inside the container, so no additional database tool needs to be installed locally.
 
-With PostgreSQL running and the [initial migration applied](../guides/local-development.md#initialize-the-database), open a session from your terminal:
+With PostgreSQL running and the [initial migration applied](local-development.md#initialize-the-database), open a session from your terminal:
 
 ```sh
 make psql
@@ -38,7 +45,7 @@ List tables:
 \dt
 ```
 
-The tables include `usage_inbox` (received events), `schema_migrations` (migration versions), and the [billing model tables](../../docs/architecture/billing-model.md#tables-and-relationships). Inspect the inbox's columns, types, constraints, and indexes:
+The tables include `usage_inbox` (received events), `schema_migrations` (migration versions), and the [billing model tables](../architecture/billing-model.md#tables-and-relationships). Inspect the inbox's columns, types, constraints, and indexes:
 
 ```text
 \d usage_inbox
@@ -98,64 +105,7 @@ Useful `psql` commands (these do not need a semicolon):
 
 If output opens in a pager, press `q` to return to the SQL prompt. If you are partway through a query, press Ctrl+C to clear it and start again.
 
-## Database migrations
-
-With PostgreSQL running, apply pending migrations after first setup or an update that adds migrations, then inspect the applied versions:
-
-```sh
-make migrate
-make migration-status
-```
-
-[migrations/migrate.sql](../../migrations/migrate.sql) applies only pending versions,
-including on existing Docker volumes. Schema changes and version records commit
-atomically; concurrent runners are serialized. Restarting a container does not
-apply migrations. See the [billing model — Initial data and migrations](../../docs/architecture/billing-model.md#initial-data-and-migrations)
-for migration contents, seed values, and repeat-run behavior.
-
-Before upgrading legacy cent-based credit records, follow the
-[financial rules — Migration and verification](../../docs/architecture/accounting-rules.md#migration-and-verification),
-including the check for incompatible allocations that would stop migration 004.
-
-To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged.
-
-## Upgrade from the old invoice-closing model
-
-Migration `009` replaces pending-usage capture with closing from processed groups.
-It removes `invoice_closings`, `invoice_closing_receipts` and
-`invoice_closing_exclusions`, retaining usage, financial history and issued invoices.
-Stop the API and worker before migrating so the previous application cannot access
-retired tables; then start both from the updated source:
-
-```sh
-make stop SERVICE=api
-make stop SERVICE=worker
-make migrate
-make up
-```
-
-An unfinished old closing has no reserved cutoff after this migration. Its already
-committed accounting remains, and its next successful close uses the processed
-groups available at the new account-lock cutoff. Pending usage may be absent from
-that invoice and is accounted later by the worker. A failed closing leaves no
-partial snapshot or consumed number; only a successfully committed invoice fixes
-its contents. Different billing months retain separate group rounding boundaries.
-
-## Durable API operation keys
-
-Migration `010_api_idempotency.sql` creates append-only
-`api_idempotency_operations` for prices, add-ons, credit grants, and spend-limit
-changes. All caller keys use the column name `idempotency_key`. Credit entries
-contain only server-generated ledger IDs and financial data; there is no separate
-spend-limit history table. The shared history stores the original input and result,
-including the internal ledger ID of a credit grant.
-
-The existing foundation migrations were revised during local review. Migration
-versions 006 and 011 are reserved no-ops, preserving the remaining version numbers.
-A database built from the previous definitions must have its schema recreated
-before applying the revised foundation. Clearing `schema_migrations` alone does
-not remove old tables or columns. Ordinary `make migrate` skips applied versions;
-this change provides no upgrade or historical-key backfill for an old schema.
+## Inspect API operation keys
 
 ```sql
 SELECT operation_scope, idempotency_key, request_payload, response_payload, created_at
@@ -163,17 +113,10 @@ FROM api_idempotency_operations
 ORDER BY created_at, operation_scope, idempotency_key;
 ```
 
-Successful keys and results are retained indefinitely. They commit in the same
-transaction as their financial resource, so retry needs no in-memory API state.
+See the [command identities](../architecture/billing-model.md#durable-api-operation-keys)
+for storage and retention rules.
 
-## Sequential accounting IDs
-
-Migration `012_accounting_id_sequences.sql` adds persistent, noncycling sequences
-for new `grp_<number>` and `crd_<number>` IDs. Apply `make migrate` before starting
-the updated API and worker. Existing group IDs, ledger entries, references and
-issued invoices retain their original values. Each sequence starts at one unless
-earlier canonical decimal IDs reserve numbers. Allocation may leave gaps after
-rollback; do not reset or cycle these sequences.
+## Inspect accounting IDs
 
 Inspect their current state without consuming a number:
 
@@ -188,3 +131,5 @@ FROM credit_entry_id_seq;
 `is_called = false` means the first value has not been allocated. See the
 [accounting identity rules](../architecture/accounting-rules.md#accounting-resource-identities)
 for retry, concurrency and sequence exhaustion behavior.
+
+For schema changes and upgrade procedures, follow [migrations](migrations.md).

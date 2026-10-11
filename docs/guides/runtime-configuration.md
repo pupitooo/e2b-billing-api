@@ -59,8 +59,8 @@ make stop SERVICE=worker
 ```
 
 The worker performs transactional accounting independently of the API, with a
-bounded database pool. See the [financial rules — Transaction and closing contract](../../docs/architecture/accounting-rules.md#transaction-and-closing-contract)
-for atomic updates and the [recovery procedure](../guides/accounting-recovery.md#investigate-and-release-a-receipt)
+bounded database pool. See the [financial rules — Transaction and closing contract](../architecture/accounting-rules.md#transaction-and-closing-contract)
+for atomic updates and the [recovery procedure](accounting-recovery.md#investigate-and-release-a-receipt)
 for unsupported input. The heartbeat reports loop activity.
 
 The [worker loop](../../internal/worker/worker.go) runs one batch at a time, starts
