@@ -74,6 +74,12 @@ A `202` reply means durable receipt, not successful financial processing. Refres
 account state to observe the worker. Pending and error counts remain visible;
 quarantined usage is not presented as processed spending.
 
+On **Invoices**, the header initializes **Billing month · UTC** in the invoice
+form. Both **Issue invoice** and **Load invoice** use the month currently entered
+in that form and the selected customer. Editing the form month lets you issue
+and then load the same snapshot without also changing the header. To inspect
+that month's database records, select it in the header as well.
+
 ## Retries and browser state
 
 The browser saves the original request before sending it. Request history retains
@@ -175,7 +181,8 @@ make check
 ```
 
 `make demo-check` uses an ephemeral standard Node container to run tests for exact
-money/JSON, request construction, SQL escaping and scoping, saved retries and
+money/JSON, request construction, invoice form issue/load workflows, SQL escaping
+and scoping, saved retries and
 assignment checkpoints. It is not another running service. Browser review should
 also cover all screens, actual API replies, Adminer login/prefilled SQL, responsive
 layout and invoice printing. Financial browser experiments belong in an isolated
