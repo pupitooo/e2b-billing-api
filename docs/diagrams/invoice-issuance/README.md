@@ -25,14 +25,14 @@ Closing is explicitly invoked; document delivery and scheduling are separate.
 locks `customer_billing_state` and reads an existing invoice before performing a
 new close. [`validateClosing`](../../../internal/postgres/closing.go) requires an
 ended UTC month and compatible history: the first invoice cannot skip earlier
-existing usage, each later new invoice needs its immediately preceding month
+existing usage or active add-on months, even without usage. Each later new invoice needs its immediately preceding month
 closed, and no target/later closed month or earlier unclosed rated group is allowed.
 January becomes eligible exactly at
 `2027-02-01T00:00:00Z`; the preceding microsecond is rejected without writes.
 
 Only accounting committed before closing acquired the account lock is included.
-`rated_usage_groups` is the financial source. An indexed first-closing existence
-check reads the older usage boundary; it does not select usage to process.
+`rated_usage_groups` is the financial source. First-closing existence checks
+read older usage and subscription start months; they do not select usage to process.
 Closing never invokes `accountReceipt`, drains a backlog or discovers a missing price.
 Pending and quarantined usage in the target month cannot block a correctly ordered invoice.
 An in-flight worker already holding
@@ -90,7 +90,8 @@ The simplified and detailed diagrams reflect the processed-usage-only contract.
 The detailed view retains gross/net rounding, JSON
 snapshot fields, numbering, atomic writes, validation and error paths. Regression
 coverage includes zero/partial/full worker progress, both worker/closing lock
-orders, immutable retries, quarantine recovery, UTC boundaries, migration and
+orders, purchase/closing lock orders, skipped add-on months without usage,
+immutable retries, quarantine recovery, UTC boundaries, migration and
 publication rollback.
 
 The committed Mermaid source is editable and its PNG preview is readable without generation tooling. The renderer stays local and ignored; no SVG artifact is generated.

@@ -43,7 +43,7 @@ T1 uses the inbox; T2 uses both inbox and financial tables. API financial comman
 
 ## Closing and spend status
 
-Closing holds the account lock throughout one publication transaction, including validation, presentation and freezing. It never invokes the receipt processor or waits for pending target-month input. The first invoice cannot skip earlier known usage; subsequent new invoices require the preceding calendar month closed. Only an ended UTC month can close. Retrying a committed invoice returns its original snapshot and number.
+Closing holds the account lock throughout one publication transaction, including validation, presentation and freezing. It never invokes the receipt processor or waits for pending target-month input. The first invoice cannot skip earlier known usage or active add-on months, even for a subscription without usage; subsequent new invoices require the preceding calendar month closed. Only an ended UTC month can close. Retrying a committed invoice returns its original snapshot and number.
 
 An in-flight worker holding the account lock completes before closing acquires it; its committed groups are included. A worker accounting after closure routes to an eligible open billing month without changing the invoice. Consumption-time prices and original-month gross spend remain intact. Pending and quarantined target-month receipts are not billed until successfully processed; different invoice months retain separate rounding groups.
 

@@ -19,7 +19,7 @@ flowchart TB
         issued{"Invoice already exists for this customer/month?"}
         time["<b>4. Sample the server UTC issue time</b><br/>Truncate to microseconds"]
         completed{"<b>5. Has the whole UTC month ended?</b>"}
-        ready{"<b>6. Is closing history valid?</b><br/>First closing: no earlier usage in usage_inbox<br/>Later closing: previous month must be closed<br/>No closed target/later month or earlier unclosed groups"}
+        ready{"<b>6. Is closing history valid?</b><br/>First closing: no earlier usage or active add-on months<br/>Check usage_inbox and addon_subscriptions.start_month<br/>Later closing: previous month must be closed<br/>No closed target/later month or earlier unclosed groups"}
         buyer["<b>7. Read buyer details and the next number</b><br/>Tables: customers, customer_billing_state<br/>Fields: name, country, billing_address, next_invoice_number"]
         header["<b>8. Build the invoice header</b><br/>Currency: USD; month: requested UTC month<br/>Number: uppercase customer ID + padded sequence<br/>Reject an exhausted sequence before publication"]
         groups["<b>9. Load the target month's rated groups</b><br/>Table: rated_usage_groups; filter: customer and billing_month<br/>Order: usage_month, metric, price_version_id<br/>Input: units, exact gross microcents, allocated credit microcents"]

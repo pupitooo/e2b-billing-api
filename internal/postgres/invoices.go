@@ -14,8 +14,8 @@ import (
 // lock. It never processes pending usage or waits for the inbox to drain; the
 // worker bills it in an eligible open month after closure. Publication is one
 // atomic transaction, and a retry reads the original invoice. A new closure
-// requires an ended UTC month, cannot skip earlier existing data on the first
-// invoice, and requires the preceding month closed on subsequent invoices.
+// requires an ended UTC month, cannot skip earlier usage or active add-on months
+// on the first invoice, and requires the preceding month closed thereafter.
 func (s *Store) CloseMonth(ctx context.Context, customer, monthValue string) (billing.Invoice, error) {
 	if err := billing.ValidateIdentifier("customer_id", customer); err != nil {
 		return billing.Invoice{}, err
