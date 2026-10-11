@@ -65,8 +65,9 @@ by ID. There is no customer-creation API in the current application.
 The inspector shows method, path, body, status and reply. All API data and SQL
 parameters are escaped for their output contexts. Displayed money uses exact
 integer arithmetic; the GUI preserves int64 JSON tokens without converting them
-to imprecise JavaScript numbers. Rounded account summaries also show exact tick
-values through the API inspector and eight-decimal USD values. Invoice lines use
+to imprecise JavaScript numbers. The remaining credit and gross usage cards show
+rounded USD totals with the exact eight-decimal USD amounts underneath. The API
+inspector exposes the exact tick values. Invoice lines use
 the server's stored cent presentation rather than calculating another invoice.
 
 A `202` reply means durable receipt, not successful financial processing. Refresh
