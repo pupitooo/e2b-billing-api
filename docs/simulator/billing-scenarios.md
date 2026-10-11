@@ -11,6 +11,7 @@
 - [Exact sub-cent credit](#exact-sub-cent-credit)
 - [Zero-total invoices without remainder carry](#zero-total-invoices-without-remainder-carry)
 - [Credit exhaustion](#credit-exhaustion)
+- [Add-on closing order](#add-on-closing-order)
 - [Monthly limit status](#monthly-limit-status)
 - [Price versions](#price-versions)
 - [Price boundary](#price-boundary)
@@ -135,6 +136,7 @@ in the GUI, and the live scenario's data remains unchanged.
 | [Exact sub-cent credit](#exact-sub-cent-credit) | [billing-exact-credit](billing-exact-credit.json) | 6 |
 | [Zero-total invoices without remainder carry](#zero-total-invoices-without-remainder-carry) | [billing-subcent-invoices](billing-subcent-invoices.json) | 15 |
 | [Credit exhaustion](#credit-exhaustion) | [billing-credit-exhaustion](billing-credit-exhaustion.json) | 9 |
+| [Add-on closing order](#add-on-closing-order) | [billing-addon-order](billing-addon-order.json) | 14 |
 | [Monthly limit status](#monthly-limit-status) | [billing-limit-status](billing-limit-status.json) | 15 |
 | [Price versions](#price-versions) | [billing-price-versions](billing-price-versions.json) | 8 |
 | [Price boundary](#price-boundary) | [billing-price-boundary](billing-price-boundary.json) | 5 |
@@ -290,6 +292,38 @@ October must be a completed UTC month before step 6.
 | 7 | Grant another 0.05 USD with key `later`. | HTTP `200`; new grant accepted without rewriting previous allocations. |
 | 8 | Read the issued October invoice. | HTTP `200`; complete response equals the snapshot captured at step 6. |
 | 9 | Poll Acme's credit. | HTTP `200`; `5_000_000` microcents (0.05 USD), state version 5; no retroactive debit. |
+
+## Add-on closing order
+
+[billing-addon-order.json](billing-addon-order.json) buys the October add-on without
+any usage, rejects skipped active months, then issues all three monthly fees.
+Run it with a completed December business clock, such as
+`E2B_DEMO_NOW=2027-01-01T00:00:00Z`, in a fresh isolated environment. The integration
+runner fixes this clock automatically:
+
+```sh
+make inbox-test RUN='^TestBillingSimulatorExecutable$/^add-on_alone_preserves_all_monthly_fees$'
+```
+
+| Step | Input | Literal expected result |
+| --- | --- | --- |
+| 1 | Read Acme credit. | `200`; zero credit, pending events and errors; version 0. |
+| 2 | Buy `concurrency_pack` on `2026-10-05` with key `addon-order`. | `200`; start month October; monthly price 2_000 cents. |
+| 3 | First request December invoice. | `409 billing_conflict`; October and November cannot be skipped. |
+| 4–5 | Read October and December invoices. | Both `404 not_found`. |
+| 6 | Read credit after rejection. | Zero credit, pending events and errors; version remains 1. |
+| 7 | Close October. | `ACME-0001`; one 2_000-cent add-on and zero credit line; total 2_000. Capture complete snapshot. |
+| 8 | Request December again. | `409 billing_conflict`; November is required. |
+| 9 | Read October. | Complete snapshot matches the capture. |
+| 10 | Close November. | `ACME-0002`; add-on 2_000 cents; total 2_000. |
+| 11 | Close December. | `ACME-0003`; add-on 2_000 cents; total 2_000. Capture complete snapshot. |
+| 12–13 | Retry October and December closing. | Each complete snapshot matches its original; no duplicate fees. |
+| 14 | Read credit. | Zero credit, pending events and errors; version 4. |
+
+All invoices have zero gross usage and allocated credit. Together they preserve
+6_000 cents in recurring fees. [Add-on closing tests](../../tests/inbox/addon_closing_test.go)
+also cover both purchase/closing lock orders, unchanged financial state on rejection,
+UTC and Shanghai sessions, future subscriptions, customer isolation and free add-ons.
 
 ## Monthly limit status
 

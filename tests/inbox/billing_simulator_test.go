@@ -35,6 +35,7 @@ func TestBillingSimulatorExecutable(t *testing.T) {
 		unavailableRequests int32
 		wantCompleted       int
 	}{
+		{name: "add-on alone preserves all monthly fees", file: "billing-addon-order", invoiceTime: "2027-01-01T00:00:00Z", wantCompleted: 14},
 		{name: "fixed-clock invoice with four measurements and an add-on", file: "billing-demo-invoice", invoiceTime: "2026-11-01T00:00:00Z", wantCompleted: 9},
 		{name: "complete assignment", file: "billing-assignment", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 24},
 		{name: "command identities and changed-content conflicts", file: "billing-command-retries", invoiceTime: "2026-12-01T00:00:00Z", wantCompleted: 16},

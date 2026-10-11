@@ -924,6 +924,10 @@ paths:
       description: |
         Close an ended UTC month and issue its immutable invoice using already processed usage.
         Pending usage does not delay closing; retries return the same invoice.
+        The first invoice cannot skip earlier known usage or active add-on months,
+        even when the subscription has no usage. Close the purchase month first,
+        then each following month in order. A missing earlier month returns 409
+        without changing invoices, numbering, subscriptions, or credit.
         See [closing order and late usage](/architecture/usage-to-invoice/#invoice-generation-workflow).
       x-implementation-status: implemented
       parameters:
@@ -997,7 +1001,7 @@ paths:
                   code: not_found
                   message: Customer or catalog resource does not exist.
         '409':
-          description: An earlier month must be closed first, or closed history conflicts. No financial changes.
+          description: Earlier usage or an active add-on month must be closed first, the preceding month is missing, or closed history conflicts. No financial changes.
           content:
             application/json:
               schema:

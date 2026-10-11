@@ -40,7 +40,11 @@ type invoiceExpectation struct {
 // cannot reopen an issued month, even for usage received before closing.
 // Late October usage received in December stays outside the November invoice,
 // although its credit is already allocated during worker processing.
+// Active add-on months cannot be skipped, including with no usage; purchases
+// serialize with closing, preserving fees or rejecting the backdated purchase.
 func TestCloseMonth(t *testing.T) {
+	t.Run("add-on months cannot be skipped", testClosingAddonMonths)
+	t.Run("purchase and closing share the account lock", testClosingAddonOrder)
 	t.Run("shared business clock", testSharedBusinessClock)
 	t.Run("first closing checks existing usage in UTC", testClosingFirstMonthBoundary)
 	t.Run("skipped months cannot strand pending usage", testClosingSkippedMonths)

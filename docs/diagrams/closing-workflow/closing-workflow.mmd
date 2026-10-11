@@ -16,7 +16,7 @@ flowchart TD
             lock["BEGIN; lock customer_billing_state<br/>Cutoff: usage processing committed before this lock"]
             exists{"Invoice already exists?"}
             stored["Read the original immutable invoice"]
-            validate["Require an ended UTC month<br/>First closing cannot skip existing earlier usage<br/>Later closing requires the previous month closed<br/>Pending usage in the target month does not block issuance"]
+            validate["Require an ended UTC month<br/>First closing cannot skip earlier usage or active add-on months<br/>Later closing requires the previous month closed<br/>Pending usage in the target month does not block issuance"]
         end
         subgraph build["B. Build the invoice from processed groups"]
             groups["Read rated_usage_groups and applicable add-ons<br/>No processing of pending usage_inbox rows"]

@@ -456,7 +456,8 @@ worker owns all usage processing; the close does not wait for pending usage.
 
 1. **A — Lock and validate:** lock the customer account, return an existing invoice
    on retry, and require an ended UTC month. The first close cannot skip existing
-   earlier usage; each later close requires the previous month closed.
+   earlier usage or active add-on months; each later close requires the previous
+   month closed, so every active subscription month keeps its full fee.
 2. **B — Build:** read processed groups and applicable add-ons, round gross and net,
    and build lines, buyer details and the next number. Use already allocated credit.
 3. **C — Publish:** store the closed month and immutable snapshot, freeze groups,

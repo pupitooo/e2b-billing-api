@@ -383,14 +383,25 @@ groups and applicable add-ons, freeze groups, record the closed month and immuta
 invoice snapshot, and advance numbering and state version together. Do not debit
 credit again. There is no durable intermediate closing marker or usage list.
 The first closing may select any completed month that does not skip existing
-earlier usage in `usage_inbox` or earlier unclosed rated groups. An indexed
-existence check reads the older-month boundary; it neither selects a processing
+earlier usage in `usage_inbox`, earlier unclosed rated groups, or an active
+subscription whose `start_month` precedes the target month. A purchase alone
+establishes the first required add-on month, even without usage or available credit.
+Existence checks read the older-month boundaries; they neither select a processing
 cohort nor rates usage. After any committed closure, each next new invoice requires
 the immediately preceding month closed, including empty months. Missing
 predecessors and skipped older data return HTTP `409` without publication. The
 check uses the UTC original usage month, not `received_at`. Inbox rows committed
 after the check do not change its result; subsequent worker accounting still
 respects the committed closed history. No separate first-month setting is needed.
+
+For example, buying `concurrency_pack` on `2026-10-05` and first requesting
+November returns `409`, leaving invoices, numbering, subscriptions and credit
+unchanged. Close October first, then November; each contains the full 2_000-cent
+fee. Skipping several active months is rejected the same way. A subscription
+starting in the target month is included immediately; one starting later does
+not block that invoice. Purchase and closing use the same account lock: an older
+purchase that commits first blocks a later first invoice; closing that commits
+first rejects a purchase in or before the closed month.
 
 On pre-commit failure, the complete closing transaction rolls back; a retry can
 include additional groups committed since the failed attempt. After a successful

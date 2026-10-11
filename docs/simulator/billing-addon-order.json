@@ -1,0 +1,282 @@
+{
+  "name": "billing-addon-order",
+  "steps": [
+    {
+      "name": "fresh account has no usage or credit",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_microcents": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "buy recurring October add-on without any usage",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/addons",
+        "body": {
+          "idempotency_key": "addon-order",
+          "addon_name": "concurrency_pack",
+          "purchased_at": "2026-10-05"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "subscription_id": "subscription/acme/concurrency_pack",
+          "customer_id": "acme",
+          "addon_name": "concurrency_pack",
+          "monthly_price_cents": 2000,
+          "purchased_at": "2026-10-05",
+          "start_month": "2026-10-01"
+        }
+      }
+    },
+    {
+      "name": "reject first invoice skipping October and November",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-12"
+        }
+      },
+      "want": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "billing_conflict"
+          }
+        }
+      }
+    },
+    {
+      "name": "rejected closing did not create October invoice",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-10"
+      },
+      "want": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found"
+          }
+        }
+      }
+    },
+    {
+      "name": "rejected closing did not create December invoice",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-12"
+      },
+      "want": {
+        "status": 404,
+        "body": {
+          "error": {
+            "code": "not_found"
+          }
+        }
+      }
+    },
+    {
+      "name": "rejection preserves account and pending counts",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_microcents": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 1
+        }
+      }
+    },
+    {
+      "name": "October fee keeps the first invoice number",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "month": "2026-10",
+          "number": "ACME-0001",
+          "total_cents": 2000,
+          "gross_usage_microcents": "0",
+          "credit_used_microcents": "0",
+          "lines": [
+            {
+              "kind": "addon",
+              "description": "concurrency_pack",
+              "subscription_id": "subscription/acme/concurrency_pack",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "description": "Used credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      },
+      "capture": "october"
+    },
+    {
+      "name": "later closing still cannot skip November",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-12"
+        }
+      },
+      "want": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "billing_conflict"
+          }
+        }
+      }
+    },
+    {
+      "name": "rejected skip leaves the complete October snapshot intact",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-10"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "october"
+      }
+    },
+    {
+      "name": "November charges the second full monthly fee",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-11"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "month": "2026-11",
+          "number": "ACME-0002",
+          "total_cents": 2000,
+          "gross_usage_microcents": "0",
+          "credit_used_microcents": "0",
+          "lines": [
+            {
+              "kind": "addon",
+              "description": "concurrency_pack",
+              "subscription_id": "subscription/acme/concurrency_pack",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "description": "Used credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "December charges the third full monthly fee",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-12"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "month": "2026-12",
+          "number": "ACME-0003",
+          "total_cents": 2000,
+          "gross_usage_microcents": "0",
+          "credit_used_microcents": "0",
+          "lines": [
+            {
+              "kind": "addon",
+              "description": "concurrency_pack",
+              "subscription_id": "subscription/acme/concurrency_pack",
+              "amount_cents": 2000
+            },
+            {
+              "kind": "credit",
+              "description": "Used credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      },
+      "capture": "december"
+    },
+    {
+      "name": "October retry retains the original fee and number",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "same_as": "october"
+      }
+    },
+    {
+      "name": "December retry cannot charge another fee",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-12"
+        }
+      },
+      "want": {
+        "status": 200,
+        "same_as": "december"
+      }
+    },
+    {
+      "name": "three invoices change only version and numbering",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_microcents": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 4
+        }
+      }
+    }
+  ]
+}
