@@ -525,6 +525,8 @@ paths:
       summary: Purchase add-on
       description: |
         Start a recurring add-on at its current catalog price, charged in full from the purchase month.
+        Reactivation must start strictly after every earlier purchase's inclusive cancellation month;
+        overlapping months conflict. Subsequent IDs append /YYYY-MM-DD to the original tuple.
         Supply purchased_at as YYYY-MM-DD (years 1000 through 9999); timestamps and null are rejected.
         The backend stores midnight UTC on that date and returns the date.
         Historical dates in open months and future dates are allowed. A date in or before a
@@ -589,6 +591,132 @@ paths:
                   message: Customer or catalog resource does not exist.
         '409':
           description: Subscription conflicts or purchase month is already closing or closed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_conflict
+                  message: Operation identity has different content, financial history conflicts, or closing
+                    is blocked.
+        '413':
+          description: Body exceeds 65_536 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Command body exceeds 65536 bytes.
+        '415':
+          description: Use uncompressed application/json with optional UTF-8 charset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: unsupported_media_type
+                  message: Use uncompressed application/json with optional UTF-8 charset.
+        '422':
+          description: Missing or invalid command values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_command
+                  message: Explicit required field or value is invalid.
+        '503':
+          description: Storage unavailable. Outcome may be unknown; retry unchanged command after Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: billing_unavailable
+                  message: Database deadline or storage failure. Retry unchanged operation identity and
+                    content; outcome may be unknown.
+          headers:
+            Retry-After:
+              description: Minimum retry delay in seconds.
+              schema:
+                type: string
+                const: '1'
+              example: '1'
+  /customers/{customer_id}/addons/cancel:
+    post:
+      operationId: cancelAddon
+      tags:
+      - Customers
+      summary: Cancel add-on at the end of a UTC month
+      description: |
+        Append an immutable cancellation for an owned subscription. Supply cancelled_at
+        as YYYY-MM-DD. Its UTC month remains fully charged; following months omit the fee.
+        Cancellation cannot precede purchase or target a month at or before the latest closure.
+        Historical open dates and future dates are allowed. Later purchases must start after
+        the inclusive end month and snapshot the then-current catalog price.
+        This boundary is an implementation policy; the assignment requires full active-month fees.
+        Supply idempotency_key in JSON. Keys are scoped to cancellation and customer;
+        successful results commit atomically with termination and are retained indefinitely.
+        An unchanged retry returns the original result after closing or reactivation.
+        Changed content or another termination key returns 409 without financial effects.
+        See [add-on lifecycle](/architecture/accounting-rules/#utc-months-limits-add-ons-and-late-usage).
+      x-implementation-status: implemented
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Identifier'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddonCancellationInput'
+            example:
+              idempotency_key: acme-cancel-concurrency
+              subscription_id: subscription/acme/concurrency_pack
+              cancelled_at: '2026-10-31'
+      responses:
+        '200':
+          description: Cancellation created, or original termination returned on an identical retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddonCancellation'
+              example:
+                customer_id: acme
+                subscription_id: subscription/acme/concurrency_pack
+                cancelled_at: '2026-10-31'
+                end_month: '2026-10-01'
+        '400':
+          description: Invalid or ambiguous JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: invalid_json
+                  message: Invalid JSON, duplicate or unknown fields, incorrect types or integer ranges.
+        '404':
+          description: Customer does not own the specified subscription.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingError'
+              example:
+                error:
+                  code: not_found
+                  message: Customer or catalog resource does not exist.
+        '409':
+          description: Changed replay, an existing termination, or a cancellation month at or before the latest closure conflicts.
           content:
             application/json:
               schema:
@@ -1181,13 +1309,14 @@ components:
     SubscriptionIdentifier:
       type: string
       minLength: 1
-      maxLength: 1550
+      maxLength: 1561
       description: |
         New IDs use subscription/<customer_id>/<addon_name> with each component
         percent-encoded as a URL path segment. For example, a slash inside a component
         becomes %2F and a literal percent sign becomes %25. Components preserve case
         and their original UTF-8 bytes. The maximum generated length is 1550 ASCII
-        bytes when both 256-byte components require escaping. Earlier IDs are
+        bytes for a first purchase when both 256-byte components require escaping.
+        Reactivation appends /YYYY-MM-DD, increasing the maximum to 1561 bytes. Earlier IDs are
         preserved verbatim, including stored operation responses and invoice lines.
       example: subscription/acme/concurrency_pack
     Identifier:
@@ -1453,7 +1582,7 @@ components:
           minimum: 0
           description: |
             Customer-wide revision counter advanced by usage accounting, credit grants,
-            limit changes, add-on purchases, and invoice issuance. Use it to observe
+            limit changes, add-on purchases/cancellations, and invoice issuance. Use it to observe
             account changes; it is not a version of this response, and receipt or
             processing errors can change the counts without advancing it.
         pending_events:
@@ -1485,7 +1614,7 @@ components:
           $ref: '#/components/schemas/IdempotencyKey'
         addon_name:
           $ref: '#/components/schemas/Identifier'
-          description: Existing add-on catalog entry; a customer can purchase each add-on only once.
+          description: Existing catalog entry; activation months cannot overlap earlier purchases of the same add-on.
         purchased_at:
           $ref: '#/components/schemas/BillingDate'
           description: |
@@ -1493,6 +1622,34 @@ components:
             price applies even for a mid-month purchase; future dates and historical
             dates after all closed months are allowed.
 
+    AddonCancellationInput:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key, subscription_id, cancelled_at]
+      properties:
+        idempotency_key:
+          $ref: '#/components/schemas/IdempotencyKey'
+        subscription_id:
+          $ref: '#/components/schemas/SubscriptionIdentifier'
+        cancelled_at:
+          $ref: '#/components/schemas/BillingDate'
+          description: Required UTC calendar date, not before purchase and in a month after the latest closure. This whole month remains billable.
+    AddonCancellation:
+      type: object
+      additionalProperties: false
+      required: [customer_id, subscription_id, cancelled_at, end_month]
+      properties:
+        customer_id:
+          $ref: '#/components/schemas/Identifier'
+        subscription_id:
+          $ref: '#/components/schemas/SubscriptionIdentifier'
+        cancelled_at:
+          $ref: '#/components/schemas/BillingDate'
+        end_month:
+          type: string
+          format: date
+          description: First UTC date of the inclusive final charged month.
+          example: '2026-10-01'
     Subscription:
       type: object
       additionalProperties: false
@@ -1516,7 +1673,7 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: USD cents copied from the catalog at purchase and charged in full each month; later catalog changes do not alter it.
+          description: USD cents copied from the catalog at purchase and charged in full each active month through the inclusive cancellation month; later catalog changes do not alter it.
         purchased_at:
           $ref: '#/components/schemas/BillingDate'
           description: Stored purchase date selecting the first charged UTC month; the first month's price is not prorated.
@@ -1596,7 +1753,7 @@ components:
           minimum: 0
           description: |
             Customer-wide revision counter advanced by usage accounting, credit grants,
-            limit changes, add-on purchases, and invoice issuance. Use it to observe
+            limit changes, add-on purchases/cancellations, and invoice issuance. Use it to observe
             account changes; it is not a version of this response, and receipt or
             processing errors can change the counts without advancing it.
         pending_events:

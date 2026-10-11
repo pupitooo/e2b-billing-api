@@ -51,9 +51,10 @@ export class AssignmentRunner {
     client,
     save,
     changed = () => {},
+    beforeStep = async () => {},
     sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   }) {
-    Object.assign(this, { plan, state, client, save, changed, sleep });
+    Object.assign(this, { plan, state, client, save, changed, beforeStep, sleep });
     this.running = false;
     this.stopRequested = false;
   }
@@ -69,6 +70,7 @@ export class AssignmentRunner {
       const request = workflowRequest(step, this.state.source);
       // Write the source and cursor before the first financial operation.
       this.save(this.state);
+      await this.beforeStep(step);
       let response = await this.client.send(request, step.name);
       if (step.fault?.lose_response && response.status === step.want.status) {
         response.record.simulatedLoss = true;

@@ -34,6 +34,20 @@ type AddonPurchase struct {
 	PurchasedAt time.Time `json:"purchased_at"`
 }
 
+// AddonCancellation ends one purchase after its last fully charged UTC month.
+type AddonCancellation struct {
+	SubscriptionID string    `json:"subscription_id"`
+	CancelledAt    time.Time `json:"cancelled_at"`
+}
+
+// Cancellation is an immutable termination record; EndMonth is inclusive.
+type Cancellation struct {
+	CustomerID     string    `json:"customer_id"`
+	SubscriptionID string    `json:"subscription_id"`
+	CancelledAt    time.Time `json:"cancelled_at"`
+	EndMonth       string    `json:"end_month"`
+}
+
 type Subscription struct {
 	SubscriptionID    string    `json:"subscription_id"`
 	CustomerID        string    `json:"customer_id"`

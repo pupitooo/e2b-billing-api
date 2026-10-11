@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"time"
 
 	"e2b/billing-api/internal/accounting"
 	"e2b/billing-api/internal/billing"
@@ -48,7 +49,11 @@ func (s *Store) PurchaseAddon(ctx context.Context, customer, key string, purchas
 			return err
 		}
 
-		subscriptionID := subscriptionIdentity(customer, purchase.AddonName)
+		subscriptionID, err := nextSubscriptionIdentity(ctx, tx, customer, purchase)
+		if err != nil {
+			return err
+		}
+
 		if err := insertSubscription(ctx, tx, customer, subscriptionID, purchase, &result); err != nil {
 			return err
 		}
@@ -114,4 +119,22 @@ func insertSubscription(ctx context.Context, tx pgx.Tx, customer, subscriptionID
 	*result = billing.Subscription{SubscriptionID: subscriptionID, CustomerID: customer, AddonName: p.AddonName, MonthlyPriceCents: price, PurchasedAt: p.PurchasedAt.UTC(), StartMonth: month.Format("2006-01-02")}
 
 	return err
+}
+
+// nextSubscriptionIdentity retains the first purchase identity and appends the
+// new purchase date for later nonoverlapping activation periods. The account
+// lock and database period constraint protect concurrent purchases.
+func nextSubscriptionIdentity(ctx context.Context, tx pgx.Tx, customer string, purchase billing.AddonPurchase) (string, error) {
+	var exists bool
+	err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM addon_subscriptions WHERE customer_id=$1 AND addon_name=$2)", customer, purchase.AddonName).Scan(&exists)
+	if err != nil {
+		return "", err
+	}
+
+	identity := subscriptionIdentity(customer, purchase.AddonName)
+	if exists {
+		identity += "/" + purchase.PurchasedAt.Format(time.DateOnly)
+	}
+
+	return identity, nil
 }

@@ -288,6 +288,7 @@ test("buildCommand", async (t) => {
   });
 
   const cases = [
+    {scenario: "cancel purchase using its owned identity and calendar date",operation:"cancel-addon",customer:"acme",input:{idempotency_key:"cancel",subscription_id:"subscription/acme/concurrency_pack",cancelled_at:"2026-10-31"},wantPath:"/customers/acme/addons/cancel",wantBody:{idempotency_key:"cancel",subscription_id:"subscription/acme/concurrency_pack",cancelled_at:"2026-10-31"},wantError:false},
     {
       scenario: "default price with a calendar date",
       operation: "prices",

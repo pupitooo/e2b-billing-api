@@ -22,6 +22,7 @@ type Store interface {
 	GrantCredit(context.Context, string, billing.CreditGrant) error
 	Credit(context.Context, string) (billing.CreditSnapshot, error)
 	PurchaseAddon(context.Context, string, string, billing.AddonPurchase) (billing.Subscription, error)
+	CancelAddon(context.Context, string, string, billing.AddonCancellation) (billing.Cancellation, error)
 	SetSpendLimit(context.Context, string, billing.SpendLimitChange) error
 	MonthlyLimitStatus(context.Context, string, string) (billing.LimitStatus, error)
 	CloseMonth(context.Context, string, string) (billing.Invoice, error)

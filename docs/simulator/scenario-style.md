@@ -37,3 +37,5 @@ The transport executable tests demonstrate this style in `tests/api/simulator_te
 Public billing workflows are documented in [billing scenarios](billing-scenarios.md).
 Saved assignment event identities,
 step names, ordering, barriers, and the custom JSON format remain compatible.
+
+Timeline steps may declare `business_time` as a supported UTC RFC3339 instant. It is simulator metadata, never an HTTP clock override. The GUI refreshes portal startup metadata and checks it before sending; CLI operators change the trusted service clock externally and resume with `MODE=step`. Integration tests advance the same server/worker clock between steps.

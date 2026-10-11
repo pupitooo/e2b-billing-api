@@ -4,7 +4,7 @@ This page describes the logical model, implemented PostgreSQL tables and
 relationships, seed catalog, and stored identities.
 
 - [Logical model](#logical-data-model-erd) introduces the billing entities.
-- [Implemented schema](#implemented-postgresql-schema-erd-migrations-001012) and
+- [Implemented schema](#implemented-postgresql-schema-erd-migrations-001013) and
   [tables](#tables-and-relationships) describe SQL storage.
 - [Initial data](#initial-data-and-migrations) identifies the assignment seed.
 - [Command identities](#durable-api-operation-keys) and
@@ -25,11 +25,11 @@ The logical model introduces customers, metered usage, historical prices, credit
 
 Conceptually, accepted usage is rated using historical prices, consumes available usage credit, and contributes to a monthly invoice alongside purchased add-ons. The architectural decisions below explain how these responsibilities map to durable input, financial state, and immutable output.
 
-## Implemented PostgreSQL schema (ERD, migrations 001–012)
+## Implemented PostgreSQL schema (ERD, migrations 001–013)
 
 `UsageReceipt` maps to `usage_inbox` plus the separate `usage_ratings` link. Invoices use immutable JSON snapshots and frozen-group links rather than the separate line table proposed in the logical ERD.
 
-This diagram shows all 16 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `012`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
+This diagram shows all 17 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `013`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
 
 ![Implemented PostgreSQL schema](../diagrams/implemented-data-model/implemented-data-model.png)
 
@@ -55,7 +55,8 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 | `monthly_usage` | Gross usage charges in exact microcents per customer and original UTC month, before credit and add-ons. |
 | `credit_entries` | Exact signed microcent history: positive grants without a group and negative usage debits referencing a group owned by the same customer. Server-generated `credit_entry_id` identifies each row; API keys live in the shared command history. Usage effects commit with the unique event rating and receipt checkpoint. |
 | `addons` | Add-on catalog and monthly price in cents. |
-| `addon_subscriptions` | Customer purchases with a monthly price snapshot and the UTC purchase month. One subscription per customer and add-on is supported; cancellation and multiple quantities are future work. |
+| `addon_subscriptions` | Customer purchases with a monthly price snapshot and the UTC purchase month. Purchase periods are append-only, with no overlapping active months for one customer/add-on. Later purchases retain earlier IDs and snapshots. |
+| `addon_cancellations` | Append-only termination per purchase; `end_month` is its inclusive final charged UTC month. The period trigger shares the customer lock with financial commands. |
 | `closed_billing_months` | Immutable customer/month closures used to route late consumption forward. |
 | `invoices` | One immutable snapshot per customer/month, with unique per-customer number and total cents. Buyer details, ordered lines, exact audit microcents, and issue time are in `snapshot`. |
 | `invoiced_usage_groups` | Links issued invoices to groups; a trigger rejects changes to frozen groups. |
@@ -64,7 +65,7 @@ Identifiers, balances, prices, and timestamps are supplied explicitly. `customer
 
 Foreign keys reject missing catalog records, missing receipts, and credit debits for another customer's group. A group's price must belong to its metric and be either a default or an override for that customer. Group identity cannot change after insertion; totals can increase as the worker processes more events. Rating links require the same customer and metric and an interval wholly within the original UTC month, including intervals ending exactly at the next month's boundary.
 
-Prices, credit entries and rating links reject row updates and deletes. Price changes append a new version; they do not rewrite past prices. Customer details, account projections, group totals, monthly totals, and the add-on catalog remain mutable. A subscription retains its purchased price when the catalog changes.
+Prices, credit entries, rating links, add-on purchases and cancellations reject row updates and deletes. Price changes append a new version; they do not rewrite past prices. Customer details, account projections, group totals, monthly totals, and the add-on catalog remain mutable. A subscription retains its purchased price when the catalog changes.
 ## Initial data and migrations
 
 Apply the schema and seed using the [migration procedure](../guides/migrations.md#database-migrations).
@@ -86,6 +87,8 @@ Both accounts start with zero credit, no spend limit, and state version zero. Th
 Migration `004_exact_credit.sql` converts existing cent credit values to microcents without rewriting migration 002 or its seed. It adds the finite signed-integer domain `billing_signed_microcents` for ledger amounts. See the [conversion and legacy-allocation limitation](../guides/migrations.md#migration-and-verification).
 
 The migration runner applies schema, seed, and version records in one transaction under the existing advisory lock. On an existing volume it applies only pending versions. Repeated runs skip the seed, preserving changed account state and customer details. A seed error rolls back the model migration and its version record too.
+
+Migration `013_addon_cancellations.sql` preserves existing purchases and invoices, adds append-only terminations and replaces lifetime customer/add-on uniqueness with nonoverlapping purchase months. See [upgrade instructions](../guides/migrations.md#add-on-lifecycle-upgrade).
 
 ## Durable API operation keys
 

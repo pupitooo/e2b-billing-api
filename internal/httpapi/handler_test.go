@@ -1427,3 +1427,8 @@ func (store storeFunc) GrantCredit(ctx context.Context, customer string, grant b
 func (store storeFunc) SetSpendLimit(ctx context.Context, customer string, change billing.SpendLimitChange) error {
 	return errors.New("unexpected SetSpendLimit call")
 }
+
+// CancelAddon rejects unexpected cancellation calls in usage transport scenarios.
+func (store storeFunc) CancelAddon(ctx context.Context, customer, key string, cancellation billing.AddonCancellation) (billing.Cancellation, error) {
+	return billing.Cancellation{}, errors.New("unexpected CancelAddon call")
+}

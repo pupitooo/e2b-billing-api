@@ -48,7 +48,7 @@ has delivered every measurement; an error in another month need not affect the
 queried month's gross usage.
 
 `state_version` counts customer account changes from usage accounting, credit
-grants, limit changes, add-on purchases, and invoice issuance. It can help observe
+grants, limit changes, add-on purchases/cancellations, and invoice issuance. It can help observe
 account changes, but it is not a version of the complete response: receipt and
 processing errors can change the counts without advancing it.
 
@@ -167,7 +167,7 @@ IDs use `subscription/<customer_id>/<addon_name>`, for example
 `subscription/acme/concurrency_pack`. Each component is percent-encoded separately:
 `acme/ops` becomes `acme%2Fops`, while a literal `acme%2Fops` becomes
 `acme%252Fops`. Inputs retain their existing 256-byte limits; generated subscription
-IDs can reach 1550 ASCII bytes. Subscription responses and invoice lines use this
+First-purchase IDs can reach 1550 ASCII bytes; later purchases append `/YYYY-MM-DD` and can reach 1561 bytes. Subscription responses and invoice lines use this
 larger response limit. No database migration is needed because the stored ID is
 unbounded `text`. Earlier IDs, operation results, and issued invoices stay unchanged.
 Price, add-on, credit, and spend-limit requests require the exact JSON field
@@ -178,7 +178,7 @@ The former `Idempotency-Key` header does not supply or override the body key.
 Credit and spend-limit requests no longer accept `operation_id` in JSON.
 Prices, add-ons, credit grants, and spend-limit changes all store normalized
 inputs and successful results in `api_idempotency_operations` in the same
-transaction as their financial effects. Scopes are `prices`, `addons/<customer_id>`,
+transaction as their financial effects. Scopes are `prices`, `addons/<customer_id>`, `addon-cancellations/<customer_id>`,
 `credits/<customer_id>`, and `spend-limit/<customer_id>`. Keys remain stored
 indefinitely; retries survive API restarts. Failed commands reserve no key.
 Credit ledger IDs come from the server's `crd_` sequence and never derive from the
@@ -197,10 +197,25 @@ operations require investigation rather than a new key to bypass a conflict.
 
 Credit grants apply immediately. The backend owns the audit timestamp; grant
 requests and responses contain only `idempotency_key` and `amount_cents`. Each customer
-can hold one subscription per add-on. A purchase with a different key for the same customer/add-on conflicts,
+can hold one active purchase period per add-on. An overlapping activation month conflicts,
 and a new purchase cannot start in or before an already closing or closed month.
 Supply `purchased_at` as `YYYY-MM-DD`; the backend stores midnight UTC and returns
 the date. Historical open months and future dates are supported.
+
+## Cancel and reactivate an add-on
+
+`POST /customers/{customer_id}/addons/cancel` requires `idempotency_key`,
+`subscription_id` and `cancelled_at` as `YYYY-MM-DD`. Cancellation keeps the full
+fee for that UTC month and removes the fee from later months. It cannot precede
+purchase or target a month at or before the latest closure. An unchanged retry
+returns the original cancellation; changed content or a second termination key
+returns `409`. Missing ownership returns `404`. Validation follows other commands.
+
+A new purchase must start after the previous inclusive end month. Its resource
+ID appends its purchase date to the original customer/add-on tuple. It snapshots
+the current catalog price; earlier purchases, fees and invoices remain unchanged.
+The assignment specifies full active-month fees; the cancellation boundary and
+reactivation policy are implementation choices.
 
 ## Browser requests and service routing
 

@@ -383,7 +383,7 @@ an issued document. The public schema is in [OpenAPI](../api/openapi.yaml).
 
 The current policy derives usage and credit lines with `InvoiceAmounts(exact_charge_microcents, allocated_credit_microcents)`. Credit can be presented as a combined line by summing already calculated cent differences, but its origin and exact microcents must remain traceable. Combining lines cannot introduce another rounding step.
 
-Add-on charges reach the invoice through a separate path: `addon_subscriptions.monthly_price_cents` retains the purchase price. It requires neither resource rating nor usage credit and is already in whole cents. An invoice can therefore contain lines that did not originate as usage events.
+Add-on charges reach the invoice through a separate path: `addon_subscriptions.monthly_price_cents` retains the purchase price. Storage includes it only between its purchase month and optional inclusive cancellation month. It requires neither resource rating nor usage credit and is already in whole cents. An invoice can therefore contain lines that did not originate as usage events.
 
 ### Example: invoice lines for ACME-0002
 

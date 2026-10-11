@@ -167,12 +167,12 @@ structured `(customer_id, addon_name)` identity using
 `subscription/<customer_id>/<addon_name>`. Each component is independently
 percent-encoded as a URL path segment, preserving separators, case, percent signs,
 and UTF-8 bytes without ambiguity. The two existing 256-byte input limits yield a
-maximum of 1550 ASCII bytes for the generated ID. Existing IDs and persisted
+maximum of 1550 ASCII bytes for the first-purchase ID; reactivation appends `/YYYY-MM-DD` and permits up to 1561 bytes. Existing IDs and persisted
 results retain their original values. The caller supplies an independent
-JSON `idempotency_key` for prices, add-ons, credit grants, and spend-limit changes. The
+JSON `idempotency_key` for prices, add-on purchases and cancellations, credit grants, and spend-limit changes. The
 append-only `api_idempotency_operations` table records the scope, key, normalized
 original request, successful result, and creation time. The price scope is global
-for `/prices`; the add-on, credit, and spend-limit scopes include the customer. Keys are case-sensitive
+for `/prices`; the add-on purchase/cancellation, credit, and spend-limit scopes include the customer. Keys are case-sensitive
 visible ASCII tokens of at most 256 bytes and are retained indefinitely.
 
 A transaction-scoped advisory lock serializes the scope/key before reading
@@ -180,7 +180,7 @@ history; hash collisions only serialize unrelated commands. The composite primar
 key determines identity. Financial writes and result recording commit together.
 A failed command reserves no key; unchanged retries return the stored result after
 process restarts, activation, catalog changes, or closing. Changed values conflict.
-All four command types use this one history table. Credit grants additionally
+All financial command types, including cancellation, use this one history table. Credit grants additionally
 snapshot their internal ledger ID in the stored result; caller keys never become
 accounting or resource IDs. A retry of an older limit command preserves any newer
 configuration.
@@ -340,8 +340,24 @@ The [delayed-status limitation](limitations.md#l1-delayed-spend-limit-status)
 records the rationale, unmeasured delay and financial impact, and investigation plan.
 
 `AddonCharge` bills the full purchased price from the UTC purchase month onward,
-including purchases at month end. Earlier months cost zero. Cancellation,
-quantities, and proration remain outside the assignment's contract.
+including purchases at month end. Earlier months cost zero. Storage selects only
+active purchase periods. `POST /customers/{customer_id}/addons/cancel` appends an
+immutable termination record with a caller-supplied `cancelled_at` UTC date.
+That month is charged in full; following months omit the purchase. Cancellation
+cannot precede purchase or target a month at or before the latest closure.
+Historical open dates and future dates are allowed, matching the purchase policy.
+Identical retries retain the original termination after closing and reactivation;
+a new key cannot replace an existing termination. A later purchase must start
+strictly after every earlier purchase's inclusive end month and snapshots the
+current catalog price. It receives the readable base ID plus `/YYYY-MM-DD`;
+first purchase IDs and all historical command results remain intact. This suffix
+raises the maximum generated ID length to 1561 bytes.
+
+Full fees for active months follow the assignment. Inclusive cancellation months,
+no overlapping activation months, append-only termination and date-suffixed
+reactivation IDs are implementation policies. Quantities and proration remain
+proposals. See the [delayed billing scenario](../simulator/delayed-billing.md)
+for the combined credit, limit, cancellation and backlog example.
 
 `BillingMonth` preserves the original month only while chronological closing
 allows its invoice: no same or later month has been closed. Otherwise choose a

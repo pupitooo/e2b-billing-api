@@ -1,10 +1,12 @@
 package simulator
 
 import (
+	"e2b/billing-api/internal/usage"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 const (
@@ -13,6 +15,13 @@ const (
 )
 
 func validateWorkflowStep(step WorkflowStep) error {
+	if step.BusinessTime != "" {
+		instant, err := time.Parse(time.RFC3339, step.BusinessTime)
+		if err != nil || instant.Location() != time.UTC || instant.Year() < usage.MinUTCYear || instant.Year() > usage.MaxUTCYear {
+			return fmt.Errorf("step %s: business_time must be a supported UTC RFC3339 instant", step.Name)
+		}
+	}
+
 	if step.Request.Method != "GET" && step.Request.Method != "POST" {
 		return fmt.Errorf("step %s: method must be GET or POST", step.Name)
 	}

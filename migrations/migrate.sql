@@ -103,4 +103,10 @@ SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 12) AS apply_
     INSERT INTO schema_migrations (version, name) VALUES (12, 'accounting_id_sequences');
 \endif
 
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = 13) AS apply_013 \gset
+\if :apply_013
+    \ir 013_addon_cancellations.sql
+    INSERT INTO schema_migrations (version, name) VALUES (13, 'addon_cancellations');
+\endif
+
 COMMIT;

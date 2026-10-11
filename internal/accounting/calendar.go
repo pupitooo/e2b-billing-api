@@ -80,7 +80,8 @@ func BillingMonth(usageMonth, receivedAt time.Time, closedMonths []time.Time) (t
 }
 
 // AddonCharge bills the full purchased price from the UTC purchase month onward.
-// Proration, cancellation, and quantities are outside the assignment's contract.
+// Storage selects only active purchase periods, including their cancellation month.
+// Proration and quantities are outside the assignment's contract.
 func AddonCharge(purchasedAt, billingMonth time.Time, priceCents int64) (int64, error) {
 	startMonth, err := UTCMonth(purchasedAt)
 	if err != nil {

@@ -4,6 +4,7 @@ package inbox_test
 
 import (
 	"context"
+	"e2b/billing-api/internal/billing"
 	"e2b/billing-api/internal/postgres"
 	"os"
 	"path/filepath"
@@ -86,10 +87,11 @@ func TestProcessedUsageClosingMigration(t *testing.T) {
 			if _, err := pool.Exec(ctx, tc.setupSQL); err != nil {
 				t.Fatal(err)
 			}
-			original, err := store.CloseMonth(ctx, "acme", "2026-10")
-			if err != nil {
-				t.Fatal(err)
-			}
+			original := billing.Invoice{CustomerID: "acme", Month: "2026-10", Number: "ACME-0001", Currency: "USD", CustomerName: "Acme Inc.", Country: "US", BillingAddress: "1 Market St, San Francisco, CA 94105", IssuedAt: invoiceTime, TotalCents: 0, GrossUsageMicrocents: "4000000", CreditUsedMicrocents: "4000000", Lines: []billing.InvoiceLine{
+				{Kind: "usage", Description: "Usage", AmountCents: 4, PriceVersionID: "cpu-acme-2026-10-01", Metric: "cpu_seconds", UsageMonth: "2026-10", Units: "1000000", GrossMicrocents: "4000000", CreditMicrocents: "4000000"},
+				{Kind: "credit", Description: "Used credit", AmountCents: -4},
+			}}
+			publishLegacyInvoice(t, pool, original)
 			if _, err := pool.Exec(ctx, `INSERT INTO usage_inbox
                 (source,event_id,schema_version,customer_id,sandbox_id,metric,period_start,period_end,units,received_at,processing_error)
                 VALUES ('upgrade','pending',1,'acme','sandbox','cpu_seconds','2026-10-10T13:00:00Z','2026-10-10T14:00:00Z',1000000,'2026-10-11T00:00:00Z',$1)`, tc.pendingError); err != nil {
