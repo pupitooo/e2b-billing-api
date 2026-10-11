@@ -1,0 +1,340 @@
+{
+  "name": "billing-subcent-invoices",
+  "steps": [
+    {
+      "name": "fresh account has no credit or accounting effects",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 0
+        }
+      }
+    },
+    {
+      "name": "send 2026-10 usage worth USD 0.002 without credit",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "october",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "small-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-10-10T12:00:00Z",
+              "period_end": "2026-10-10T12:01:00Z",
+              "units": 50000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "account all 2026-10 units without charging credit",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 1
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "close 2026-10 with zero cents and no rounding-remainder carry",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "month": "2026-10",
+          "number": "ACME-0001",
+          "total_cents": 0,
+          "gross_usage_ticks": "200000",
+          "credit_used_ticks": "0",
+          "lines": [
+            {
+              "kind": "usage",
+              "description": "Usage",
+              "price_version_id": "cpu-acme-2026-10-01",
+              "metric": "cpu_seconds",
+              "usage_month": "2026-10",
+              "units": "50000",
+              "gross_ticks": "200000",
+              "credit_ticks": "0",
+              "amount_cents": 0
+            },
+            {
+              "kind": "credit",
+              "description": "Used credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      },
+      "capture": "october"
+    },
+    {
+      "name": "send 2026-11 usage worth USD 0.002 without credit",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "november",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "small-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-11-10T12:00:00Z",
+              "period_end": "2026-11-10T12:01:00Z",
+              "units": 50000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "account all 2026-11 units without charging credit",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 3
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "close 2026-11 with zero cents and no rounding-remainder carry",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-11"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "month": "2026-11",
+          "number": "ACME-0002",
+          "total_cents": 0,
+          "gross_usage_ticks": "200000",
+          "credit_used_ticks": "0",
+          "lines": [
+            {
+              "kind": "usage",
+              "description": "Usage",
+              "price_version_id": "cpu-acme-2026-10-01",
+              "metric": "cpu_seconds",
+              "usage_month": "2026-11",
+              "units": "50000",
+              "gross_ticks": "200000",
+              "credit_ticks": "0",
+              "amount_cents": 0
+            },
+            {
+              "kind": "credit",
+              "description": "Used credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      },
+      "capture": "november"
+    },
+    {
+      "name": "send 2026-12 usage worth USD 0.002 without credit",
+      "request": {
+        "method": "POST",
+        "path": "/usage/batches",
+        "body": {
+          "events": [
+            {
+              "source": "{{source}}",
+              "event_id": "december",
+              "schema_version": 1,
+              "customer_id": "acme",
+              "sandbox_id": "small-sandbox",
+              "metric": "cpu_seconds",
+              "period_start": "2026-12-10T12:00:00Z",
+              "period_end": "2026-12-10T12:01:00Z",
+              "units": 50000
+            }
+          ]
+        }
+      },
+      "want": {
+        "status": 202,
+        "body": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "account all 2026-12 units without charging credit",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 5
+        }
+      },
+      "await": true
+    },
+    {
+      "name": "close 2026-12 with zero cents and no rounding-remainder carry",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-12"
+        }
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "customer_id": "acme",
+          "month": "2026-12",
+          "number": "ACME-0003",
+          "total_cents": 0,
+          "gross_usage_ticks": "200000",
+          "credit_used_ticks": "0",
+          "lines": [
+            {
+              "kind": "usage",
+              "description": "Usage",
+              "price_version_id": "cpu-acme-2026-10-01",
+              "metric": "cpu_seconds",
+              "usage_month": "2026-12",
+              "units": "50000",
+              "gross_ticks": "200000",
+              "credit_ticks": "0",
+              "amount_cents": 0
+            },
+            {
+              "kind": "credit",
+              "description": "Used credit",
+              "amount_cents": 0
+            }
+          ]
+        }
+      },
+      "capture": "december"
+    },
+    {
+      "name": "read unchanged 2026-10 invoice after all three closures",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-10"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "october"
+      }
+    },
+    {
+      "name": "read unchanged 2026-11 invoice after all three closures",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-11"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "november"
+      }
+    },
+    {
+      "name": "read unchanged 2026-12 invoice after all three closures",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/invoices/2026-12"
+      },
+      "want": {
+        "status": 200,
+        "same_as": "december"
+      }
+    },
+    {
+      "name": "retry first zero-total invoice without another financial effect",
+      "request": {
+        "method": "POST",
+        "path": "/customers/acme/invoices",
+        "body": {
+          "month": "2026-10"
+        }
+      },
+      "want": {
+        "status": 200,
+        "same_as": "october"
+      }
+    },
+    {
+      "name": "reads and retry retain zero credit and exactly six accounting changes",
+      "request": {
+        "method": "GET",
+        "path": "/customers/acme/credit"
+      },
+      "want": {
+        "status": 200,
+        "body": {
+          "credit_balance_ticks": "0",
+          "pending_events": 0,
+          "processing_errors": 0,
+          "state_version": 6
+        }
+      }
+    }
+  ]
+}

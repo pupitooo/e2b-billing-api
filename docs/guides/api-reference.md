@@ -27,6 +27,15 @@ processed gross usage and pending/error counts. The platform decides what to
 do when the limit is reached. The health endpoint checks HTTP availability
 without querying storage.
 
+## Money units
+
+Fields named `*_ticks` contain **integer amounts in microcents**:
+`1 cent = 1_000_000 microcents`. They are decimal strings to preserve large exact
+integers in JSON clients. Catalog rates use whole cents per million resource
+units; invoice lines, add-ons, grants, and limit inputs retain their whole-cent
+contracts. For example, `price_per_million_cents: 5` rates one resource unit at
+5 microcents. See [the conversions and calculations](../architecture/accounting-rules.md#exact-money-and-credit).
+
 ## Reading accounting status
 
 Credit and limit responses describe committed accounting state. `pending_events`
@@ -47,9 +56,18 @@ processing errors can change the counts without advancing it.
 before credit and excluding add-ons. Equality reaches the limit; `null` is
 unlimited, while zero is reached even without usage. A false result can change
 after pending or failed usage is accounted. Billing keeps accounting beyond the
-limit; the platform owns enforcement. Amounts in ticks use 1_000_000 ticks per
-USD cent and are decimal strings to preserve exact large integers in JSON clients.
-See [limit rules](../architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage).
+limit; the platform owns enforcement. See [limit rules](../architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage).
+
+## Zero-total invoices
+
+An invoice may have `total_cents: 0` despite positive measured usage and no credit.
+Half-up rounding is applied to each cumulative group, and usage lines retain
+their complete `units`, `gross_ticks`, and `credit_ticks` even when `amount_cents`
+is zero. Zero-total invoices close and freeze the month with an ordinary invoice
+number. There is no minimum charge or rounding-remainder carry into another group
+or invoice. Reads and retries return the same snapshot. See the
+[rounding contract](../architecture/accounting-rules.md#rounding-and-invoice-presentation)
+and the [public three-month scenario](../simulator/billing-scenarios.md#zero-total-invoices-without-remainder-carry).
 
 ## Usage requests
 

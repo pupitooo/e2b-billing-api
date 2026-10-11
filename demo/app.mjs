@@ -391,7 +391,7 @@ function creditHTML() {
         dbButton("credit", "Credit ledger"),
     ) +
     contextStatus() +
-    `<div class="columns">${operationForm("credits", "E2B credit grant", fields, "Grant credit")}${panel("Exact balance", '<p class="section-note">The summary rounds for display. The exact eight-decimal USD amount and API tick string stay visible. Credit allocation happens in the worker, before cent rounding.</p><div class="actions">' + dbButton("credit", "View grants and debits") + dbButton("groups", "View allocations") + "</div>")}</div>`
+    `<div class="columns">${operationForm("credits", "E2B credit grant", fields, "Grant credit")}${panel("Exact balance", '<p class="section-note">The summary rounds for display. The exact USD amount and microcent values stay visible (1 cent = 1_000_000 microcents). Credit allocation happens in the worker, before cent rounding.</p><div class="actions">' + dbButton("credit", "View grants and debits") + dbButton("groups", "View allocations") + "</div>")}</div>`
   );
 }
 function addonsHTML() {
@@ -436,7 +436,7 @@ function invoicesHTML() {
   return (
     intro(
       "Monthly invoice",
-      "One immutable invoice per customer and completed UTC month. Closing snapshots processed usage without draining the inbox.",
+      "One immutable invoice per customer and completed UTC month. Closing snapshots processed usage without draining the inbox. Zero-total invoices retain measured units and exact amounts; rounding remainders do not carry forward.",
       dbButton("invoices", "Issued snapshots"),
     ) +
     (!eligible

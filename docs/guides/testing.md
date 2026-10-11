@@ -11,6 +11,7 @@ Follow the [final acceptance test procedure](final-acceptance-testing.md) to ver
 | `make db-test` | Run only the database integrity suite. |
 | `make api-test` | Start PostgreSQL, migrate, and run HTTP/database acceptance tests against the API. |
 | `make inbox-test` | Start PostgreSQL and run repository tests in private schemas. |
+| `make adminer-check` | Check integer display syntax, exact bigint grouping, type boundaries, and links without starting services. |
 | `make test SUITE=go` | Run Go unit, PostgreSQL repository, HTTP acceptance, and worker lifecycle tests; services start automatically. |
 | `make test SUITE=db` | Run only the database integrity suite in both configured time zones. |
 | `make test RUN='^TestPostUsageBatches$/^usage_batches_happy_path$'` | Run only the named Go scenario. Supplying `RUN` selects the Go suite by default. |
@@ -49,6 +50,22 @@ The [public billing workflow tests](../../tests/inbox/billing_simulator_test.go)
 same CLI with a real HTTP router, accounting worker, and private seeded schema per
 scenario. They verify complete literal invoices and balances, monthly limit reads,
 HTTP `503`/`Retry-After`, lost committed replies, and restart with retained state.
+
+`TestInvoiceAmounts` covers uncredited USD 0.001, one microcent below half a cent,
+and the exact half-cent boundary. `TestAssembleInvoice` retains zero-cent usage
+lines with complete units and exact microcents even when different price groups'
+combined gross exceeds half a cent. The public
+[three-month scenario](../simulator/billing-scenarios.md#zero-total-invoices-without-remainder-carry)
+verifies three positive USD 0.002 charges produce three zero-total invoices,
+ordinary sequential numbers, immutable reads/retries, and no remainder carry
+or credit debit. Run it in a private seeded schema with:
+
+```sh
+make inbox-test RUN='^TestBillingSimulatorExecutable$/^three_zero-cent_invoices_retain_usage_without_carrying_rounding_remainders$'
+```
+
+`make demo-check` also verifies that the invoice view retains measured units,
+the exact positive charge, and the zero payable amount on issue and load.
 
 With Go 1.27 or later installed locally, the same test can target a running API directly:
 

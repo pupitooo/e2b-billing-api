@@ -56,10 +56,10 @@ boundaries, as explained in the [closing contract](../../architecture/accounting
 
 [`invoiceUsageLine`](../../../internal/billing/invoice_lines.go) calls [`InvoiceAmounts`](../../../internal/accounting/money.go) for each group:
 
-1. Subtract the already allocated exact credit ticks from exact gross ticks.
+1. Subtract the already allocated exact credit microcents from exact gross microcents.
 2. Round gross and net separately to half-up cents.
 3. Derive displayed credit as rounded gross minus rounded net.
-4. Produce a gross usage line, retaining units, the historical price, original usage month and exact gross/credit ticks for audit.
+4. Produce a gross usage line, retaining units, the historical price, original usage month and exact gross/credit microcents for audit.
 
 The aggregate credit line is the negative sum of these derived deductions. Issuance consumes no additional credit and creates no new credit ledger debit. Add-ons follow usage lines, then the credit line is appended even when zero. [`invoiceTotal`](../../../internal/billing/invoice_lines.go) sums all lines with arbitrary precision and checks the final nonnegative signed 64-bit cent result; a positive intermediate subtotal alone is not grounds for rejection. Individual group rounding and the aggregate credit deduction also have range checks.
 

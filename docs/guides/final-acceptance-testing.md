@@ -37,7 +37,7 @@ blocks combine the same commands for convenience.
 
 - All monetary expectations use the assignment's USD seed catalog.
 - Calendar months are UTC.
-- One cent is 1_000_000 ticks.
+- One cent is 1_000_000 microcents.
 - Invoice amounts are integer cents; exact API amounts are decimal strings.
 - Underscores in prose and tables group digits; copyable JSON and SQL retain
   their valid numeric syntax.

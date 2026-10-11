@@ -1359,7 +1359,7 @@ components:
           format: int64
           minimum: 0
           maximum: 9223372036854775807
-          description: USD cents charged per 1_000_000 resource units; 5 means USD 0.05 per million, and 0 permits free usage.
+          description: Whole USD cents per 1_000_000 resource units; 5 means USD 0.05 per million, equivalent to 5 microcents per resource unit. Usage charges are stored in microcents (1 cent = 1_000_000 microcents); 0 permits free usage.
         effective_from:
           $ref: '#/components/schemas/BillingDate'
           description: |
@@ -1394,7 +1394,7 @@ components:
           format: int64
           minimum: 0
           maximum: 9223372036854775807
-          description: USD cents charged per 1_000_000 resource units; 5 means USD 0.05 per million, and 0 permits free usage.
+          description: Whole USD cents per 1_000_000 resource units; 5 means USD 0.05 per million, equivalent to 5 microcents per resource unit. Usage charges are stored in microcents (1 cent = 1_000_000 microcents); 0 permits free usage.
         effective_from:
           $ref: '#/components/schemas/BillingDate'
           description: Stored activation date at midnight UTC; historical pricing uses consumption time, even for late delivery.
@@ -1440,7 +1440,8 @@ components:
           pattern: ^[0-9]+$
           description: |
             Credit remaining after grants and processed usage debits, available only
-            for usage. One USD cent is 1_000_000 ticks; the decimal string preserves
+            for usage. The _ticks suffix denotes an amount in microcents; one USD
+            cent is 1_000_000 microcents. The decimal string preserves
             exact integers beyond JSON clients' safe numeric range.
         state_version:
           type: integer
@@ -1578,11 +1579,11 @@ components:
           description: |
             Exact processed usage cost in the original consumption month, before
             credit and excluding add-ons, including usage invoiced later. One USD
-            cent is 1_000_000 ticks; the string preserves arbitrarily large integers.
+            cent is 1_000_000 microcents; the string preserves arbitrarily large integers.
         limit_reached:
           type: boolean
           description: |
-            True when processed gross ticks reach or exceed the limit, without cent
+            True when processed gross microcents reach or exceed the limit, without cent
             rounding; false when unlimited. Pending or failed usage may still cross
             the threshold. The caller enforces the limit; accounting continues.
         state_version:
@@ -1635,7 +1636,7 @@ components:
           description: |
             Signed USD cents included in total_cents. Usage is rounded half-up per
             price group; add-ons use the full monthly price. The credit line is a
-            nonpositive balancing deduction, not independently rounded credit ticks.
+            nonpositive balancing deduction, not independently rounded credit microcents.
         price_version_id:
           $ref: '#/components/schemas/Identifier'
           description: Historical price used for this usage group; present only on usage lines.
@@ -1648,22 +1649,28 @@ components:
         units:
           type: string
           pattern: ^[0-9]+$
-          description: Total resource units in the usage group; a decimal string because sums may exceed a single event's integer range. Present only on usage lines.
+          description: Total resource units in the usage group, retained even when amount_cents is zero; a decimal string because sums may exceed a single event's integer range. Present only on usage lines.
         gross_ticks:
           type: string
           pattern: ^[0-9]+$
-          description: Exact group charge before credit and rounding; one USD cent is 1_000_000 ticks. Present only on usage lines, as a string to preserve integer precision.
+          description: Exact group charge before credit and rounding; one USD cent is 1_000_000 microcents. Present only on usage lines, as a string to preserve integer precision.
         credit_ticks:
           type: string
           pattern: ^[0-9]+$
-          description: Exact credit already allocated to this group before rounding, as a decimal string; one USD cent is 1_000_000 ticks. Present only on usage lines.
+          description: Exact credit already allocated to this group before rounding, as a decimal string; one USD cent is 1_000_000 microcents. Present only on usage lines.
         subscription_id:
           $ref: '#/components/schemas/SubscriptionIdentifier'
           description: Purchased subscription whose fixed monthly price is charged; present only on add-on lines.
 
     Invoice:
       type: object
-      description: Immutable snapshot; buyer details, lines, totals, and issuance time are preserved on reads and retries.
+      description: >-
+        Immutable snapshot; buyer details, lines, totals, and issuance time are
+        preserved on reads and retries. Positive usage may round to zero cents;
+        zero-cent usage lines retain their units and exact audit microcents. A
+        zero-total invoice is valid and closes its month with an ordinary invoice
+        number. There is no minimum charge or carry of rounding remainders into
+        another group or invoice.
       additionalProperties: false
       required:
       - customer_id
@@ -1705,15 +1712,15 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: USD cents payable; the sum of every signed line amount_cents, with no further rounding.
+          description: USD cents payable; the sum of every signed line amount_cents, with no further rounding. Zero is valid even with positive usage and no credit; no rounding remainder is charged on a later invoice.
         gross_usage_ticks:
           type: string
           pattern: ^[0-9]+$
-          description: Exact gross usage summed over the invoice's usage lines before credit, excluding add-ons; one USD cent is 1_000_000 ticks. The string preserves integer precision.
+          description: Exact gross usage summed over the invoice's usage lines before credit, excluding add-ons; one USD cent is 1_000_000 microcents. The string preserves integer precision.
         credit_used_ticks:
           type: string
           pattern: ^[0-9]+$
-          description: Exact usage credit summed over the invoice's usage lines before rounding, as a decimal string; one USD cent is 1_000_000 ticks. Issuance does not debit it again.
+          description: Exact usage credit summed over the invoice's usage lines before rounding, as a decimal string; one USD cent is 1_000_000 microcents. Issuance does not debit it again.
         issued_at:
           $ref: '#/components/schemas/ConsumptionTime'
           description: Server-assigned UTC instant of the original invoice issuance, preserved on retries; not the end of the billed month.

@@ -11,9 +11,10 @@ config:
 %% Numbered boxes explain transformations, not services or SQL statement order.
 %% Example: one customer, metric, price version, usage month, and billing month.
 %% All 1_000 events are processed before October closes; no add-ons are included.
-%% The 2-cent starting credit is illustrative; 1 cent = 1_000_000 ticks.
+%% The 2-cent starting credit is illustrative; 1 cent = 1_000_000 microcents.
+%% Existing *_ticks fields store integer microcent amounts.
 %% Group and credit boxes show cumulative results after all events are processed.
-%% Steps 2-4 commit together for each event; credit uses exact ticks.
+%% Steps 2-4 commit together for each event; credit uses exact microcents.
 %% The worker also maintains booked_charge_cents as a running gross projection.
 %% Closing snapshots lines in invoices.snapshot.lines and freezes linked groups.
 flowchart TB
@@ -21,18 +22,18 @@ flowchart TB
         events["1. Store usage events<br/>1_000 events × 1_000 CPU seconds<br/>Total: 1_000_000 resource units"]
     end
 
-    subgraph processing["B. Worker processes each event atomically (1 cent = 1_000_000 ticks)"]
+    subgraph processing["B. Worker processes each event atomically (1 cent = 1_000_000 microcents)"]
         direction LR
-        rating["2. Price each event (Rating)<br/>Consumption-time price: 5 cents per million units<br/>New prices start at midnight UTC on today or later<br/>1_000 units → 5_000 money ticks"]
-        group["3. Accumulate compatible events<br/>(RatedUsageGroup)<br/>After all events: 1_000_000 units<br/>Gross: 5_000_000 ticks = USD 0.05"]
-        credits["4. Apply available usage credit<br/>Starting credit: USD 0.02<br/>Total used: 2_000_000 ticks; left: 0<br/>Final net: 3_000_000 ticks"]
+        rating["2. Price each event (Rating)<br/>Historical rate: 5 cents per million units<br/>Charge in microcents = units × rate<br/>1_000 × 5 = 5_000 microcents"]
+        group["3. Accumulate compatible events<br/>(RatedUsageGroup)<br/>After all events: 1_000_000 units<br/>Gross: 5_000_000 microcents = USD 0.05"]
+        credits["4. Apply available usage credit<br/>Starting credit: USD 0.02<br/>Total used: 2_000_000 microcents; left: 0<br/>Final net: 3_000_000 microcents"]
 
         rating --> group --> credits
     end
 
     subgraph closing["C. An explicit monthly close builds and freezes the invoice"]
         direction LR
-        rounding["5. Round group totals to cents<br/>Gross: 5_000_000 ticks → 5 cents<br/>Net: 3_000_000 ticks → 3 cents<br/>Displayed credit: 5 − 3 = 2 cents"]
+        rounding["5. Round group totals to cents<br/>Gross: 5_000_000 microcents → 5 cents<br/>Net: 3_000_000 microcents → 3 cents<br/>Displayed credit: 5 − 3 = 2 cents"]
         lines["6. Build invoice lines<br/>(InvoiceLine snapshots)<br/>Usage: +USD 0.05<br/>Credit: −USD 0.02"]
         invoice["7. Issue one monthly invoice<br/>Add buyer details and invoice number<br/>Total payable: USD 0.03<br/>Issued values are immutable"]
 

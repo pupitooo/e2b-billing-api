@@ -45,7 +45,7 @@ export const inspectionViews = [
   {
     id: "credit",
     title: "Credit ledger",
-    description: "Grant and debit audit trail in exact ticks.",
+    description: "Grant and debit audit trail in exact microcents.",
   },
   {
     id: "addons",

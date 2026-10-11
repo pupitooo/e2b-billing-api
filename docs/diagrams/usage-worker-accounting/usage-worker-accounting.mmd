@@ -15,6 +15,7 @@ config:
 %% Missing valid prices commit a P0 catalog incident before operational reporting.
 %% Bold numbered titles identify activities. Other lines describe rules or results.
 %% The numbers show logical activities, not separate transactions or SQL statements.
+%% Money amounts in *_ticks fields are microcents; 1 cent = 1_000_000 microcents.
 flowchart TB
     select["<b>1. Select one pending receipt</b><br/>Table: usage_inbox<br/>Filter: processed_at IS NULL; processing_error IS NULL<br/>Order: received_at, source, event_id"]
     idle["<b>Return no work</b><br/>Reason: no pending receipt"]
@@ -28,17 +29,17 @@ flowchart TB
         validation["<b>6. Validate the usage event</b><br/>Rules: supported schema, valid fields and interval"]
         usageMonth["<b>7. Determine usage_month</b><br/>Output: original UTC consumption month<br/>Rule: the interval fits within one month"]
         price["<b>8. Select the historical price</b><br/>Time: consumption, not receipt<br/>Priority: eligible customer override, then default<br/>Rule: one applicable price for the whole interval"]
-        charge["<b>9. Calculate the exact gross charge</b><br/>Output: money ticks before credit"]
+        charge["<b>9. Calculate the exact gross charge</b><br/>Formula: units × price_per_million_cents<br/>Output: microcents before credit"]
         closures["<b>10. Read unavailable billing months</b><br/>Input: committed closed_billing_months under the account lock<br/>Rule: no writes can re-enter a closed billing month"]
         routing["<b>11. Determine billing_month</b><br/>Keep original month only when no same or later month is closed<br/>Otherwise bill after the latest closure and at or after receipt month"]
         key["<b>12. Build the stable group key</b><br/>Key fields: customer_id, price_version_id,<br/>usage_month, billing_month"]
-        credit["<b>13. Allocate available credit</b><br/>Precision: exact ticks for this new charge<br/>Output: used credit and remaining balance"]
-        cumulative["<b>14. Calculate cumulative group gross</b><br/>Formula: stored gross ticks + new gross ticks"]
+        credit["<b>13. Allocate available credit</b><br/>Precision: exact microcents for this new charge<br/>Output: used credit and remaining balance"]
+        cumulative["<b>14. Calculate cumulative group gross</b><br/>Formula: stored gross microcents + new gross microcents"]
         rounding["<b>15. Round cumulative group gross to cents</b><br/>Rule: half-up<br/>Output: booked_charge_cents"]
-        group["<b>16. Store the group totals</b><br/>Table: rated_usage_groups<br/>Amounts: total units, gross ticks, allocated credit ticks, gross cents"]
+        group["<b>16. Store the group totals</b><br/>Table: rated_usage_groups<br/>Amounts: total units, gross microcents, allocated credit microcents, gross cents"]
         link["<b>17. Link the receipt to its group</b><br/>Table: usage_ratings<br/>Identity: source, event_id"]
         debit["<b>18. Record the credit debit</b><br/>Table: credit_entries<br/>Condition: used credit is nonzero"]
-        monthly["<b>19. Add gross to original-month usage</b><br/>Table: monthly_usage<br/>Month: usage_month; amount: gross ticks"]
+        monthly["<b>19. Add gross to original-month usage</b><br/>Table: monthly_usage<br/>Month: usage_month; amount: gross microcents"]
         balance["<b>20. Update the customer account</b><br/>Table: customer_billing_state<br/>Values: remaining credit, incremented state_version"]
         complete["<b>21. Mark the receipt processed</b><br/>Table: usage_inbox<br/>Field: processed_at"]
         commit["<b>22. Commit the transaction</b><br/>Result: all financial writes and receipt completion are durable together"]
