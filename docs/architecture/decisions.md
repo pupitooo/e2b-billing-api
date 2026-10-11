@@ -4,6 +4,9 @@
 
 These decisions describe the current implementation. Assignment requirements and implementation assumptions are distinguished in [the financial rules](accounting-rules.md); the trade-offs below do not imply measured production capacity.
 
+The [limitations register](limitations.md) makes delayed visibility, deferred
+invoicing, and rounding effects explicit, with measurement and mitigation plans.
+
 - **Use PostgreSQL for durable input and accounting.** Exact integer-valued `numeric`, row-level locks, and a partial index containing only pending inbox rows fit this billing model. Unlike [SQLite's single concurrent writer](https://www.sqlite.org/lang_transaction.html), PostgreSQL permits concurrent writes to different customer rows; its [unconstrained `numeric`](https://www.postgresql.org/docs/18/datatype-numeric.html#DATATYPE-NUMERIC-DECIMAL) also has a wider precision range than [MySQL `DECIMAL`](https://dev.mysql.com/doc/refman/8.4/en/precision-math-decimal-characteristics.html). Ingestion and accounting share database resources.
 
 - **Separate customer identity from billing state.** `customers` holds profile data; `customer_billing_state` holds the mutable financial account. Financial writers select the account by `customer_id` with `FOR UPDATE`, leaving ordinary profile updates independent of that row lock. At [READ COMMITTED](https://www.postgresql.org/docs/18/transaction-iso.html#XACT-READ-COMMITTED), a waiting writer rechecks `WHERE` against the committed row and reads the updated balance when the customer still matches. `state_version` is incremented with financial effects as a revision counter; it is not a lock filter. Separate tables require occasional joins and account creation alongside the customer: the PK/FK guarantees at most one account, not that every customer has one.

@@ -13,6 +13,7 @@ for this searchable portal; its guides also remain readable in the repository.
 | Run tests | [Tests](guides/testing.md) |
 | Send an API request | [API reference](/reference/) with the embedded request client |
 | Understand the billing flow | [Usage to invoice](architecture/usage-to-invoice.md) |
+| Review limitations and investigation plans | [Limitations](architecture/limitations.md) |
 
 ## Browse by topic
 
@@ -27,7 +28,7 @@ These categories and page names match the navigation menu.
 | Simulator | [Transport scenarios](simulator/transport-scenarios.md), [Billing scenarios](simulator/billing-scenarios.md), [Scenario format](simulator/scenario-style.md) |
 | Testing | [Tests](guides/testing.md), [Test quality](guides/test-mutation-audit.md), [Acceptance](guides/final-acceptance-testing.md) |
 | Development | [Conventions](guides/development.md), [Documentation](guides/documentation.md) |
-| Architecture | [Overview](architecture/submission-overview.md), [System contracts](architecture/system-contracts.md), [Decisions](architecture/decisions.md), [Design options](brainstorming/architecture-options.md), [Invoice scheduling proposals](brainstorming/invoice-scheduling.md), [Capacity](architecture/capacity-and-measurements.md), [Diagrams](diagrams/index.md), [Components](diagrams/option-c-components/README.md) |
+| Architecture | [Overview](architecture/submission-overview.md), [System contracts](architecture/system-contracts.md), [Limitations](architecture/limitations.md), [Decisions](architecture/decisions.md), [Design options](brainstorming/architecture-options.md), [Invoice scheduling proposals](brainstorming/invoice-scheduling.md), [Capacity](architecture/capacity-and-measurements.md), [Diagrams](diagrams/index.md), [Components](diagrams/option-c-components/README.md) |
 
 Use the [isolated assignment setup](simulator/billing-scenarios.md#start-an-isolated-assignment-environment)
 to reproduce billing scenarios without changing development accounts.

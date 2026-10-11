@@ -68,6 +68,7 @@ nav:
   - Architecture:
       - Overview: architecture/submission-overview.md
       - System contracts: architecture/system-contracts.md
+      - Limitations: architecture/limitations.md
       - Decisions: architecture/decisions.md
       - Design options: brainstorming/architecture-options.md
       - Invoice scheduling proposals: brainstorming/invoice-scheduling.md
