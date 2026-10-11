@@ -10,8 +10,7 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/accounting"
-	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 )
 
@@ -194,8 +193,8 @@ func testProcessingBounds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
 			ctx := context.Background()
-			store := billing.NewStoreWithClock(pool, func() time.Time { return parseBillingTime(t, "2026-10-01T00:00:00Z") })
-			transport := inbox.NewPostgres(pool, time.Second)
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return parseBillingTime(t, "2026-10-01T00:00:00Z") }})
+			transport := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second})
 			price := accounting.PriceVersion{
 				ID: tc.priceVersionID, CustomerID: tc.customerID, Metric: "cpu_seconds",
 				EffectiveFrom: parseBillingTime(t, tc.priceEffectiveFrom), PricePerMillionCents: tc.pricePerMillionCents,

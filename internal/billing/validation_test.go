@@ -116,9 +116,9 @@ func TestValidateTime(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateTime(tc.field, tc.value)
+			err := ValidateTime(tc.field, tc.value)
 			if (err != nil) != tc.wantError {
-				t.Fatalf("validateTime(%q, %s): error=%v; wantError=%t", tc.field, tc.value, err, tc.wantError)
+				t.Fatalf("ValidateTime(%q, %s): error=%v; wantError=%t", tc.field, tc.value, err, tc.wantError)
 			}
 
 			if !tc.wantError {
@@ -127,11 +127,11 @@ func TestValidateTime(t *testing.T) {
 
 			var got *ValidationError
 			if !errors.As(err, &got) {
-				t.Fatalf("validateTime(%q, %s): error=%T; want *ValidationError", tc.field, tc.value, err)
+				t.Fatalf("ValidateTime(%q, %s): error=%T; want *ValidationError", tc.field, tc.value, err)
 			}
 
 			if got.Field != tc.wantField || got.Message != tc.wantMessage {
-				t.Errorf("validateTime(%q, %s): error=%+v; want field=%q message=%q", tc.field, tc.value, got, tc.wantField, tc.wantMessage)
+				t.Errorf("ValidateTime(%q, %s): error=%+v; want field=%q message=%q", tc.field, tc.value, got, tc.wantField, tc.wantMessage)
 			}
 		})
 	}
@@ -158,9 +158,9 @@ func TestValidateCents(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateCents(tc.field, tc.cents, tc.positive)
+			err := ValidateCents(tc.field, tc.cents, tc.positive)
 			if (err != nil) != tc.wantError {
-				t.Fatalf("validateCents(%q, %d, positive=%t): error=%v; wantError=%t", tc.field, tc.cents, tc.positive, err, tc.wantError)
+				t.Fatalf("ValidateCents(%q, %d, positive=%t): error=%v; wantError=%t", tc.field, tc.cents, tc.positive, err, tc.wantError)
 			}
 
 			if !tc.wantError {
@@ -169,11 +169,11 @@ func TestValidateCents(t *testing.T) {
 
 			var got *ValidationError
 			if !errors.As(err, &got) {
-				t.Fatalf("validateCents(%q, %d): error=%T; want *ValidationError", tc.field, tc.cents, err)
+				t.Fatalf("ValidateCents(%q, %d): error=%T; want *ValidationError", tc.field, tc.cents, err)
 			}
 
 			if got.Field != tc.wantField || got.Message != tc.wantMessage {
-				t.Errorf("validateCents(%q, %d): error=%+v; want field=%q message=%q", tc.field, tc.cents, got, tc.wantField, tc.wantMessage)
+				t.Errorf("ValidateCents(%q, %d): error=%+v; want field=%q message=%q", tc.field, tc.cents, got, tc.wantField, tc.wantMessage)
 			}
 		})
 	}

@@ -4,8 +4,10 @@ package inbox_test
 
 import (
 	"context"
+	"e2b/billing-api/internal/postgres"
 	"errors"
 	"testing"
+	"time"
 
 	"e2b/billing-api/internal/billing"
 )
@@ -32,7 +34,7 @@ func TestMonthlyLimitStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
 			ctx := context.Background()
-			store := billing.NewStore(pool)
+			store := newPostgresStore(t, pool, postgres.Config{})
 			if _, err := pool.Exec(ctx, "INSERT INTO monthly_usage VALUES ('cyberdyne','2026-10-01',$1::numeric)", tc.gross); err != nil {
 				t.Fatal(err)
 			}
@@ -52,14 +54,62 @@ func TestMonthlyLimitStatus(t *testing.T) {
 
 // TestSetSpendLimit distinguishes retries from new changes, including returning
 // to a previous amount, and checks conflicts without unintended state changes.
+// Limit-operation timestamps use the shared store clock in UTC microseconds.
 func TestSetSpendLimit(t *testing.T) {
+	t.Run("shared storage clock timestamps limit operation", func(t *testing.T) {
+		scenario := struct {
+			customer       string
+			change         billing.SpendLimitChange
+			clockTime      time.Time
+			wantError      error
+			wantRecordedAt time.Time
+			wantLimit      int64
+			wantVersion    int64
+			wantOperations int
+		}{
+			customer:       "cyberdyne",
+			change:         billing.SpendLimitChange{IdempotencyKey: "clocked-limit", LimitCents: limitValue(1_500)},
+			clockTime:      time.Date(2026, 10, 11, 8, 0, 0, 123_456_789, time.FixedZone("UTC+08", 8*60*60)),
+			wantError:      nil,
+			wantRecordedAt: time.Date(2026, 10, 11, 0, 0, 0, 123_456_000, time.UTC),
+			wantLimit:      1_500, wantVersion: 1, wantOperations: 1,
+		}
+		pool := billingDatabase(t)
+		store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return scenario.clockTime }})
+		ctx := context.Background()
+
+		err := store.SetSpendLimit(ctx, scenario.customer, scenario.change)
+
+		if !errors.Is(err, scenario.wantError) {
+			t.Fatalf("SetSpendLimit(customer=%s, change=%+v, clock=%s): error=%v; want %v", scenario.customer, scenario.change, scenario.clockTime, err, scenario.wantError)
+		}
+
+		var recorded time.Time
+		var limit, version int64
+		var operations int
+		err = pool.QueryRow(ctx, `SELECT o.recorded_at, s.spend_limit_cents, s.state_version,
+   (SELECT count(*) FROM spend_limit_operations WHERE customer_id=$1)
+   FROM spend_limit_operations o JOIN customer_billing_state s USING(customer_id)
+   WHERE o.customer_id=$1 AND o.idempotency_key=$2`, scenario.customer, scenario.change.IdempotencyKey).Scan(&recorded, &limit, &version, &operations)
+		if err != nil {
+			t.Fatalf("Read limit operation(customer=%s, key=%s): %v", scenario.customer, scenario.change.IdempotencyKey, err)
+		}
+
+		if !recorded.Equal(scenario.wantRecordedAt) {
+			t.Errorf("SetSpendLimit(clock=%s): recorded_at=%s; want %s", scenario.clockTime, recorded, scenario.wantRecordedAt)
+		}
+
+		if limit != scenario.wantLimit || version != scenario.wantVersion || operations != scenario.wantOperations {
+			t.Errorf("SetSpendLimit(customer=%s, change=%+v): limit=%d version=%d operations=%d; want %d %d %d", scenario.customer, scenario.change, limit, version, operations, scenario.wantLimit, scenario.wantVersion, scenario.wantOperations)
+		}
+	})
 	t.Run("old replay preserves new limit", func(t *testing.T) {
 		scenario := struct {
 			changes     []billing.SpendLimitChange
 			wantLimit   int64
 			wantVersion int64
 		}{changes: []billing.SpendLimitChange{{IdempotencyKey: "first", LimitCents: limitValue(1500)}, {IdempotencyKey: "raised", LimitCents: limitValue(2000)}, {IdempotencyKey: "first", LimitCents: limitValue(1500)}}, wantLimit: 2000, wantVersion: 2}
-		store := billing.NewStore(billingDatabase(t))
+		store := newPostgresStore(t, billingDatabase(t), postgres.Config{})
 		ctx := context.Background()
 		for _, change := range scenario.changes {
 			if err := store.SetSpendLimit(ctx, "cyberdyne", change); err != nil {
@@ -106,7 +156,7 @@ func TestSetSpendLimit(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
-			store := billing.NewStore(pool)
+			store := newPostgresStore(t, pool, postgres.Config{})
 			ctx := context.Background()
 
 			var actualError error

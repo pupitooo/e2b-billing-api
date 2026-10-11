@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 )
 
 // TestPoolConnectionBudget reserves two real connections, then attempts a
@@ -16,12 +16,12 @@ import (
 // by the caller's deadline, and permit reuse after a checked-out slot is freed.
 func TestOpenPool(t *testing.T) {
 	tt := struct {
-		limits               inbox.PoolLimits
+		limits               postgres.PoolLimits
 		acquireTimeout       time.Duration
 		wantAcquireError     error
 		wantTotalConnections int32
 	}{
-		limits:               inbox.PoolLimits{MaxConns: 2, MinConns: 0},
+		limits:               postgres.PoolLimits{MaxConns: 2, MinConns: 0},
 		acquireTimeout:       30 * time.Millisecond,
 		wantAcquireError:     context.DeadlineExceeded,
 		wantTotalConnections: 2,
@@ -30,7 +30,7 @@ func TestOpenPool(t *testing.T) {
 	admin := testDatabase(t, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	pool, err := inbox.OpenPool(ctx, admin.Config().ConnString(), tt.limits)
+	pool, err := postgres.OpenPool(ctx, admin.Config().ConnString(), tt.limits)
 	if err != nil {
 		t.Fatalf("Open limited pool: %v", err)
 	}

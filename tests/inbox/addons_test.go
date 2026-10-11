@@ -4,6 +4,7 @@ package inbox_test
 
 import (
 	"context"
+	"e2b/billing-api/internal/postgres"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -38,7 +39,7 @@ func TestPurchaseAddon(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
-			store := billing.NewStore(pool)
+			store := newPostgresStore(t, pool, postgres.Config{})
 			ctx := context.Background()
 			if tc.closed != "" {
 				if _, err := pool.Exec(ctx, "INSERT INTO closed_billing_months VALUES ($1,$2,$3)", tc.customer, tc.closed, parseBillingTime(t, "2026-11-01T00:00:00Z")); err != nil {

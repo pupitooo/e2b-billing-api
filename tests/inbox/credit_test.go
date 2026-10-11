@@ -4,6 +4,7 @@ package inbox_test
 
 import (
 	"context"
+	"e2b/billing-api/internal/postgres"
 	"errors"
 	"testing"
 
@@ -33,7 +34,7 @@ func TestGrantCredit(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
-			store := billing.NewStore(pool)
+			store := newPostgresStore(t, pool, postgres.Config{})
 			ctx := context.Background()
 			var actualError error
 			for _, grant := range tc.grants {

@@ -1,70 +1,14 @@
-// Package inbox stores platform measurements before accounting processes them.
-package inbox
+package postgres
 
 import (
 	"context"
+	"e2b/billing-api/internal/usage"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"sort"
 	"time"
-
-	"e2b/billing-api/internal/usage"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// PoolLimits reserves a finite connection budget for one API process.
-type PoolLimits struct {
-	MaxConns int32
-	MinConns int32
-}
-
-// OpenPool establishes PostgreSQL connections with UTC sessions. An empty
-// connection string uses the standard PG environment variables. Migrations
-// remain explicit; the caller owns the returned pool and must close it.
-// An optional limit overrides pool sizes from the connection string.
-func OpenPool(ctx context.Context, connectionString string, limits ...PoolLimits) (*pgxpool.Pool, error) {
-	config, err := pgxpool.ParseConfig(connectionString)
-	if err != nil {
-		return nil, errors.New("invalid PostgreSQL connection configuration")
-	}
-
-	if len(limits) > 1 {
-		return nil, errors.New("only one inbox pool limit may be supplied")
-	}
-
-	if len(limits) == 1 {
-		limit := limits[0]
-		if limit.MaxConns <= 0 || limit.MinConns < 0 || limit.MinConns > limit.MaxConns {
-			return nil, errors.New("inbox pool requires positive maximum connections and minimum between zero and maximum")
-		}
-
-		config.MaxConns, config.MinConns = limit.MaxConns, limit.MinConns
-		// MinIdleConns can also be specified in the DSN and must fit the budget.
-		if config.MinIdleConns > config.MaxConns {
-			return nil, errors.New("pool_min_idle_conns exceeds the inbox connection budget")
-		}
-	}
-
-	config.ConnConfig.RuntimeParams["timezone"] = "UTC"
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("create inbox connection pool: %w", err)
-	}
-
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("connect to inbox database: %w", err)
-	}
-
-	return pool, nil
-}
-
-// Postgres stores complete batches in the existing usage_inbox schema.
-type Postgres struct {
-	pool            *pgxpool.Pool
-	rollbackTimeout time.Duration
-}
 
 // ConflictError identifies a reused measurement key with different content.
 // Receipt time and processing state are not part of measurement identity.
@@ -77,16 +21,10 @@ func (err *ConflictError) Error() string {
 	return fmt.Sprintf("different measurement content for (%q, %q)", err.Source, err.EventID)
 }
 
-// NewPostgres uses the caller's pool without taking ownership of its lifetime.
-// The caller supplies a positive rollback budget independent of request cancellation.
-func NewPostgres(pool *pgxpool.Pool, rollbackTimeout time.Duration) *Postgres {
-	return &Postgres{pool: pool, rollbackTimeout: rollbackTimeout}
-}
-
 // InsertBatch validates values and commits the entire batch or rolls it back.
 // The caller supplies receipt time explicitly; it is normalized to UTC at
 // PostgreSQL precision. Identical retries leave every stored value unchanged.
-func (store *Postgres) InsertBatch(ctx context.Context, events []usage.Event, receivedAt time.Time) error {
+func (store *Store) InsertBatch(ctx context.Context, events []usage.Event, receivedAt time.Time) error {
 	if err := validateInboxBatch(events, receivedAt); err != nil {
 		return err
 	}
@@ -165,13 +103,6 @@ func orderedUniqueEvents(events []usage.Event) ([]usage.Event, error) {
 	}
 
 	return unique, nil
-}
-
-// Cancellation must not prevent cleanup of an already-open transaction.
-func (store *Postgres) rollback(transaction pgx.Tx) {
-	cleanupContext, cancel := context.WithTimeout(context.Background(), store.rollbackTimeout)
-	defer cancel()
-	_ = transaction.Rollback(cleanupContext)
 }
 
 func insertInboxEvent(ctx context.Context, transaction pgx.Tx, event usage.Event, receivedAt time.Time, index int) error {

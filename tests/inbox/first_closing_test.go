@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -48,9 +48,9 @@ func testClosingFirstMonthBoundary(t *testing.T) {
 			if zone != tc.timeZone {
 				t.Fatalf("Closing session timezone=%s; want %s", zone, tc.timeZone)
 			}
-			store := billing.NewStoreWithClock(pool, func() time.Time { return parseBillingTime(t, "2026-12-01T00:00:00Z") })
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return parseBillingTime(t, "2026-12-01T00:00:00Z") }})
 			event := usage.Event{Source: "first-closing", EventID: "one", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox", Metric: "cpu_seconds", PeriodStart: parseBillingTime(t, tc.start), PeriodEnd: parseBillingTime(t, tc.end), Units: tc.units}
-			if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receivedAt)); err != nil {
+			if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, parseBillingTime(t, tc.receivedAt)); err != nil {
 				t.Fatal(err)
 			}
 

@@ -4,6 +4,8 @@ info:
   version: 0.5.0
   description: |
     Receive sandbox usage, manage prices, credit and spend limits, and issue monthly invoices.
+    All implemented routes are registered together; the API requires storage at startup.
+    Storage failures after startup return the documented retryable responses.
     See the [API guide](/guides/api-reference/) for request and retry rules.
 
     ## API endpoints and callers

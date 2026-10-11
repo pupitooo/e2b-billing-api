@@ -10,8 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/worker"
 )
 
@@ -55,7 +54,7 @@ func run(args []string, getenv func(string) string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	startup, cancel := context.WithTimeout(ctx, cfg.batchTimeout)
-	pool, err := inbox.OpenPool(startup, getenv("DATABASE_URL"), inbox.PoolLimits{MaxConns: workerPoolMaxConns, MinConns: 0})
+	pool, err := postgres.OpenPool(startup, getenv("DATABASE_URL"), postgres.PoolLimits{MaxConns: workerPoolMaxConns, MinConns: 0})
 	cancel()
 	if err != nil {
 		logger.Error("Initialize accounting database", "error", err)
@@ -63,10 +62,16 @@ func run(args []string, getenv func(string) string) int {
 	}
 
 	defer pool.Close()
+	store, err := postgres.NewStore(pool, postgres.Config{})
+	if err != nil {
+		logger.Error("Initialize billing store", "error", err)
+		return 1
+	}
+
 	logger.Info("Starting standalone billing worker", "accounting_enabled", true,
 		"poll_interval", cfg.pollInterval.String(), "batch_timeout", cfg.batchTimeout.String())
 	w := worker.Worker{
-		ProcessBatch:  billing.NewStore(pool).ProcessBatch,
+		ProcessBatch:  store.ProcessBatch,
 		PollInterval:  cfg.pollInterval,
 		BatchTimeout:  cfg.batchTimeout,
 		HeartbeatFile: cfg.heartbeatFile,

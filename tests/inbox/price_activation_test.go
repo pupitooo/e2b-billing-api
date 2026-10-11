@@ -4,6 +4,7 @@ package inbox_test
 
 import (
 	"context"
+	"e2b/billing-api/internal/postgres"
 	"errors"
 	"sync/atomic"
 	"testing"
@@ -53,7 +54,7 @@ func testPriceLockWait(t *testing.T) {
 			}
 			var clock atomic.Value
 			clock.Store(parseBillingTime(t, tc.arrivalTime))
-			store := billing.NewStoreWithClock(writer, func() time.Time { return clock.Load().(time.Time) })
+			store := newPostgresStore(t, writer, postgres.Config{Now: func() time.Time { return clock.Load().(time.Time) }})
 			price := billing.PriceInput{Metric: "cpu_seconds", PricePerMillionCents: 7}
 			if !tc.useCurrentTime {
 				price.EffectiveFrom = parseBillingTime(t, tc.effectiveFrom)

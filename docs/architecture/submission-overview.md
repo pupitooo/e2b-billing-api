@@ -45,3 +45,23 @@ Automatic interval segmentation would require additional measurement detail or a
 For approximately 50_000 customers and billions of monthly measurements, the [scaling proposal](../brainstorming/architecture-options.md#scaling-to-billions-of-records) separates raw receipt, archival/aggregation and transactional finance. It preserves stable identities, price and month boundaries, account ownership and the processed-usage invoice cutoff. Kafka, analytical storage and customer sharding are proposed extensions. Workload calculations and short local samples do not establish production capacity.
 
 Use the [acceptance procedure](../guides/final-acceptance-testing.md) to record one revision's test results, expected invoices, persisted balances and restart behaviour.
+
+## Runtime boundaries
+
+Each API or worker process opens one PostgreSQL pool and constructs one
+[`postgres.Store`](../../internal/postgres/store.go). Its configuration supplies
+one clock and one rollback timeout to receipt ingestion and financial operations.
+The API passes `E2B_API_ROLLBACK_TIMEOUT`; the worker uses the default five-second
+cleanup budget. Rollback uses a context independent of request cancellation.
+Receipt times remain explicitly supplied by the caller.
+
+The HTTP handler requires a complete store at construction. Missing storage is a
+startup error, including a typed nil dependency; all implemented routes are
+registered together. A database failure after startup returns the documented
+retryable response rather than removing routes. Health reports HTTP server
+availability and remains available during a storage outage.
+
+Persistence methods remain grouped by operation in `internal/postgres`. Financial
+inputs, validation, and pure invoice presentation stay in `internal/billing`;
+price selection and exact monetary calculations stay in `internal/accounting`.
+The store preserves the existing receipt and financial transaction boundaries.

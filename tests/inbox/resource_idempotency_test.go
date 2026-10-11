@@ -13,8 +13,7 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/httpapi"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -81,7 +80,7 @@ func testResourceBodyValidation(t *testing.T, endpoint resourceEndpoint) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
-			handler := resourceHandler(pool)
+			handler := resourceHandler(t, pool)
 			body := tc.body
 			if body == "" {
 				body = endpoint.body
@@ -137,7 +136,7 @@ func testResourceDurableReplay(t *testing.T, endpoint resourceEndpoint) {
 	var originalResponse, originalID string
 	for _, step := range steps {
 		t.Run(step.name, func(t *testing.T) {
-			response := financialRequest(t, resourceHandler(pool), http.MethodPost, endpoint.path, step.body, step.key)
+			response := financialRequest(t, resourceHandler(t, pool), http.MethodPost, endpoint.path, step.body, step.key)
 
 			if response.Code != step.wantStatus {
 				t.Fatalf("POST %s key=%q body=%s: HTTP=%d response=%s; want %d", endpoint.path, step.key, step.body, response.Code, response.Body, step.wantStatus)
@@ -212,7 +211,7 @@ func testResourceOperationRollback(t *testing.T, endpoint resourceEndpoint) {
 		t.Fatal(err)
 	}
 
-	response := financialRequest(t, resourceHandler(pool), http.MethodPost, endpoint.path, scenario.body, scenario.key)
+	response := financialRequest(t, resourceHandler(t, pool), http.MethodPost, endpoint.path, scenario.body, scenario.key)
 
 	if response.Code != scenario.wantFailureStatus {
 		t.Fatalf("injected operation failure: HTTP=%d body=%s; want %d", response.Code, response.Body, scenario.wantFailureStatus)
@@ -233,7 +232,7 @@ func testResourceOperationRollback(t *testing.T, endpoint resourceEndpoint) {
 	if _, err := pool.Exec(context.Background(), scenario.recoverySQL); err != nil {
 		t.Fatal(err)
 	}
-	retry := financialRequest(t, resourceHandler(pool), http.MethodPost, endpoint.path, scenario.body, scenario.key)
+	retry := financialRequest(t, resourceHandler(t, pool), http.MethodPost, endpoint.path, scenario.body, scenario.key)
 
 	if retry.Code != scenario.wantRetryStatus {
 		t.Fatalf("retry after rollback: HTTP=%d body=%s; want %d", retry.Code, retry.Body, scenario.wantRetryStatus)
@@ -258,7 +257,7 @@ func testResourceConcurrentRequests(t *testing.T, endpoint resourceEndpoint) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool := billingDatabase(t)
-			handler := resourceHandler(pool)
+			handler := resourceHandler(t, pool)
 			type observed struct {
 				status int
 				body   string
@@ -320,9 +319,10 @@ func testResourceConcurrentRequests(t *testing.T, endpoint resourceEndpoint) {
 
 // resourceHandler wires the real router to the caller's private schema and a
 // fixed insertion clock; rebuilding it cannot retain any in-memory request keys.
-func resourceHandler(pool *pgxpool.Pool) http.Handler {
-	return httpapi.NewHandler(inbox.NewPostgres(pool, time.Second), 5*time.Second, 8,
-		billing.NewStoreWithClock(pool, func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) }))
+func resourceHandler(t testing.TB, pool *pgxpool.Pool) http.Handler {
+	t.Helper()
+
+	return newBillingHandler(t, newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) }}), 5*time.Second, 8)
 }
 
 // assertResourceState checks committed resources, durable keys, and independent
@@ -374,7 +374,7 @@ func testResourceKeyScopes(t *testing.T) {
 	pool := billingDatabase(t)
 	seen := map[string]bool{}
 	for _, step := range scenario.steps {
-		response := financialRequest(t, resourceHandler(pool), http.MethodPost, step.path, step.body, scenario.key)
+		response := financialRequest(t, resourceHandler(t, pool), http.MethodPost, step.path, step.body, scenario.key)
 		if response.Code != step.wantStatus {
 			t.Fatalf("POST %s key=%q: HTTP=%d body=%s; want %d", step.path, scenario.key, response.Code, response.Body, step.wantStatus)
 		}
@@ -412,7 +412,7 @@ func testAddonReplayAfterClosing(t *testing.T) {
 		invoiceMonth:     "2026-10", wantInvoiceCents: 2000, wantMonthlyPrice: 2000,
 		wantState: resourceState{prices: 3, subscriptions: 1, operations: 1, stateVersion: 2, creditTicks: "0"}}
 	pool := billingDatabase(t)
-	store := billing.NewStoreWithClock(pool, func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) })
+	store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC) }})
 	original, err := store.PurchaseAddon(context.Background(), scenario.customer, scenario.key, scenario.purchase)
 	if err != nil {
 		t.Fatal(err)
@@ -428,7 +428,7 @@ func testAddonReplayAfterClosing(t *testing.T) {
 		t.Errorf("invoice total=%d; want %d", invoice.TotalCents, scenario.wantInvoiceCents)
 	}
 
-	replay, err := billing.NewStore(pool).PurchaseAddon(context.Background(), scenario.customer, scenario.key, scenario.purchase)
+	replay, err := newPostgresStore(t, pool, postgres.Config{}).PurchaseAddon(context.Background(), scenario.customer, scenario.key, scenario.purchase)
 
 	if err != nil {
 		t.Fatal(err)

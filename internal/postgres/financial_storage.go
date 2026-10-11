@@ -1,5 +1,4 @@
-// Package billing persists financial effects under one lock per customer.
-package billing
+package postgres
 
 import (
 	"context"
@@ -8,66 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"time"
 
 	"e2b/billing-api/internal/accounting"
+	"e2b/billing-api/internal/billing"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
-	transactionRollbackTimeout = 5 * time.Second
-	decimalRadix               = 10
+	decimalRadix = 10
 
 	// The namespace is shared with migrations; this key identifies catalog access.
 	catalogLockNamespace = 65_102
 	catalogLockKey       = 2
 )
-
-var (
-	ErrNotFound = errors.New("billing resource not found")
-	ErrConflict = errors.New("operation conflicts with financial history")
-)
-
-// Store borrows its pool; the process owner controls the pool's lifetime.
-type Store struct {
-	pool *pgxpool.Pool
-	now  func() time.Time
-}
-
-// NewStore uses the real server clock for price activation and invoice timestamps.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return NewStoreWithClock(pool, time.Now)
-}
-
-// NewStoreWithClock makes price insertion and invoice time explicit in tests.
-// Production callers use NewStore; HTTP requests never supply the clock.
-func NewStoreWithClock(pool *pgxpool.Pool, now func() time.Time) *Store {
-	return &Store{pool: pool, now: now}
-}
-
-// transact guarantees durable commit and cleanup independent of cancellation.
-func (s *Store) transact(ctx context.Context, action func(pgx.Tx) error) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), transactionRollbackTimeout)
-		defer cancel()
-		_ = tx.Rollback(cleanup)
-	}()
-	if _, err := tx.Exec(ctx, "SET LOCAL synchronous_commit = on"); err != nil {
-		return err
-	}
-
-	if err := action(tx); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
-}
 
 // lockAccount precedes receipt locks and every mutable financial read.
 func lockAccount(ctx context.Context, tx pgx.Tx, customer string) (accounting.Amount, error) {
@@ -75,7 +27,7 @@ func lockAccount(ctx context.Context, tx pgx.Tx, customer string) (accounting.Am
 	err := tx.QueryRow(ctx, `SELECT credit_balance_ticks::text FROM customer_billing_state
         WHERE customer_id=$1 FOR UPDATE`, customer).Scan(&ticks)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return accounting.Amount{}, ErrNotFound
+		return accounting.Amount{}, billing.ErrNotFound
 	}
 
 	if err != nil {

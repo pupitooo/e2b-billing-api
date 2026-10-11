@@ -1,16 +1,17 @@
-package billing
+package postgres
 
 import (
 	"context"
 	"encoding/json"
 	"time"
 
+	"e2b/billing-api/internal/billing"
 	"github.com/jackc/pgx/v5"
 )
 
 // freezeInvoice publishes the snapshot, group freeze, closure, sequence, and
 // version together. Issuance never consumes credit a second time.
-func freezeInvoice(ctx context.Context, tx pgx.Tx, invoice Invoice, month time.Time) error {
+func freezeInvoice(ctx context.Context, tx pgx.Tx, invoice billing.Invoice, month time.Time) error {
 	encoded, err := json.Marshal(invoice)
 	if err != nil {
 		return err

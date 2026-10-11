@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -122,8 +122,8 @@ func testAccountingGroupIdentities(t *testing.T) {
 			if _, err := pool.Exec(ctx, tc.setupSQL); err != nil {
 				t.Fatal(err)
 			}
-			producer := inbox.NewPostgres(pool, time.Second)
-			store := billing.NewStore(pool)
+			producer := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second})
+			store := newPostgresStore(t, pool, postgres.Config{})
 
 			for _, step := range tc.steps {
 				event := usage.Event{Source: "identity-test", EventID: step.eventID, SchemaVersion: 1, CustomerID: step.customer,
@@ -177,7 +177,7 @@ func testAccountingIdentityConcurrency(t *testing.T) {
 			SandboxID: "sandbox", Metric: "cpu_seconds", Units: input.units,
 			PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, "2026-10-10T13:00:00Z")}
 	}
-	producer := inbox.NewPostgres(pool, time.Second)
+	producer := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second})
 	if err := producer.InsertBatch(ctx, events, parseBillingTime(t, "2026-10-10T13:00:00Z")); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func testAccountingIdentityConcurrency(t *testing.T) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			store := billing.NewStore(pool)
+			store := newPostgresStore(t, pool, postgres.Config{})
 			for {
 				processed, err := store.ProcessBatch(ctx)
 				if err != nil || !processed {
@@ -208,7 +208,7 @@ func testAccountingIdentityConcurrency(t *testing.T) {
 	if err := producer.InsertBatch(ctx, events, parseBillingTime(t, "2026-10-11T00:00:00Z")); err != nil {
 		t.Fatal(err)
 	}
-	processed, err := billing.NewStore(pool).ProcessBatch(ctx)
+	processed, err := newPostgresStore(t, pool, postgres.Config{}).ProcessBatch(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,11 +260,11 @@ func testAccountingSequenceExhaustion(t *testing.T) {
 			}
 			event := usage.Event{Source: "exhaustion", EventID: "one", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox",
 				Metric: "cpu_seconds", Units: 60_000, PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, "2026-10-10T13:00:00Z")}
-			if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
+			if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
 				t.Fatal(err)
 			}
 
-			_, err := billing.NewStore(pool).ProcessBatch(ctx)
+			_, err := newPostgresStore(t, pool, postgres.Config{}).ProcessBatch(ctx)
 
 			if (err != nil) != tc.wantError {
 				t.Fatalf("ProcessBatch with %s: error=%v; wantError=%t", tc.sequenceSQL, err, tc.wantError)
@@ -311,10 +311,10 @@ func testAccountingIdentityRollback(t *testing.T) {
 	}
 	event := usage.Event{Source: "identity-rollback", EventID: "one", SchemaVersion: 1, CustomerID: "acme", SandboxID: "sandbox",
 		Metric: "cpu_seconds", Units: 60_000, PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, "2026-10-10T13:00:00Z")}
-	if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
+	if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
 		t.Fatal(err)
 	}
-	store := billing.NewStore(pool)
+	store := newPostgresStore(t, pool, postgres.Config{})
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -399,7 +399,7 @@ func testCreditEntryIdentities(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			store := billing.NewStore(pool)
+			store := newPostgresStore(t, pool, postgres.Config{})
 
 			for _, step := range tc.steps {
 				err := store.GrantCredit(ctx, step.customer, billing.CreditGrant{IdempotencyKey: step.key, AmountCents: step.cents,

@@ -28,7 +28,7 @@ func TestAssembleInvoice(t *testing.T) {
 		month            string
 		header           Invoice
 		usage            []invoiceUsageFixture
-		addons           []invoiceAddon
+		addons           []InvoiceAddon
 		wantInvoice      Invoice
 		wantError        bool
 		wantErrorMessage string
@@ -63,7 +63,7 @@ func TestAssembleInvoice(t *testing.T) {
 					creditTicks:    "400000000",
 				},
 			},
-			addons: []invoiceAddon{{SubscriptionID: "pack", Name: "concurrency_pack", PriceCents: 2_000}},
+			addons: []InvoiceAddon{{SubscriptionID: "pack", Name: "concurrency_pack", PriceCents: 2_000}},
 			wantInvoice: Invoice{
 				CustomerID: "acme", Number: "ACME-0002", Month: "2026-11",
 				Lines: []InvoiceLine{
@@ -180,30 +180,30 @@ func TestAssembleInvoice(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			charges := invoiceCharges{Addons: tc.addons}
+			charges := InvoiceCharges{Addons: tc.addons}
 			for _, fixture := range tc.usage {
 				charges.Usage = append(charges.Usage, invoiceUsageInput(t, fixture))
 			}
 
-			got, err := assembleInvoice(tc.header, invoiceMonthInput(t, tc.month), charges)
+			got, err := AssembleInvoice(tc.header, invoiceMonthInput(t, tc.month), charges)
 			if tc.wantError {
 				if err == nil {
-					t.Fatalf("assembleInvoice(%s, %+v) error = nil; want %q", tc.month, tc.usage, tc.wantErrorMessage)
+					t.Fatalf("AssembleInvoice(%s, %+v) error = nil; want %q", tc.month, tc.usage, tc.wantErrorMessage)
 				}
 
 				if err.Error() != tc.wantErrorMessage {
-					t.Errorf("assembleInvoice(%s, %+v) error = %q; want %q", tc.month, tc.usage, err, tc.wantErrorMessage)
+					t.Errorf("AssembleInvoice(%s, %+v) error = %q; want %q", tc.month, tc.usage, err, tc.wantErrorMessage)
 				}
 
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("assembleInvoice(%s, %+v) error = %v; want nil", tc.month, tc.usage, err)
+				t.Fatalf("AssembleInvoice(%s, %+v) error = %v; want nil", tc.month, tc.usage, err)
 			}
 
 			if !reflect.DeepEqual(got, tc.wantInvoice) {
-				t.Errorf("assembleInvoice(%s, usage=%+v, addons=%+v) = %+v; want %+v", tc.month, tc.usage, tc.addons, got, tc.wantInvoice)
+				t.Errorf("AssembleInvoice(%s, usage=%+v, addons=%+v) = %+v; want %+v", tc.month, tc.usage, tc.addons, got, tc.wantInvoice)
 			}
 		})
 	}
@@ -273,10 +273,10 @@ func TestInvoiceTotal(t *testing.T) {
 
 // invoiceUsageInput decodes literal input ticks and months for the pure invoice
 // builder. It performs no rating, allocation, rounding, or expected-value calculation.
-func invoiceUsageInput(t *testing.T, fixture invoiceUsageFixture) invoiceUsage {
+func invoiceUsageInput(t *testing.T, fixture invoiceUsageFixture) InvoiceUsage {
 	t.Helper()
 
-	return invoiceUsage{
+	return InvoiceUsage{
 		PriceVersionID: fixture.priceVersionID, Metric: fixture.metric,
 		UsageMonth: invoiceMonthInput(t, fixture.usageMonth), Units: fixture.units,
 		Gross: invoiceTicksInput(t, fixture.grossTicks), Credit: invoiceTicksInput(t, fixture.creditTicks),

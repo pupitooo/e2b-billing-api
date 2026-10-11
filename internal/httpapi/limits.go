@@ -7,15 +7,24 @@ import (
 	"e2b/billing-api/internal/billing"
 )
 
-func registerLimitRoutes(mux *http.ServeMux, store *billing.Store, timeout time.Duration) {
+func registerLimitRoutes(mux *http.ServeMux, store Store, timeout time.Duration) {
 	mux.HandleFunc("POST /customers/{customer_id}/spend-limit", func(w http.ResponseWriter, r *http.Request) {
+		requiredFields := []string{
+			"idempotency_key",
+			"limit_cents",
+		}
+		nullableFields := []string{
+			"limit_cents",
+		}
+
 		var change billing.SpendLimitChange
-		if !commandJSON(w, r, &change, []string{"idempotency_key", "limit_cents"}, "limit_cents") {
+		if !commandJSON(w, r, &change, requiredFields, nullableFields...) {
 			return
 		}
 
 		ctx, cancel := financialContext(r, timeout)
 		defer cancel()
+
 		err := store.SetSpendLimit(ctx, r.PathValue("customer_id"), change)
 		financialResult(w, change, err)
 	})
@@ -27,6 +36,7 @@ func registerLimitRoutes(mux *http.ServeMux, store *billing.Store, timeout time.
 
 		ctx, cancel := financialContext(r, timeout)
 		defer cancel()
+
 		result, err := store.MonthlyLimitStatus(ctx, r.PathValue("customer_id"), month)
 		financialResult(w, result, err)
 	}

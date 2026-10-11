@@ -71,7 +71,7 @@ func testCommandBodyKeys(t *testing.T, endpoint commandKeyEndpoint) {
 			}
 			response := httptest.NewRecorder()
 
-			resourceHandler(pool).ServeHTTP(response, request)
+			resourceHandler(t, pool).ServeHTTP(response, request)
 
 			if response.Code != tc.wantStatus {
 				t.Fatalf("POST %s(%s) HTTP=%d body=%s; want %d", endpoint.path, body, response.Code, response.Body, tc.wantStatus)

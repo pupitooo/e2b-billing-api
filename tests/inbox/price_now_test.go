@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"e2b/billing-api/internal/billing"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 	"e2b/billing-api/internal/usage"
 )
 
@@ -45,10 +45,10 @@ func TestCreatePriceNow(t *testing.T) {
 			pool := billingDatabase(t)
 			ctx := context.Background()
 			serverTime := parseBillingTime(t, tc.serverTime)
-			store := billing.NewStoreWithClock(pool, func() time.Time { return serverTime })
+			store := newPostgresStore(t, pool, postgres.Config{Now: func() time.Time { return serverTime }})
 			if tc.existingUsage {
 				event := usage.Event{Source: "history", EventID: "one", SchemaVersion: 1, CustomerID: "cyberdyne", SandboxID: "sandbox", Metric: "cpu_seconds", PeriodStart: parseBillingTime(t, "2026-10-10T12:00:00Z"), PeriodEnd: parseBillingTime(t, "2026-10-10T13:00:00Z"), Units: 123_456_789}
-				if err := inbox.NewPostgres(pool, time.Second).InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
+				if err := newPostgresStore(t, pool, postgres.Config{RollbackTimeout: time.Second}).InsertBatch(ctx, []usage.Event{event}, event.PeriodEnd); err != nil {
 					t.Fatal(err)
 				}
 				if _, err := store.ProcessBatch(ctx); err != nil {

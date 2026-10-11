@@ -12,9 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"e2b/billing-api/internal/billing"
 	"e2b/billing-api/internal/httpapi"
-	"e2b/billing-api/internal/inbox"
+	"e2b/billing-api/internal/postgres"
 )
 
 func main() {
@@ -34,7 +33,7 @@ func run(getenv func(string) string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	startup, cancel := context.WithTimeout(ctx, cfg.startupTimeout)
-	pool, err := inbox.OpenPool(startup, getenv("DATABASE_URL"), inbox.PoolLimits{
+	pool, err := postgres.OpenPool(startup, getenv("DATABASE_URL"), postgres.PoolLimits{
 		MaxConns: cfg.poolMaxConns, MinConns: cfg.poolMinConns,
 	})
 	cancel()
@@ -43,17 +42,31 @@ func run(getenv func(string) string) error {
 			return nil
 		}
 
-		return fmt.Errorf("initialize inbox: %w", err)
+		return fmt.Errorf("initialize PostgreSQL: %w", err)
 	}
 
 	defer func() {
 		pool.Close()
-		log.Print("Inbox database pool closed")
+		log.Print("PostgreSQL pool closed")
 	}()
+
+	store, err := postgres.NewStore(pool, postgres.Config{RollbackTimeout: cfg.rollbackTimeout})
+	if err != nil {
+		return fmt.Errorf("initialize billing store: %w", err)
+	}
+
+	handler, err := httpapi.NewHandler(
+		store,
+		cfg.ingestionTimeout,
+		int(cfg.maxInFlight),
+	)
+	if err != nil {
+		return fmt.Errorf("initialize HTTP handler: %w", err)
+	}
 
 	server := &http.Server{
 		Addr:              ":8080",
-		Handler:           httpapi.NewHandler(inbox.NewPostgres(pool, cfg.rollbackTimeout), cfg.ingestionTimeout, int(cfg.maxInFlight), billing.NewStore(pool)),
+		Handler:           handler,
 		ReadHeaderTimeout: cfg.readHeaderTimeout,
 		ReadTimeout:       cfg.readTimeout,
 		WriteTimeout:      cfg.writeTimeout,

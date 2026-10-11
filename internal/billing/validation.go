@@ -26,7 +26,8 @@ func ValidateIdentifier(field, value string) error {
 	return nil
 }
 
-func validateTime(field string, value time.Time) error {
+// ValidateTime enforces supported UTC years and PostgreSQL timestamp precision.
+func ValidateTime(field string, value time.Time) error {
 	if _, err := accounting.UTCMonth(value); err != nil {
 		return &ValidationError{Field: field, Message: err.Error()}
 	}
@@ -38,7 +39,8 @@ func validateTime(field string, value time.Time) error {
 	return nil
 }
 
-func validateCents(field string, value int64, positive bool) error {
+// ValidateCents accepts nonnegative prices and limits, and positive credit grants.
+func ValidateCents(field string, value int64, positive bool) error {
 	if value < 0 || (positive && value == 0) {
 		return &ValidationError{Field: field, Message: fmt.Sprintf("Invalid cents: %d.", value)}
 	}
