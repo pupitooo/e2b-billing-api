@@ -19,12 +19,6 @@ uniqueness and separate limit history with shared API command history. This audi
 remains evidence for its stated baseline; the retired ledger constraint mutation
 is historical, and a new mutation audit has not been run for the revised schema.
 
-The batch envelope accepts only `events`. Mutation M024 targets the removed
-batch metadata validator and is retired; its recorded result is retained as audit
-evidence, not coverage of an implemented rule. Current HTTP regressions verify
-rejection of the removed property before storage and zero persisted events, while
-event identifier byte limits and duplicate `events` members remain covered.
-
 | Layer | Distinct mutations | Before regression additions | After regression additions |
 | --- | --- | --- | --- |
 | Go | 114 | 69 assertion failures, 6 suite timeouts, 39 survivors | 108 assertion failures; 6 equivalent survivors |
@@ -62,7 +56,7 @@ constraints and every concurrency interleaving were not exhaustively mutated.
 | Calendar routing | Routing late November usage into December of year 9999 had no adjacent valid test. | Literal December result in the domain and a real processor scenario checking every financial projection; existing exhaustion/quarantine cases remain. |
 | Financial validation | Direct tests covered identifier size but omitted malformed Unicode, blank/NUL identifiers, timestamp precision and zero-versus-positive cents. | Exact validation fields/messages, valid offset/year neighbors, zero price/limit and rejected zero grant. |
 | Invoice addition | Rejecting the valid maximum sum could pass, as could rejecting the valid negative minimum in the signed helper. | Both inclusive limits and their immediately overflowing neighbors. |
-| Usage HTTP | Unicode surrogate endpoints needed explicit coverage; M024's envelope metadata size rule has been removed. | Event identifiers retain ASCII/Unicode 256-byte boundary coverage, valid endpoint pairs, and rejected unpaired endpoint escapes. Removed envelope metadata is rejected before storage. |
+| Usage HTTP | Exact batch identifier size and Unicode surrogate endpoints were missing. | ASCII/Unicode 256-byte acceptance, valid endpoint pairs, and rejected unpaired endpoint escapes. |
 | Simulator transport | Some configuration endpoints, HTTP 500, non-JSON acknowledgements, a single duplicate copy and exact body/file/response limits were missing. | Named direct scenarios, literal byte counts and transmission counts; the exact one-MiB batch uses valid identifiers. |
 | Worker validation | Missing guards could hang invalid-configuration cases until the package timeout. | Local cancellation budgets preserve processor/heartbeat checks and yield immediate test failures for the same mutations. |
 | SQL integrity | Removing positive schema-version, positive invoice-sequence, nonnegative invoice-total or object-snapshot checks survived all SQL files. | Named SQL with expected `23514`, plus adjacent valid values and rolled-back fixtures. |

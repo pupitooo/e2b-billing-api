@@ -487,7 +487,6 @@
     },
     {
       "id": "M024",
-      "currentApplicability": "Retired: the batch metadata field and its validator have been removed. Recorded mutation results are retained as audit evidence; current tests reject the extra property before storage.",
       "layer": "unit",
       "source": "internal/httpapi/batches.go",
       "lineAtBaseline": 117,

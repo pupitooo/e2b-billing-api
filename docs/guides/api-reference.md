@@ -39,9 +39,8 @@ A batch commits atomically. Keep `(source, event_id)` and measurement content
 unchanged across retries and batch boundaries, including duplicate identities
 within a batch. Timestamp offsets representing the same instant are equivalent.
 Identical retries preserve receipt and accounting state; changed content returns
-`409` without accepting any new events. The request envelope contains only
-`events`; additional fields return `400` without storing any events.
-`202` confirms durable receipt; accounting runs asynchronously.
+`409` without accepting any new events. Optional `batch_id` is not stored or used
+for deduplication. `202` confirms durable receipt; accounting runs asynchronously.
 
 After `503` or a lost response, the commit outcome may be unknown: retain the
 batch and retry unchanged events with backoff, observing `Retry-After` when present.
