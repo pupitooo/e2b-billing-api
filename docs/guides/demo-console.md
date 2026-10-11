@@ -79,6 +79,10 @@ form. Both **Issue invoice** and **Load invoice** use the month currently entere
 in that form and the selected customer. Editing the form month lets you issue
 and then load the same snapshot without also changing the header. To inspect
 that month's database records, select it in the header as well.
+While the request is in flight, **Load invoice** changes to **Loading…** and is
+disabled. A message beside the controls confirms the loaded invoice number and
+month, or shows a failure. Loading an already displayed invoice keeps the same
+immutable document; the confirmation makes a successful refresh visible.
 
 ## Retries and browser state
 
