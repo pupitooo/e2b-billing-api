@@ -27,14 +27,15 @@ These categories and page names match the navigation menu.
 | Simulator | [Transport scenarios](simulator/transport-scenarios.md), [Billing scenarios](simulator/billing-scenarios.md), [Scenario format](simulator/scenario-style.md) |
 | Testing | [Tests](guides/testing.md), [Test quality](guides/test-mutation-audit.md), [Acceptance](guides/final-acceptance-testing.md) |
 | Development | [Conventions](guides/development.md), [Documentation](guides/documentation.md) |
-| Architecture | [Overview](architecture/submission-overview.md), [Decisions](architecture/decisions.md), [Design options](brainstorming/architecture-options.md), [Invoice scheduling proposals](brainstorming/invoice-scheduling.md), [Capacity](architecture/capacity-and-measurements.md), [Diagrams](diagrams/index.md), [Components](diagrams/option-c-components/README.md) |
+| Architecture | [Overview](architecture/submission-overview.md), [System contracts](architecture/system-contracts.md), [Decisions](architecture/decisions.md), [Design options](brainstorming/architecture-options.md), [Invoice scheduling proposals](brainstorming/invoice-scheduling.md), [Capacity](architecture/capacity-and-measurements.md), [Diagrams](diagrams/index.md), [Components](diagrams/option-c-components/README.md) |
 
 Use the [isolated assignment setup](simulator/billing-scenarios.md#start-an-isolated-assignment-environment)
 to reproduce billing scenarios without changing development accounts.
 The [acceptance overview](guides/final-acceptance-testing.md) links the four parts
 of the complete verification procedure in execution order.
 
-The [root README](../README.md#system-contracts) holds the system contract register.
+The [system contract register](architecture/system-contracts.md) distinguishes
+assignment requirements from implementation policies and links their detailed contracts.
 Design proposals and public-product context do not expand assignment requirements.
 Only explicitly selected public files appear in this portal; ignored assignment
 materials and local working documents remain outside it.

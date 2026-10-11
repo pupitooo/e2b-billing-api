@@ -72,7 +72,8 @@ The [home page](../index.md) uses the same categories and short page names as
 puts basic startup before optional project and port details; operations separate
 database inspection, migrations, configuration, troubleshooting, and recovery.
 Billing separates financial rules, the data model, and the worked usage flow.
-Architecture holds implementation rationale and explicitly labelled proposals.
+Architecture holds the [system contract register](../architecture/system-contracts.md),
+implementation rationale, and explicitly labelled proposals.
 
 The [acceptance overview](final-acceptance-testing.md) links four sequential
 parts. Preserve section numbers, shell variables, helper functions, evidence,
@@ -97,8 +98,10 @@ only while rendering, so the portal does not expose source code or local files.
 OpenAPI source links resolve to `/reference/openapi.yaml` in the portal. Keep
 guide routes outside `/api/`, `/reference/`, `/demo/`, and `/database/`, which are
 reserved for the API, reference, static console, and database browser;
-the build rejects colliding navigation pages. The root README remains the
-operational entry point and contract register.
+the build rejects colliding navigation pages. The root README provides the first
+introduction, quick start, tool overview, and repository entry points. Keep detailed
+contracts, API examples, operating procedures, and development rules in the portal;
+link them from the README rather than copying them there.
 
 For a new guide:
 

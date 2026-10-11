@@ -11,6 +11,7 @@
 !/docs/architecture/usage-to-invoice.md
 !/docs/architecture/accounting-rules.md
 !/docs/architecture/submission-overview.md
+!/docs/architecture/system-contracts.md
 !/docs/guides/
 /docs/guides/*
 !/docs/guides/final-acceptance-testing.md
