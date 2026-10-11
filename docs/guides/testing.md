@@ -75,7 +75,7 @@ E2B_TEST_DATABASE_URL='postgres://e2b:e2b_local_dev@127.0.0.1:5432/e2b_billing?s
 go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
 ```
 
-[CI](../../.github/workflows/ci.yml) runs `make check` before `make test` on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. The required `All tests` check includes Go formatting and static analysis, SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
+[CI](../../.github/workflows/ci.yml) runs `make check` and the complete test gate on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. Separate CI steps identify SQL integrity, unit tests, PostgreSQL workflows, HTTP tests against the running API and worker executable checks. They execute the same suites and order as unfiltered `make test`; integration suites are mandatory. The required `All tests` check includes Go formatting and static analysis, SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
 
 Read the [test-quality and mutation audit](test-mutation-audit.md) for the findings, regression scenarios, exact mutation evidence and a practical workflow for reviewing AI-generated tests.
 
@@ -174,3 +174,25 @@ make inbox-test RUN='^TestBillingSimulatorExecutable$/committed_usage_survives_r
 These process and transport tests establish replay across the tested boundaries.
 They do not simulate disk loss, PostgreSQL crash recovery, every OS signal point,
 or failure of the database host itself.
+
+## Business-rule traceability
+
+Each row connects the assignment or adopted contract to a valid example, its
+boundary/conflict, financial assertions and executable operation test. The
+[assignment walkthrough](acceptance/assignment.md) additionally verifies the
+complete numerical example through the public API and separate executable.
+
+| Requirement / contract | Valid scenario | Boundary or conflict | Financial assertions | Operation / workflow test |
+| --- | --- | --- | --- | --- |
+| Durable incremental usage | New receipt with explicit values | Changed content after a new batch row; identical retries | Complete rollback, original receipt time, one rating and one financial effect | `TestPostgresInsertBatch`; `TestPostUsageBatches`; `TestProcessBatch` |
+| Historical prices and customer overrides | Original October default or eligible customer price | Price activation instant, conflicting retry, negative price beside zero | Exact price identity, units, original month, group and monthly gross | `TestRate`; `TestCreatePrice`; `TestPriceAPI`; `TestProcessBatch` |
+| Credit grants and allocation to usage | Distinct positive grants and partially covered usage | Zero beside one cent, exhausted balance, changed/repeated identity | Ledger equals balance, credit bounds, independent group debits, no second grant | `TestGrantCredit`; `TestCreditAPI`; generated processor sequences |
+| Full recurring add-on fee | First/last purchase day; consecutive October and November invoices | Older add-on without usage; future add-on; both purchase/close lock orders | Exactly one full fee per month, no skipped obligation, unchanged subscription and failed-close state | `TestPurchaseAddon`; `TestAddonAPI`; `TestCloseMonth/add-on_months_cannot_be_skipped`; purchase/closing lock workflow |
+| Gross monthly spend limits | Finite and explicit unlimited configuration | Below/equal threshold, zero/negative limit, UTC month boundary | Stored limit and version, concrete gross/month/reached fields, unchanged failed configuration | `TestLimitReached`; `TestSetSpendLimit`; `TestSpendLimitAPI` |
+| Monthly invoice presentation | Assignment and subcent totals | Group half-cent boundary, upfront partial credit, split increments | Every financial line, unit, price, original month, exact gross/credit and cent sum | `TestInvoiceAmounts`; `TestAssembleInvoice`; `TestCloseMonth`; partitioned processor scenarios |
+| Immutable issued invoices and late usage | October invoice followed by November and late October usage | Retry, pending cutoff and worker/closing lock order | Complete unchanged snapshot/number; late amount routes forward once | `TestCloseMonth`; generated processor sequences; `TestBillingSimulatorExecutable` |
+| Recovery and retries | New producer resumes retained state | Before commit, lost committed reply, process death before checkpoint | No partial write, original key/body/receipt time, one rating, ledger and balance | Command/resource rollback workflows; `TestProcessBatch`; committed usage recovery workflow |
+
+The five focused [business-rule mutations](test-mutation-audit.md#financial-rule-sensitivity)
+prove that concrete tests reject deliberately wrong implementations. Statement
+coverage alone, status-only checks and compiler failures are not that evidence.
