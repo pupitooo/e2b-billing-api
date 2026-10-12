@@ -60,6 +60,29 @@ exercising the same month guard, router, worker, and persistence. The price-vers
 case additionally declares separate insertion times, described below. Requests have no
 clock override.
 
+For a fresh CLI run with a fixed clock, the first command below deletes the
+selected project's existing database and simulator checkpoints:
+
+```sh
+make delorean 2026-11-01
+make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json
+make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json ACTION=status
+```
+
+The simulator completes steps 1–18 and stops at step 19 with HTTP `422` because
+November has not ended. Confirm `completed=18 steps=24` before advancing time:
+
+```sh
+make delorean 2026-12-01 KEEP_TIMELINE=1
+make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json
+```
+
+`KEEP_TIMELINE=1` preserves database history and simulator checkpoints while
+recreating services at the new time. Keep the same Compose project, `SOURCE`, and
+state file so the simulator resumes at step 19 and finishes all 24 steps.
+The command supplies the fixed clock for its invocation; export the same
+`E2B_DEMO_NOW` before any subsequent plain `make up` to retain that clock.
+
 ### Start an isolated assignment environment
 
 Run these commands from the repository root in the same terminal. The example

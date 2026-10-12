@@ -25,7 +25,13 @@ advisory browser UTC; it refreshes metadata without caching. Metadata failure is
 shown as unavailable. HTTP callers cannot set the clock.
 
 Use the [fixed-clock invoice demo](demo-console.md#fixed-clock-invoice-demo) in a
-separate Compose project. To change or remove the setting, stop API and worker,
+separate Compose project. `make delorean 2026-11-01` resets the selected project's
+volumes and starts a fresh demo at midnight UTC; see the
+[DeLorean reset](local-development.md#reset-a-demo-with-delorean) for data deletion
+and environment scope. Add `KEEP_TIMELINE=1` to change the fixed date while
+preserving all project volumes and walkthrough progress; the command stops API
+and worker before recreating services and applying pending migrations.
+For a manual change or removal of the setting, stop API and worker,
 then recreate API, worker and portal with the same environment using `make up`.
 Keep the database and simulator/browser checkpoint. `make restart` alone does
 not apply changed environment variables. Advance time only between finished

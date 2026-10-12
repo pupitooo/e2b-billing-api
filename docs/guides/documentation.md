@@ -74,8 +74,13 @@ The [home page](../index.md) uses the same categories and short page names as
 puts basic startup before optional project and port details; operations separate
 database inspection, migrations, configuration, troubleshooting, and recovery.
 Billing separates financial rules, the data model, and the worked usage flow.
-Architecture holds the [system contract register](../architecture/system-contracts.md),
-implementation rationale, and explicitly labelled proposals.
+Architecture groups contracts under **System contracts**, with
+[Implemented contracts](../architecture/implemented-contracts.md) and
+[Proposed contracts](../architecture/proposed-contracts.md), following the same
+nested navigation as **Testing → Acceptance**. Implementation rationale and
+explicitly labelled design alternatives remain under Architecture. Implemented contracts separate
+assignment requirements, added contracts and refinements. Confirmed requirements
+awaiting implementation remain in the proposed list with their status stated explicitly.
 
 The [acceptance overview](final-acceptance-testing.md) links four sequential
 parts. Preserve section numbers, shell variables, helper functions, evidence,
