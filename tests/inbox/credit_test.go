@@ -15,6 +15,7 @@ import (
 // TestGrantCredit keeps grant steps and final balance beside the scenario. Each
 // private account verifies replay or conflict without changing another case.
 func TestGrantCredit(t *testing.T) {
+	t.Run("worker and grant account lock order", testCreditGrantWorkerOrder)
 	t.Run("sequence IDs and replay", testCreditEntryIdentities)
 	t.Run("server timestamp and replay", testCreditGrantTimestampIdentity)
 	t.Run("server clock boundaries", testCreditServerClock)

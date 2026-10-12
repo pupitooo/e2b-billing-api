@@ -45,9 +45,12 @@ nav:
       - API guide: guides/api-reference.md
       - API reference: /reference/
   - Billing:
+      - Vocabulary: guides/billing-vocabulary.md
       - Financial rules: architecture/accounting-rules.md
       - Data model: architecture/billing-model.md
       - Usage to invoice: architecture/usage-to-invoice.md
+      - Processing sequences: architecture/processing-sequences.md
+      - Concurrency and locking: architecture/concurrency-and-locking.md
       - Invoice creation: diagrams/invoice-issuance/README.md
   - Simulator:
       - Transport scenarios: simulator/transport-scenarios.md
@@ -88,6 +91,52 @@ extra:
     - guides/test-mutation-audit.json
     - guides/business-rule-mutations.json
     - guides/gui-test-regressions.patch
+    - diagrams/locking-maintenance-deadlock/locking-maintenance-deadlock.mmd
+    - diagrams/locking-maintenance-deadlock/locking-maintenance-deadlock.png
+    - diagrams/locking-oldest-customer/locking-oldest-customer.mmd
+    - diagrams/locking-oldest-customer/locking-oldest-customer.png
+    - diagrams/locking-addon-cancel/locking-addon-cancel.mmd
+    - diagrams/locking-addon-cancel/locking-addon-cancel.png
+    - diagrams/locking-addon-purchase/locking-addon-purchase.mmd
+    - diagrams/locking-addon-purchase/locking-addon-purchase.png
+    - diagrams/locking-catalog-repair/locking-catalog-repair.mmd
+    - diagrams/locking-catalog-repair/locking-catalog-repair.png
+    - diagrams/locking-catchup/locking-catchup.mmd
+    - diagrams/locking-catchup/locking-catchup.png
+    - diagrams/locking-command-replay/locking-command-replay.mmd
+    - diagrams/locking-command-replay/locking-command-replay.png
+    - diagrams/locking-credit-rating/locking-credit-rating.mmd
+    - diagrams/locking-credit-rating/locking-credit-rating.png
+    - diagrams/locking-inbox-rating/locking-inbox-rating.mmd
+    - diagrams/locking-inbox-rating/locking-inbox-rating.png
+    - diagrams/locking-inbox-writers/locking-inbox-writers.mmd
+    - diagrams/locking-inbox-writers/locking-inbox-writers.png
+    - diagrams/locking-invoice-requests/locking-invoice-requests.mmd
+    - diagrams/locking-invoice-requests/locking-invoice-requests.png
+    - diagrams/locking-limit-writes/locking-limit-writes.mmd
+    - diagrams/locking-limit-writes/locking-limit-writes.png
+    - diagrams/locking-migrations/locking-migrations.mmd
+    - diagrams/locking-migrations/locking-migrations.png
+    - diagrams/locking-price-rating/locking-price-rating.mmd
+    - diagrams/locking-price-rating/locking-price-rating.png
+    - diagrams/locking-simulator-state/locking-simulator-state.mmd
+    - diagrams/locking-simulator-state/locking-simulator-state.png
+    - diagrams/locking-usage-admission/locking-usage-admission.mmd
+    - diagrams/locking-usage-admission/locking-usage-admission.png
+    - diagrams/locking-worker-closing/locking-worker-closing.mmd
+    - diagrams/locking-worker-closing/locking-worker-closing.png
+    - diagrams/locking-workers/locking-workers.mmd
+    - diagrams/locking-workers/locking-workers.png
+    - diagrams/usage-invoice-sequence/usage-invoice-sequence.mmd
+    - diagrams/usage-invoice-sequence/usage-invoice-sequence.png
+    - diagrams/usage-ingestion/usage-ingestion.mmd
+    - diagrams/usage-ingestion/usage-ingestion.png
+    - diagrams/invoice-closing/invoice-closing.mmd
+    - diagrams/invoice-closing/invoice-closing.png
+    - diagrams/limit-status/limit-status.mmd
+    - diagrams/limit-status/limit-status.png
+    - diagrams/async-processing/async-processing.mmd
+    - diagrams/async-processing/async-processing.png
     - diagrams/api-endpoints/api-endpoints.mmd
     - diagrams/api-endpoints/api-endpoints.png
     - diagrams/closing-workflow/closing-workflow.mmd

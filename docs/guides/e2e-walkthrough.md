@@ -33,7 +33,7 @@ Backend checks below work entirely from the terminal.
 ## Change time without removing history
 
 Define this helper once in the same shell. It refuses a clock jump while ordinary
-receipts remain pending, stops both business processes and recreates them with
+usage_inbox rows remain pending, stops both business processes and recreates them with
 one shared setting. Inspect a failed pending check before continuing.
 
 ```sh
@@ -82,10 +82,10 @@ A failure retains the cursor; retry with the same source, state and original inp
 | Phase | Before running | Steps to execute | Inspect before moving on |
 | --- | --- | --- | --- |
 | October accounting | Initial clock `2026-10-31T00:00:00Z` | 1–12, one `manual_next` per step | Acme credit USD 13; Cyberdyne October gross 1_817_283_945 microcents, reached USD 15 limit; no pending/errors |
-| October publication and late receipt | `manual_advance 2026-11-01T00:00:00Z` | 13–18 | Acme October invoice USD 20; Cyberdyne October USD 18.17; late October receipt has November receipt time; Acme credit USD 7; November Cyberdyne gross zero |
+| October publication and late usage_inbox row | `manual_advance 2026-11-01T00:00:00Z` | 13–18 | Acme October invoice USD 20; Cyberdyne October USD 18.17; late October usage_inbox row has November arrival time; Acme credit USD 7; November Cyberdyne gross zero |
 | November publication and immutable reads | `manual_advance 2026-12-01T00:00:00Z` | 19–24 | Acme November USD 20 with late October line; original October snapshots unchanged; completed count 24 |
 
-Inspect account and persisted receipt state at any checkpoint:
+Inspect account and persisted usage_inbox row state at any checkpoint:
 
 ```sh
 curl --fail-with-body "$manual_api/customers/acme/credit" | jq .
@@ -99,7 +99,7 @@ For the operator faults, pause at the same checkpoints as
 [acceptance section 4](acceptance/assignment.md#4-walk-through-the-complete-assignment-and-transport-failures):
 stop API before step 1, force one attempt, restart and resume; force one attempt
 at the lost grant reply in step 3; stop worker before step 6 and verify two pending
-receipts with no ratings, then restart before step 7. Snapshot complete receipts
+usage_inbox rows with no ratings, then restart before step 7. Snapshot complete usage_inbox rows
 before and after step 9. The failed producer must retain its previous cursor.
 
 Compare the complete three invoices and independent SQL with

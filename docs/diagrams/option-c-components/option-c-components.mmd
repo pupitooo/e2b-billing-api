@@ -30,7 +30,7 @@ flowchart LR
     callers <-->|"HTTP commands and queries<br/>Credit, prices, add-ons,<br/>limits, invoices, closing"| api
 
     api -->|"SQL T1: persist + deduplicate<br/>SQL reads: processing progress"| inbox
-    worker <-->|"SQL T2: poll + claim + mark processed<br/>Customer-first locking + receipt recheck"| inbox
+    worker <-->|"SQL T2: poll + claim + mark processed<br/>Customer-first locking + usage_inbox row recheck"| inbox
     worker -->|"SQL T2: customer lock<br/>Financial writes + spend update<br/>ONE commit with inbox completion"| accounting
     api <-->|"SQL commands and queries<br/>Prices / credit / add-ons / limits<br/>Invoice snapshots + spend status<br/>Publication from processed groups only"| accounting
 

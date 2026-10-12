@@ -17,7 +17,7 @@ and the migration and verification requirements:
 - [Migration and verification](../guides/migrations.md#migration-and-verification): converting cent credit to microcents, incompatible legacy allocations, and Go and SQL coverage.
 
 `internal/accounting` implements pure Go calculations for historical rating,
-exact credit, UTC months, limits, add-ons, and invoice presentation. The usage API acknowledges durable inbox receipt; the standalone worker applies
+exact credit, UTC months, limits, add-ons, and invoice presentation. The usage API acknowledges durable storage in usage_inbox; the standalone worker applies
 these rules transactionally. Financial commands and immutable invoice issuance
 are implemented in `internal/billing` and documented in OpenAPI.
 
@@ -67,7 +67,7 @@ Schedulers must also select completed months. Integration tests supply an explic
 server clock to check the exact UTC boundary and run fixed assignment fixtures;
 HTTP callers cannot override that clock. API and worker can select a fixed
 business instant at startup with `E2B_DEMO_NOW`; this uses the same completed-month
-guard, receipt routing, pricing and audit rules. The unset configuration samples
+guard, billing_month selection, pricing and audit rules. The unset configuration samples
 real time on each operation. Operational deadlines and heartbeats remain real.
 See [clock configuration](../guides/runtime-configuration.md#shared-business-clock).
 
@@ -113,15 +113,15 @@ across different groups or new grants.
 ## Historical prices and groups
 
 `Rate` supports schema version 1. Choose the latest eligible customer override,
-otherwise the latest eligible default. Use consumption time, never receipt time.
+otherwise the latest eligible default. Use consumption time, never arrival time.
 Later default changes do not mask an eligible override. A missing valid price is
 a P0 catalog incident; ambiguous relevant prices also fail visibly.
 
-One receipt is a half-open interval `[period_start, period_end)` wholly within
+One usage_inbox row is a half-open interval `[period_start, period_end)` wholly within
 one UTC month and one applicable price version. Ending exactly at a boundary is
 valid. Unsupported crossing intervals are errors; uniform spreading of units is
 not assumed. Supporting multiple segments would require extending the current
-one-receipt-to-one-group relationship.
+one-event-to-one-rated_usage_groups-row relationship.
 
 The stable group key is `(customer_id, price_version_id, usage_month, billing_month)`.
 Sandbox identities and HTTP batch boundaries do not create rounding boundaries. Preserve gross microcents
@@ -151,7 +151,7 @@ a number only for a new group. Credit grants check the scoped API
 `idempotency_key` in command history before allocating a ledger entry. Identical
 retries allocate no new entry. Grants and usage debits both use independent
 server-generated `credit_entry_id` values. Usage replay is prevented by the
-unique `(source, event_id)` rating link and the locked receipt checkpoint, committed
+unique `(source, event_id)` rating link and the locked usage_inbox row checkpoint, committed
 atomically with ledger and balance writes.
 
 Migration `012_accounting_id_sequences.sql` adds the owned sequences without
@@ -221,7 +221,7 @@ routing, not historical price selection.
 Initial historical seed data and investigated catalog-gap repair are controlled
 database operations, outside ordinary `POST /prices`. Repairs must acquire the
 exclusive catalog advisory lock, preserve all rated history and issued invoices,
-and explicitly release only the investigated receipt. They do not implement
+and explicitly release only the investigated usage_inbox row. They do not implement
 retroactive repricing; no automatic recalculation exists.
 
 ## Credit audit time and add-on purchase dates
@@ -266,21 +266,21 @@ If rating cannot find an eligible price, `accounting.MissingPriceError` identifi
 the customer, metric, and original consumption time. Accounting stores
 `P0 missing_valid_price: ...` in `usage_inbox.processing_error`, leaves
 `processed_at` NULL, and creates no group, rating link, credit debit, gross-spend
-projection, or account-state change for that receipt. After the quarantine commits,
-the worker receipt orchestration emits an ERROR report with `priority=P0`,
+projection, or account-state change for that usage_inbox row. After the quarantine commits,
+the worker orchestration emits an ERROR report with `priority=P0`,
 `error_code=missing_valid_price`, source/event identity, customer, metric, and
 `period_start`. The standalone worker uses its JSON logger for this report.
-Closing never invokes receipt processing or discovers new catalog incidents.
+Closing never invokes usage_inbox row processing or discovers new catalog incidents.
 Automatic polling skips quarantined usage and continues with other pending input.
 
 Treat the missing catalog as an immediate P0 repair: append the correct price
 through controlled operator SQL, with an explicit start covering the original measurement.
 The historical protection still rejects a version that invalidates already rated
-usage. After the repair, an operator explicitly clears the investigated receipt's
-error using the [recovery procedure](../guides/accounting-recovery.md#investigate-and-release-a-receipt).
+usage. After the repair, an operator explicitly clears the investigated usage_inbox row's
+error using the [recovery procedure](../guides/accounting-recovery.md#investigate-and-release-a-usage_inbox-row).
 Adding a price or repeating the usage request does not automatically release it.
-The next attempt accounts for the original receipt exactly once and follows the
-existing open-month routing. Every non-null processing error excludes the receipt
+The next attempt accounts for the original usage_inbox row exactly once and follows the
+existing open-month routing. Every non-null processing error excludes the usage_inbox row
 from invoice issuance, regardless of its cause. It cannot block closing or change
 an already issued invoice.
 
@@ -325,7 +325,7 @@ Migration 007 introduced invoice snapshots, group freezes and per-customer numbe
 
 ## UTC months, limits, add-ons, and late usage
 
-Consumption, receipt times, and accounting months support UTC years 1000 through
+Consumption, arrival times, and accounting months support UTC years 1000 through
 9999. Bounds apply after converting offsets to UTC; a local year alone does not
 determine validity. Calendar years retain ordinary digits without underscores.
 
@@ -361,7 +361,7 @@ for the combined credit, limit, cancellation and backlog example.
 
 `BillingMonth` preserves the original month only while chronological closing
 allows its invoice: no same or later month has been closed. Otherwise choose a
-month strictly after the latest closed month and at or after the receipt month.
+month strictly after the latest closed month and at or after the UTC arrival month.
 This also handles a skipped earlier empty month whose pending usage is processed
 later. October usage received in November after October closing bills in November,
 keeps October's historical price, and contributes to October gross spend. If
@@ -371,12 +371,12 @@ input; it does not create or persist that state.
 ## Transaction and closing contract
 
 Every financial writer first locks `customer_billing_state` with `FOR UPDATE`,
-before reading mutable balances or closure state. The worker processes one receipt for one customer per transaction. Never hold inbox row locks while waiting
+before reading mutable balances or closure state. The worker processes one usage_inbox row for one customer per transaction. Never hold inbox row locks while waiting
 for the account lock; consistent ordering avoids deadlocks with closing and grants.
 
 Commit the rating link, group totals, credit allocation/debit/balance, original-month
 gross projection, state version, and inbox completion in one transaction. Stable
-receipt and operation identities protect retries. Cancellation or failure rolls
+usage_inbox row and operation identities protect retries. Cancellation or failure rolls
 back the complete financial effect. Transient failures retry; unsupported inputs
 remain available with a visible processing error and explicit recovery path.
 
@@ -397,10 +397,10 @@ until commit or rollback. An in-flight worker that already holds the lock must
 finish before closing can acquire it; its committed groups are included. A worker
 that acquires the lock after a successful closing sees the committed closed month.
 It preserves an original month after the latest closure; usage from that closure
-or an earlier month routes strictly after it and at or after the receipt month.
+or an earlier month routes strictly after it and at or after the UTC arrival month.
 Skipped earlier empty
 months cannot strand pending usage behind a later closure. Preserve historical consumption-time prices and
-original-month gross spend. Receipt timestamps, delivery order and durable inbox
+original-month gross spend. arrival timestamps, delivery order and durable inbox
 acceptance do not promise inclusion in the original month's invoice.
 
 Validate the ended UTC month and chronological history, build lines from processed
@@ -434,7 +434,7 @@ commit, every retry returns the original invoice and number. Earlier unclosed
 rated groups still block later closing; an empty month is supported.
 
 The explicit catch-up endpoint closes a chronological range in the same account
-transaction. It begins after the latest closure or at the earliest known receipt,
+transaction. It begins after the latest closure or at the earliest known usage_inbox row,
 rated group or purchase month on the first run, then includes every empty month
 through the completed target. At most 12 missing months are allowed per command;
 longer histories use earlier targets followed by new keys. Successful command
@@ -493,11 +493,11 @@ Every price has a required finite `effective_from`; no undated baseline is suppo
 The seed preserves the assignment's original effective starts. Provision an additional
 metric and its applicable price before the platform generates its first usage, using
 a start covering that consumption. Missing a valid price is a P0 catalog incident:
-the receipt retains `P0 missing_valid_price: ...` without financial effects and the
-receipt orchestrator logs the incident after commit during worker processing.
+the usage_inbox row retains `P0 missing_valid_price: ...` without financial effects and the
+usage_inbox row orchestrator logs the incident after commit during worker processing.
 Invoice closing never processes input or emits this incident. Repair the historical
 catalog through [controlled operator SQL](../guides/accounting-recovery.md#controlled-historical-price-repair),
-then explicitly release the investigated receipt for another attempt. Ordinary
+then explicitly release the investigated usage_inbox row for another attempt. Ordinary
 `POST /prices` accepts `effective_from` as a required `YYYY-MM-DD` UTC date and rejects
 dates before today, with rated-history protection for today. Public purchase dates
 use the same date format and are stored at midnight UTC. Credit audit timestamps

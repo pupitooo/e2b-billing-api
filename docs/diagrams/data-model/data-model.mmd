@@ -3,42 +3,42 @@ title: Proposed MVP logical data model
 ---
 erDiagram
     direction LR
-    Customer ||--|| CustomerBillingState : has
-    Customer |o--o{ PriceVersion : overrides
-    Customer ||--o{ UsageReceipt : receives
-    Customer ||--o{ RatedUsageGroup : owns
-    Customer ||--o{ MonthlyUsage : tracks
-    Customer ||--o{ CreditEntry : owns
-    Customer ||--o{ AddonSubscription : purchases
-    Customer ||--o{ Invoice : receives
-    PriceVersion ||--o{ RatedUsageGroup : prices
-    RatedUsageGroup |o--o{ UsageReceipt : groups
-    RatedUsageGroup |o--o{ CreditEntry : explains
-    Invoice ||--|{ InvoiceLine : snapshots
-    RatedUsageGroup |o--o{ InvoiceLine : contributes
-    AddonSubscription |o--o{ InvoiceLine : contributes
+    customers ||--|| customer_billing_state : has
+    customers |o--o{ price_versions : overrides
+    customers ||--o{ usage_inbox : receives
+    customers ||--o{ rated_usage_groups : owns
+    customers ||--o{ monthly_usage : tracks
+    customers ||--o{ credit_entries : owns
+    customers ||--o{ addon_subscriptions : purchases
+    customers ||--o{ invoices : receives
+    price_versions ||--o{ rated_usage_groups : prices
+    rated_usage_groups |o--o{ usage_inbox : groups
+    rated_usage_groups |o--o{ credit_entries : explains
+    invoices ||--|{ InvoiceLine : snapshots
+    rated_usage_groups |o--o{ InvoiceLine : contributes
+    addon_subscriptions |o--o{ InvoiceLine : contributes
 
-    Customer {
+    customers {
         string customer_id PK
         string name
         string country
         string billing_address
     }
-    CustomerBillingState {
+    customer_billing_state {
         string customer_id PK,FK
         bigint credit_balance_cents
         bigint spend_limit_cents "Nullable means no limit"
         bigint state_version
         bigint last_invoice_number
     }
-    PriceVersion {
+    price_versions {
         string price_version_id PK
         string customer_id FK "Nullable for default price"
         string metric
         numeric price_per_million_usd
         datetime effective_from_utc
     }
-    UsageReceipt {
+    usage_inbox {
         string source PK
         string event_id PK
         string customer_id FK
@@ -50,7 +50,7 @@ erDiagram
         string payload_hash
         string group_id FK "Nullable before successful rating"
     }
-    RatedUsageGroup {
+    rated_usage_groups {
         string group_id PK
         string customer_id FK
         string price_version_id FK
@@ -62,19 +62,19 @@ erDiagram
         bigint allocated_credit_cents
         boolean frozen
     }
-    MonthlyUsage {
+    monthly_usage {
         string customer_id PK,FK
         date usage_month_utc PK
         numeric gross_charge_microcents
     }
-    CreditEntry {
+    credit_entries {
         string credit_entry_id PK
         string customer_id FK
         string group_id FK "Nullable for grants"
         bigint signed_cents
         datetime created_at_utc
     }
-    AddonSubscription {
+    addon_subscriptions {
         string subscription_id PK
         string customer_id FK
         string addon_name
@@ -82,7 +82,7 @@ erDiagram
         date start_month_utc
         boolean active
     }
-    Invoice {
+    invoices {
         string invoice_id PK
         string customer_id FK
         date billing_month_utc
@@ -91,7 +91,7 @@ erDiagram
         bigint total_cents
         datetime issued_at_utc
     }
-    InvoiceLine {
+    InvoiceLine["invoice lines (proposal)"] {
         string invoice_line_id PK
         string invoice_id FK
         string group_id FK "Nullable for add-ons"
@@ -102,6 +102,7 @@ erDiagram
 
     %% This is a logical model, not a complete SQL schema.
     %% Receipt identity is the composite key (source, event_id).
-    %% Invoice uniqueness covers (customer_id, billing_month_utc) and (customer_id, customer_sequence).
+    %% invoices uniqueness covers (customer_id, billing_month_utc) and (customer_id, customer_sequence).
     %% Each metering segment stays within one metric, price period, and UTC month.
-    %% CreditEntry is append-only; Invoice and InvoiceLine are immutable snapshots.
+    %% credit_entries is append-only; invoices and the logical line entity are immutable snapshots.
+    %% Implemented invoice lines are items in invoices.snapshot.lines, not a separate table.

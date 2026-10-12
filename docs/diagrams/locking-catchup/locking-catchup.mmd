@@ -1,0 +1,47 @@
+---
+title: Invoice catch-up versus worker and single-month close
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant R as Catch-up API
+    participant B as Worker / closing API
+    participant D as PostgreSQL
+    Note over R,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E<br/>Request advisory identity: api_idempotency_operations.operation_scope<br/>plus api_idempotency_operations.idempotency_key (not a row lock)
+    Note over R,D: October is closed, November and December are missing.<br/>Both missing months have ended.
+    alt Catch-up gets the account first
+        R->>D: BEGIN, catch-up request lock<br/>FOR UPDATE<br/>customer_billing_state.customer_id = C
+        B->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over B,D: WAIT through the complete recovery range
+        loop November then December, in one transaction
+            R->>D: Build from processed groups and active add-ons<br/>Freeze month, snapshot and group links<br/>Advance invoice number and state_version
+        end
+        R->>D: Store whole range in api_idempotency_operations<br/>COMMIT all months and the request result together
+        D-->>B: Account lock granted
+        alt Waiting operation is a worker for November usage
+            B->>D: Read closure history and rate into an open month<br/>At or after January and durable usage_inbox row month, COMMIT
+        else Waiting operation closes December
+            B->>D: Read original December snapshot, COMMIT
+        end
+    else Other operation gets the account first
+        B->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        R->>D: BEGIN, catch-up request lock<br/>FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over R,D: WAIT for the worker or single-month close
+        alt Worker processes November usage
+            B->>D: Account into November while open, COMMIT
+            D-->>R: Account lock granted
+            R->>D: Read processed groups, include usage in recovery
+        else Single close attempts December before November
+            B->>D: ROLLBACK with 409 for the missing predecessor
+            D-->>R: Account lock granted
+            R->>D: Recover November and December
+        end
+        R->>D: Store whole range and COMMIT
+    end
+    Note over R,D: Same-key replay returns the stored full range.<br/>Different keys serialize on the account and cannot duplicate invoices.<br/>Any failed month rolls back the entire range and its request result.

@@ -16,6 +16,7 @@ import (
 // TestCreatePrice checks UTC date boundaries, unchanged and conflicting
 // retries, and rejection without catalog or financial effects in private schemas.
 func TestCreatePrice(t *testing.T) {
+	t.Run("worker and price catalog lock order", testPriceRatingLockOrder)
 	cases := []struct {
 		name          string
 		customer      string

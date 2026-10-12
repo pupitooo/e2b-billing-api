@@ -107,6 +107,6 @@ For a past-month invoice with multiple usage prices and an add-on, use the
 | All documentation | [Documentation index](docs/index.md) |
 | Setup and operations | [Local setup](docs/guides/local-development.md), [troubleshooting](docs/guides/troubleshooting.md) |
 | API requests | [API guide](docs/guides/api-reference.md), [OpenAPI specification](docs/api/openapi.yaml) |
-| Billing and architecture | [Implementation overview](docs/architecture/submission-overview.md), [implemented contracts](docs/architecture/implemented-contracts.md), [proposed contracts](docs/architecture/proposed-contracts.md), [usage to invoice](docs/architecture/usage-to-invoice.md) |
+| Billing and architecture | [Implementation overview](docs/architecture/submission-overview.md), [implemented contracts](docs/architecture/implemented-contracts.md), [proposed contracts](docs/architecture/proposed-contracts.md), [vocabulary](docs/guides/billing-vocabulary.md), [usage to invoice](docs/architecture/usage-to-invoice.md), [processing sequences](docs/architecture/processing-sequences.md), [concurrency and locking](docs/architecture/concurrency-and-locking.md) |
 | Scenarios and verification | [Billing scenarios](docs/simulator/billing-scenarios.md), [tests](docs/guides/testing.md), [backend E2E](docs/guides/e2e-testing.md), [manual walkthrough](docs/guides/e2e-walkthrough.md), [acceptance procedure](docs/guides/final-acceptance-testing.md) |
 | Development | [Conventions](docs/guides/development.md), [documentation maintenance](docs/guides/documentation.md) |

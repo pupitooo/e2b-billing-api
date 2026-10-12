@@ -1,0 +1,35 @@
+---
+title: Credit grant versus worker allocation
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant G as Credit grant API
+    participant W as Usage worker
+    participant D as PostgreSQL
+    Note over G,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E<br/>Request advisory identity: api_idempotency_operations.operation_scope<br/>plus api_idempotency_operations.idempotency_key (not a row lock)<br/>Catalog advisory (65102, 2): protects price_versions, not a column
+    Note over G,D: Initial credit 0, usage gross 3 cents, grant 2 cents.<br/>Each branch starts from that same isolated state.
+    alt Grant gets the account first
+        G->>D: BEGIN, scoped request lock<br/>FOR UPDATE<br/>customer_billing_state.customer_id = C
+        W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over W,D: WAIT for the credit grant
+        G->>D: INSERT credit_entries, add 2 cents to account<br/>Store request result, COMMIT
+        D-->>W: Account lock granted, credit is 2 cents
+        W->>D: Shared catalog lock, FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E<br/>Allocate 2 cents, persist group and debit, COMMIT
+        Note over W,D: Usage net 1 cent, remaining credit 0
+    else Worker gets the account first
+        W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        G->>D: BEGIN, scoped request lock<br/>FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over G,D: WAIT for the worker
+        W->>D: Rate gross 3 cents with no allocated credit, COMMIT
+        D-->>G: Account lock granted
+        G->>D: Grant 2 cents and store request result, COMMIT
+        Note over G,D: Usage net remains 3 cents, remaining credit 2 cents.<br/>A later grant does not rewrite the earlier allocation.
+    end
+    Note over G,D: Two new grant keys add under this same account lock.<br/>An identical grant key replays through the request lock.

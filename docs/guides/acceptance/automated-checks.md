@@ -221,11 +221,11 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 
 `make test` runs SQL integrity in **both UTC and Asia/Shanghai**, Go package tests,
 isolated-schema persistence tests, HTTP tests against the running API, and worker
-process lifecycle tests, and backend E2E. The ordinary API receipt tests use real
+process lifecycle tests, and backend E2E. The ordinary API usage_inbox row tests use real
 time (`E2B_DEMO_NOW=`); E2E supplies its own isolated clock phases. Require the named billing scenarios in section 6 to
 actually execute and pass; a filtered or skipped suite is not the full gate.
 SQL fixtures roll back, isolated schemas are dropped, and HTTP tests clean their
-owned receipts. Reset the project in step 2.5 before the manual assignment anyway.
+owned usage_inbox rows. Reset the project in step 2.5 before the manual assignment anyway.
 
 ### 2.4 Run two migration runners concurrently
 

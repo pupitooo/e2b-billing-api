@@ -9,10 +9,10 @@ UTC years 1000 through 9999 and microsecond precision are required after offset
 conversion. Invalid values prevent either Go process from starting before it
 opens database resources.
 
-The same provider drives receipt `received_at`, current-month limit queries,
+The same provider drives usage_inbox row `received_at`, current-month limit queries,
 price activation validation, grant and command audit times, usage `processed_at`
 and debit audit times, and invoice publication time. One worker transaction uses
-one sampled processing instant for receipt completion and credit debit. Identical
+one sampled processing instant for usage_inbox row completion and credit debit. Identical
 retries retain original persisted timestamps. Domain month and pricing rules stay
 unchanged. Heartbeats, timeouts, polling, backoff and shutdown use real time.
 
@@ -103,7 +103,7 @@ make stop SERVICE=worker
 
 The worker performs transactional accounting independently of the API, with a
 bounded database pool. See the [financial rules — Transaction and closing contract](../architecture/accounting-rules.md#transaction-and-closing-contract)
-for atomic updates and the [recovery procedure](accounting-recovery.md#investigate-and-release-a-receipt)
+for atomic updates and the [recovery procedure](accounting-recovery.md#investigate-and-release-a-usage_inbox-row)
 for unsupported input. The heartbeat reports loop activity.
 
 The [worker loop](../../internal/worker/worker.go) runs one batch at a time, starts

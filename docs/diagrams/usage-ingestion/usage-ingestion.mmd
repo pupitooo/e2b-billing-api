@@ -1,0 +1,47 @@
+---
+title: Usage inbox acceptance and a lost response
+config:
+  sequence:
+    mirrorActors: false
+---
+%% API usage_inbox row and worker accounting are independent durable transactions.
+sequenceDiagram
+    autonumber
+    participant P as Sandbox platform
+    participant A as Go billing API
+    participant W as Go usage worker
+    participant D as PostgreSQL
+    Note over P,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E<br/>Catalog advisory (65102, 2): protects price_versions, not a column
+
+    Note over P: Persist pending events before sending.<br/>Retain IDs and content when batching or retrying.
+    P->>A: POST /usage/batches
+    A->>D: BEGIN<br/>INSERT usage_inbox with explicit UTC received_at
+    A->>D: COMMIT complete usage_inbox row batch
+    D-->>A: Durable usage_inbox rows<br/>accounting may still be pending
+    A--xP: 202 accepted response is lost
+
+    P->>A: Retry the same event identities and content
+    A->>D: BEGIN<br/>INSERT ON CONFLICT DO NOTHING<br/>Compare existing measurement fields<br/>FOR SHARE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E
+    alt Identical identities and content
+        D-->>A: Original usage_inbox rows, unchanged received_at and processing state
+        A->>D: COMMIT without modifying existing usage_inbox rows
+        A-->>P: 202 accepted
+        Note over P: Mark acknowledged events as delivered.
+    else An existing identity has different content
+        A->>D: ROLLBACK the entire batch, including any new usage_inbox rows
+        A-->>P: 409 event_conflict
+    end
+
+    Note over W,D: Accounting may occur before or after the producer retries.
+    W->>D: Select a pending usage_inbox row<br/>BEGIN<br/>lock customer account
+    W->>D: Shared catalog lock<br/>reload FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E
+    alt usage_inbox row still pending and valid
+        W->>W: Historical rating and exact credit allocation
+        W->>D: Write group, rating link, credit debit, monthly gross and account state
+        W->>D: Mark processed_at<br/>COMMIT financial effects together
+    else Already processed by another worker
+        W->>D: COMMIT without further financial effects
+    else Domain error, including missing valid price
+        W->>D: Set processing_error<br/>COMMIT without financial effects
+    end
+    Note over A,D: usage_inbox row success requires durable commit.<br/>Unknown commit outcomes use unchanged producer retries.<br/>The API never acknowledges completed financial accounting.

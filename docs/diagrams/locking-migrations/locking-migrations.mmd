@@ -1,0 +1,31 @@
+---
+title: Concurrent migration runners
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant A as psql runner A
+    participant B as psql runner B
+    participant D as PostgreSQL
+    Note over A,D: Catalog advisory (65102, 2): protects price_versions, not a column
+    A->>D: BEGIN, migration advisory lock (65102, 1)
+    B->>D: BEGIN, same migration advisory lock
+    Note over B,D: WAIT before reading or creating schema_migrations
+    A->>D: Read applied versions<br/>Apply missing SQL and insert version records
+    alt A completes
+        A->>D: COMMIT schema changes and records together
+        D-->>B: Migration lock granted
+        B->>D: Read committed versions, skip applied migrations
+        B->>D: COMMIT without repeating their effects
+    else A fails
+        A->>D: ROLLBACK schema changes and version records
+        D-->>B: Migration lock granted
+        B->>D: Read versions, apply missing migrations<br/>Store their records, COMMIT
+    end
+    Note over A,D: Connection termination also releases transaction locks.<br/>Migration key 1 differs from catalog key 2.<br/>DDL still takes normal PostgreSQL relation locks.<br/>This runner lock does not promise online migrations.

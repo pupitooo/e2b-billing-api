@@ -1,0 +1,37 @@
+---
+title: Two requests to close monthly invoices
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant A as Closing request A
+    participant B as Closing request B
+    participant D as PostgreSQL
+    Note over A,D: Row selector: customer_billing_state.customer_id = C<br/>Request advisory identity: api_idempotency_operations.operation_scope<br/>plus api_idempotency_operations.idempotency_key (not a row lock)
+    A->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+    B->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+    Note over B,D: WAIT for A's publication transaction
+    alt A commits invoice M
+        A->>D: Freeze processed groups and invoice M<br/>Advance number and state_version, COMMIT
+        D-->>B: Account lock granted
+        alt B requests the same month M
+            B->>D: Read the existing invoices.snapshot
+            B->>D: COMMIT without publication writes
+            Note over B,D: Same invoice number, no second credit debit
+        else B requests the eligible next month
+            B->>D: Validate ended month and closed predecessor<br/>Publish next invoice with next number, COMMIT
+        else B requests a skipped or backward month
+            B->>D: ROLLBACK, 409 billing_conflict
+        end
+    else A fails before publication commits
+        A->>D: ROLLBACK snapshot, closure, group links and counters
+        D-->>B: Account lock granted, no invoice M exists
+        B->>D: Validate and publish its requested month normally
+    end
+    Note over A,D: CloseMonth uses customer and month as retry identity.<br/>It does not use the scoped command-key advisory lock.<br/>A lost committed response is resolved by the same-month retry.

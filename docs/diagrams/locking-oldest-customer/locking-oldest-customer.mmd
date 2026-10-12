@@ -1,0 +1,27 @@
+---
+title: Oldest locked customer delays unrelated pending work
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant O as Lock holder
+    participant W as Usage worker
+    participant D as PostgreSQL
+    Note over O,D: Two pending rows: customer A first, customer B second.<br/>customer_billing_state.customer_id = B is unlocked.
+    O->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = A
+    W->>D: SELECT pending usage_inbox key<br/>ORDER BY received_at, source, event_id LIMIT 1
+    D-->>W: Oldest event belongs to customer A
+    W->>D: BEGIN, request FOR UPDATE<br/>customer_billing_state.customer_id = A
+    Note over W,D: WAIT for A, even though customer B could run
+    D-->>W: Attempt deadline expires, rollback
+    Note over W,D: Neither row is processed or quarantined.<br/>A later attempt selects A again while it remains oldest.<br/>More identical worker loops do not remove this bottleneck.
+    O->>D: COMMIT, release customer A
+    W->>D: Next attempt locks A, shared catalog, event row<br/>Account A's usage_inbox row and COMMIT
+    W->>D: Next attempt locks B, shared catalog, event row<br/>Account B's usage_inbox row and COMMIT
+    Note over W,D: Adjacent valid case: lock only later customer B.<br/>The oldest unlocked customer A can still complete.<br/>Proposed scheduling improvement must lock account before event row.

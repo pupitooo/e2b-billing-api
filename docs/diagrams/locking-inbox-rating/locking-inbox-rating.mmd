@@ -1,0 +1,33 @@
+---
+title: usage_inbox row replay versus worker completion
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant A as API identical retry
+    participant W as Usage worker
+    participant D as PostgreSQL
+    Note over A,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E<br/>Catalog advisory (65102, 2): protects price_versions, not a column
+    alt API holds the usage_inbox row share lock first
+        A->>D: BEGIN, duplicate INSERT, compare FOR SHARE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E
+        W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C, shared catalog lock
+        W->>D: Reload the same FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E
+        Note over W,D: WAIT for the API's usage_inbox row share lock
+        A->>D: COMMIT the identical retry
+        D-->>W: usage_inbox row lock granted, recheck pending state
+        W->>D: Account once and mark processed_at, COMMIT
+    else Worker holds the usage_inbox row update lock first
+        W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C, shared catalog lock<br/>Reload FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E
+        A->>D: BEGIN, duplicate INSERT, compare FOR SHARE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E
+        Note over A,D: WAIT for the worker's usage_inbox row lock
+        W->>D: Commit financial effects and processed_at together
+        D-->>A: Share lock granted, measurement content unchanged
+        A->>D: COMMIT without changing processing state
+    end
+    Note over A,D: API usage_inbox row does not acquire the customer account lock.<br/>Retry success remains 202 even when accounting completed.

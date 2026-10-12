@@ -10,14 +10,14 @@ Option C is the implemented Go API, PostgreSQL inbox and separate Go accounting 
 
 The platform owns metering, a durable sender buffer and the reaction to a spend limit. The assignment simulator runs separately and persists stable measurements before delivery. The Go API and accounting worker always run in separate processes and Compose services, sharing one PostgreSQL database. There is no API-to-worker HTTP call; the inbox supplies their asynchronous boundary.
 
-The two storage blocks are logical groups of tables in that database. The inbox holds receipt identity, original measurement, first receipt time and processing state. Financial tables hold customers, dated prices, recurring purchases, exact credit history, gross monthly spend, closed months, immutable invoices and frozen groups. The [implemented ERD](../../architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001013) describes all 17 tables after migrations 001–013.
+The two storage blocks are logical groups of tables in that database. The inbox holds usage_inbox row identity, original measurement, first arrival time and processing state. Financial tables hold customers, dated prices, recurring purchases, exact credit history, gross monthly spend, closed months, immutable invoices and frozen groups. The [implemented ERD](../../architecture/billing-model.md#implemented-postgresql-schema-erd-migrations-001013) describes all 17 tables after migrations 001–013.
 
-## Receipt and accounting transactions
+## usage_inbox row and accounting transactions
 
 1. The platform persists a measurement with stable `(source, event_id)` and retains it until acknowledged. A timeout or lost reply causes a retry with identical content.
-2. The API validates the batch and opens **T1**. New receipts and content comparisons commit atomically; conflicting content rolls back the whole batch.
+2. The API validates the batch and opens **T1**. New usage_inbox rows and content comparisons commit atomically; conflicting content rolls back the whole batch.
 3. After T1 commits, the API returns **202** and `{"status":"accepted"}`. The response acknowledges the whole batch without enumerating identities. It does not promise completed accounting.
-4. The worker selects the earliest pending candidate, opens **T2**, locks the customer account and catalog, then rechecks and locks the pending receipt. It resolves historical prices and commits rating, group totals, credit, gross spend, state version and completion together. Concurrent workers can select the same candidate; the account lock and recheck prevent duplicate effects. No `SKIP LOCKED` claim or separately committed processing lease is used.
+4. The worker selects the earliest pending candidate, opens **T2**, locks the customer account and catalog, then rechecks and locks the pending usage_inbox row. It resolves historical prices and commits rating, group totals, credit, gross spend, state version and completion together. Concurrent workers can select the same candidate; the account lock and recheck prevent duplicate effects. No `SKIP LOCKED` claim or separately committed processing lease is used.
 5. Database failure rolls back T2 for retry. Unsupported input commits quarantine without financial effects. Missing valid prices log a P0 incident only after quarantine commits; recovery requires an investigated catalog repair and explicit release.
 
 Queries expose processed state plus pending/error counts. These counts describe known billing input, not measurements still buffered on the platform or a guaranteed latency bound.
@@ -43,9 +43,9 @@ T1 uses the inbox; T2 uses both inbox and financial tables. API financial comman
 
 ## Closing and spend status
 
-Closing holds the account lock throughout one publication transaction, including validation, presentation and freezing. It never invokes the receipt processor or waits for pending target-month input. The first invoice cannot skip earlier known usage or active add-on months, even for a subscription without usage; subsequent new invoices require the preceding calendar month closed. Only an ended UTC month can close. Retrying a committed invoice returns its original snapshot and number.
+Closing holds the account lock throughout one publication transaction, including validation, presentation and freezing. It never invokes the usage_inbox row processor or waits for pending target-month input. The first invoice cannot skip earlier known usage or active add-on months, even for a subscription without usage; subsequent new invoices require the preceding calendar month closed. Only an ended UTC month can close. Retrying a committed invoice returns its original snapshot and number.
 
-An in-flight worker holding the account lock completes before closing acquires it; its committed groups are included. A worker accounting after closure routes to an eligible open billing month without changing the invoice. Consumption-time prices and original-month gross spend remain intact. Pending and quarantined target-month receipts are not billed until successfully processed; different invoice months retain separate rounding groups.
+An in-flight worker holding the account lock completes before closing acquires it; its committed groups are included. A worker accounting after closure routes to an eligible open billing month without changing the invoice. Consumption-time prices and original-month gross spend remain intact. Pending and quarantined target-month usage_inbox rows are not billed until successfully processed; different invoice months retain separate rounding groups.
 
 The platform polls limit status independently of delivery, including after a limit change or month rollover. Credit and add-ons do not change the limit's gross-usage basis. Polling avoids coupling deployments to a notification transport. Freshness targets, outage behaviour and any versioned push notifications remain operational agreements or extensions.
 

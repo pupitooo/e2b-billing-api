@@ -456,7 +456,7 @@ paths:
       - Customers
       summary: Get credit balance
       description: |
-        Read the exact remaining credit and pending/error receipt counts.
+        Read the exact remaining credit and pending/error usage_inbox row counts.
         The balance reflects processed usage. See [credit allocation](/architecture/usage-to-invoice/#6-credits-gross-charge-allocated-credit-and-balance).
       x-implementation-status: implemented
       parameters:
@@ -1520,7 +1520,7 @@ components:
           minimum: 1
           maximum: 2147483647
           description: |
-            Measurement contract version. Receipt accepts any positive version, but
+            Measurement contract version. Ingestion accepts any positive version, but
             accounting supports only version 1; other versions become processing errors.
         customer_id:
           $ref: '#/components/schemas/Identifier'
@@ -1555,7 +1555,7 @@ components:
         status:
           type: string
           enum: [accepted]
-          description: Confirms durable receipt of the entire batch, including identical retries; accounting may still be pending.
+          description: Confirms durable acceptance of the entire batch, including identical retries; accounting may still be pending.
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -1652,7 +1652,7 @@ components:
           $ref: '#/components/schemas/BillingDate'
           description: |
             Activation at midnight UTC on this date, used to price consumption rather
-            than receipt. Must not precede the current UTC date at catalog insertion;
+            than arrival. Must not precede the current UTC date at catalog insertion;
             today's date is allowed only if already rated history is preserved.
 
     PriceVersion:
@@ -1738,7 +1738,7 @@ components:
           description: |
             Customer-wide revision counter advanced by usage accounting, credit grants,
             limit changes, add-on purchases/cancellations, and invoice issuance. Use it to observe
-            account changes; it is not a version of this response, and receipt or
+            account changes; it is not a version of this response, and ingestion or
             processing errors can change the counts without advancing it.
         pending_events:
           type: integer
@@ -1909,7 +1909,7 @@ components:
           description: |
             Customer-wide revision counter advanced by usage accounting, credit grants,
             limit changes, add-on purchases/cancellations, and invoice issuance. Use it to observe
-            account changes; it is not a version of this response, and receipt or
+            account changes; it is not a version of this response, and ingestion or
             processing errors can change the counts without advancing it.
         pending_events:
           type: integer

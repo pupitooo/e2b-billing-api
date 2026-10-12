@@ -1,0 +1,36 @@
+---
+title: Asynchronous acceptance and accounting retry
+---
+sequenceDiagram
+    autonumber
+    participant P as Sandbox platform
+    participant I as Go ingress
+    participant K as Kafka streams
+    participant W as Go accounting worker
+    participant D as PostgreSQL
+    Note over P,D: Row selector: customer_billing_state.customer_id = C
+
+    P->>I: Submit usage with stable source and event IDs
+    I->>K: Publish raw events with durable replication settings
+    K-->>I: Replicated acceptance
+    I-->>P: Accepted. accounting may still be pending
+    Note over P: Producer buffer can mark these events as delivered.<br/>Acceptance does not imply a fresh credit balance.
+    Note over K,W: Aggregation prepares replay-safe identified deltas.<br/>The raw archive has an independent consumer group.
+
+    K->>W: Deliver an identified accounting delta
+    W->>D: BEGIN and lock FOR UPDATE<br/>customer_billing_state.customer_id = C
+    W->>D: Check delta identity. apply financial effect if new
+    W->>D: Save processed ID and state outbox record
+    W->>D: COMMIT financial effect and processed identity
+    D-->>W: Durable commit
+    Note over W: Worker crashes before its offset is committed.
+
+    K->>W: Redeliver the same delta to a restarted worker
+    W->>D: Customer transaction: check the processed identity
+    D-->>W: Already accounted. no additional credit debit
+    W->>D: End transaction without a new financial effect
+    W->>K: Commit the processed offset
+    K-->>W: Offset recorded
+
+    Note over K,D: Kafka and PostgreSQL do not share this transaction.<br/>Stable identities make replay financially idempotent.
+    %% This sequence shows option D. Option C uses a PostgreSQL inbox instead of Kafka.

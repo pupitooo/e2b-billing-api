@@ -72,7 +72,7 @@ The number is built from the uppercase customer ID and the current sequence, pad
 | `closed_billing_months` | Record the closed customer/month and issue timestamp. |
 | `invoices` | Store the unique numbered invoice and complete immutable JSON snapshot. Lines live in `snapshot.lines`, rather than a separate line table. |
 | `invoiced_usage_groups` | Link and freeze all groups included for this customer/billing month. |
-| `customer_billing_state` | Increment `next_invoice_number` and `state_version`; leave credit allocation to receipt accounting. |
+| `customer_billing_state` | Increment `next_invoice_number` and `state_version`; leave credit allocation to usage_inbox row accounting. |
 
 After commit the API returns `200` with the stored document. Concurrent closers serialize on the account lock, and retries return its original number, buyer details, lines, amounts and issue time. `GET /customers/{customer_id}/invoices/{month}` reads the same snapshot through a separate read operation, outside this chart.
 

@@ -1,0 +1,50 @@
+---
+title: Asynchronous usage accounting and monthly spend status
+config:
+  sequence:
+    mirrorActors: false
+---
+%% Status uses exact original-month gross before credit and excludes add-ons.
+sequenceDiagram
+    autonumber
+    actor C as Customer
+    participant P as Sandbox platform
+    participant A as Go billing API
+    participant W as Go usage worker
+    participant D as PostgreSQL
+    Note over C,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E<br/>Request advisory identity: api_idempotency_operations.operation_scope<br/>plus api_idempotency_operations.idempotency_key (not a row lock)
+
+    Note over A,D: Cyberdyne has a USD 15.00 monthly limit.<br/>This example reads status after each worker commit.
+    P->>A: POST /usage/batches with first October usage
+    A->>D: Commit usage_inbox usage_inbox rows
+    A-->>P: 202 accepted<br/>no spend status in this response
+    W->>D: Account usage_inbox row atomically<br/>October gross USD 6.17283945
+    D-->>W: Committed monthly_usage and account state_version
+    P->>A: GET /customers/cyberdyne/limit-status
+    A->>D: Read current UTC month gross and customer_billing_state
+    D-->>A: Exact gross, limit and version
+    A-->>P: Exact October gross USD 6.17283945<br/>limit_reached false
+
+    P->>A: POST /usage/batches for another USD 12.00 October charge
+    A->>D: Commit usage_inbox usage_inbox rows
+    A-->>P: 202 accepted
+    W->>D: Commit October gross USD 18.17283945 and new state_version
+    P->>A: GET /customers/cyberdyne/limit-status
+    A->>D: Read committed October gross, limit and version
+    A-->>P: Exact October gross USD 18.17283945<br/>limit_reached true
+    Note over P: The platform decides how to enforce the limit.<br/>Billing retains all metered usage for invoicing.
+
+    C->>A: POST /customers/cyberdyne/spend-limit<br/>New request key and limit_cents 2000
+    A->>D: Scoped request lock<br/>account lock<br/>store limit and replay result
+    A->>D: COMMIT api_idempotency_operations and incremented state_version
+    A-->>C: 200 with the original request key and limit_cents 2000
+    P->>A: GET /customers/cyberdyne/limit-status
+    A->>D: Read October gross and the new limit
+    A-->>P: October limit_reached false
+
+    Note over P,D: November begins according to the server UTC clock.
+    P->>A: GET /customers/cyberdyne/limit-status
+    A->>D: Read November monthly_usage, or zero if no row exists
+    D-->>A: USD 0.00<br/>monthly limit remains USD 20.00
+    A-->>P: November limit_reached false
+    Note over A,D: Reads can lag accepted inbox data while accounting is pending.<br/>Late October usage changes October gross, even if billed in November.<br/>New-month status needs no midnight cron<br/>snapshots identify month and version.

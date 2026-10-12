@@ -1,0 +1,33 @@
+---
+title: Concurrent usage requests and API admission capacity
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant A as Admitted request
+    participant B as Competing usage request
+    participant H as API handler capacity
+    participant D as PostgreSQL
+    Note over A,D: Event row: usage_inbox.source = S and usage_inbox.event_id = E
+    A->>H: Acquire one buffered-channel slot
+    H-->>A: Admitted before body parsing
+    A->>A: Validate the usage request
+    A->>D: BEGIN, write inbox usage_inbox row batch
+    B->>H: Try to acquire a slot without waiting
+    alt All slots are occupied
+        H-->>B: 503 inbox_unavailable, Retry-After 1
+        Note over B,H: No body parsing or database transaction for B
+    else A slot is available
+        H-->>B: Admit B, normal inbox transaction follows
+    end
+    A->>D: COMMIT or ROLLBACK the admitted batch
+    A->>H: Release its slot when the handler returns
+    B->>H: Retry unchanged event identities and content
+    H-->>B: Admit if capacity is available
+    Note over H,D: Process-local admission semaphore.<br/>Bounds simultaneous usage requests.<br/>Database locks order financial writes.<br/>API processes have separate budgets.

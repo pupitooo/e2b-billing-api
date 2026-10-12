@@ -1,0 +1,46 @@
+---
+title: Add-on cancellation, reactivation and closing
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant X as Cancellation API / SQL
+    participant C as Closing / new purchase
+    participant D as PostgreSQL
+    Note over X,D: Row selector: customer_billing_state.customer_id = C<br/>Request advisory identity: api_idempotency_operations.operation_scope<br/>plus api_idempotency_operations.idempotency_key (not a row lock)
+    Note over X,D: One active subscription, inclusive last billed month M.<br/>Each competing operation locks the same customer account.
+    alt Cancellation gets the account before closing
+        X->>D: BEGIN, request lock for API<br/>FOR UPDATE<br/>customer_billing_state.customer_id = C
+        C->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over C,D: WAIT for cancellation
+        X->>D: Validate purchase, no previous cancellation<br/>No closed month at or after M
+        X->>D: INSERT addon_cancellations<br/>Trigger reuses account lock, validates dates and closure
+        X->>D: Advance state_version, store API result, COMMIT
+        D-->>C: Account lock granted
+        C->>D: Invoice M at the full subscription price, COMMIT
+        Note over C,D: Months after M omit this subscription
+    else Closing gets the account first
+        C->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        X->>D: BEGIN, request lock for API<br/>FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over X,D: WAIT for the closing transaction
+        C->>D: Publish invoice M, COMMIT
+        D-->>X: Account lock granted
+        X->>D: Read committed closure
+        X->>D: API ROLLBACK with 409 billing_conflict
+        Note over X,D: Direct SQL cancellation is rejected by the trigger<br/>with SQLSTATE 23514, not an HTTP status
+    end
+    rect rgb(233, 247, 238)
+        C->>D: New purchase command, FOR UPDATE<br/>customer_billing_state.customer_id = C<br/>Check prior immutable purchase and cancellation
+        alt New start month is after M
+            C->>D: INSERT a fresh subscription identity, COMMIT
+        else New start month overlaps M or an active period
+            C->>D: ROLLBACK, API returns 409<br/>Purchase trigger rejects overlap with SQLSTATE 23505
+        end
+    end
+    Note over X,D: Two cancellation keys serialize on the account.<br/>Only the first can append termination.<br/>Same-key retries return the original cancellation.

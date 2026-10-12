@@ -155,7 +155,7 @@ erDiagram
     %% invoices UNIQUE: (customer_id, invoice_number).
     %% price_versions, usage_ratings, and credit_entries reject updates and deletes through triggers.
     %% Closed months, API commands, invoices and invoiced groups reject updates and deletes.
-    %% Triggers also preserve group identity and validate receipt customer, metric, and UTC month.
+    %% Triggers also preserve group identity and validate usage_inbox row customer, metric, and UTC month.
     %% A group referenced by invoiced_usage_groups rejects updates and deletes.
     %% InvoiceLine values are stored in invoices.snapshot.lines; there is no invoice_lines table.
     %% No extra FK matches invoiced_usage_groups customer/month to the group's customer/month.

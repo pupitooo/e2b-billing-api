@@ -38,15 +38,15 @@ immutable snapshot on a later read or unchanged retry.
 Use a fresh seeded database and a new workflow state file. The first account checks
 fail immediately if earlier billing actions have changed either account. Each separate
 scenario also requires its own fresh seed accounts; acceptance tests create private
-schemas automatically. Changing `SOURCE` isolates receipt identities, not account balances.
+schemas automatically. Changing `SOURCE` isolates usage_inbox keys, not account balances.
 
 Invoice closure requires a completed UTC calendar month. The API uses its configured business clock (real time by default): October closes no earlier than `2026-11-01T00:00:00Z`, and November
 no earlier than `2026-12-01T00:00:00Z`. Before the October boundary, the assignment
 completes steps 1–12 and stops at step 13 with HTTP `422`; earlier committed
 commands remain stored. After the October boundary but before the November
 boundary, it cannot issue the November invoice.
-The exact November invoice also requires the late October receipt to route to
-November. Receipt in December or later routes that charge to a later billing
+The exact November invoice also requires the late October usage_inbox row to route to
+November. usage_inbox row in December or later routes that charge to a later billing
 month, so waiting until December does not by itself reproduce every fixture result.
 For a live fixed-clock walkthrough, use the [demo environment](../guides/demo-console.md#fixed-clock-invoice-demo). The short invoice scenario needs one fixed November instant; the complete assignment advances from November to December between steps 18 and 19.
 For complete backend E2E verification independent of the runtime calendar, run
@@ -55,7 +55,7 @@ separate service containers, configuration clock transitions and CI evidence.
 Use the [manual checkpoint walkthrough](../guides/e2e-walkthrough.md) to inspect
 intermediate results. `make inbox-test RUN=BillingSimulator` additionally runs
 the existing isolated integration workflows. Those
-isolated integration servers declare an invoice clock at `2026-12-01T00:00:00Z`, and declare November receipt times for late usage, while
+isolated integration servers declare an invoice clock at `2026-12-01T00:00:00Z`, and declare November arrival times for late usage, while
 exercising the same month guard, router, worker, and persistence. The price-version
 case additionally declares separate insertion times, described below. Requests have no
 clock override.
@@ -140,9 +140,9 @@ source does not reset account balances, subscriptions, or invoices.
 When the runtime calendar prevents October closure, expect `completed=12 steps=24`
 and HTTP `422` at step 13. Refresh the GUI for month `2026-10`: Acme has 13 USD
 credit and 12 USD gross usage; Cyberdyne has 18.17283945 USD gross usage and has
-reached its 15 USD limit. Both accounts have zero pending receipts and processing
+reached its 15 USD limit. Both accounts have zero pending usage_inbox rows and processing
 errors. These results remain in this project's database; the invoice has not
-been issued. Later steps still require the calendar and receipt-time conditions
+been issued. Later steps still require the calendar and usage_inbox row-time conditions
 above.
 
 To verify all 24 steps with the integration runner in the selected project:
@@ -152,7 +152,7 @@ make inbox-test RUN='^TestBillingSimulatorExecutable$/^complete_assignment$'
 ```
 
 The runner exercises the real simulator, HTTP router, worker, and PostgreSQL in a
-private seeded schema with controlled invoice and receipt times. Expect `PASS`.
+private seeded schema with controlled invoice and arrival times. Expect `PASS`.
 It removes the private schema after the test; the test's invoices do not appear
 in the GUI, and the live scenario's data remains unchanged.
 
@@ -179,7 +179,7 @@ version 1, and UTC intervals. Amounts are USD unless labeled as cents or microce
 1 USD is 100_000_000 microcents. JSON fields ending in `_microcents` contain microcents. Fresh-account reads require zero credit, pending events,
 processing errors, and state version. Completed accounting reads require zero
 pending events and errors unless the row explicitly expects quarantine.
-HTTP `202` means durable receipt; financial processing is checked by later reads.
+HTTP `202` means durable storage in usage_inbox; financial processing is checked by later reads.
 
 ## billing-demo-invoice
 
@@ -210,7 +210,7 @@ No schema migration or seed price changes are required.
 ## Billing assignment
 
 Source: [billing-assignment.json](billing-assignment.json).
-Use the [run prerequisites](#run-the-complete-assignment) for calendar and receipt times.
+Use the [run prerequisites](#run-the-complete-assignment) for calendar and arrival times.
 
 | Step | Simulator action | Expected result |
 | --- | --- | --- |
@@ -222,14 +222,14 @@ Use the [run prerequisites](#run-the-complete-assignment) for calendar and recei
 | 6 | Send the October 10, 12:00–13:00 measurements: Acme `100_000_000` units and Cyberdyne `123_456_789` units. | HTTP `202`; both measurements are durably accepted. |
 | 7 | Poll Acme's credit after the first hour. | HTTP `200`; 4 USD consumed, 21 USD remaining (`2_100_000_000` microcents); state version 3. |
 | 8 | Poll Cyberdyne's October limit status. | HTTP `200`; gross usage `617_283_945` microcents (6.17283945 USD), limit 15 USD, `limit_reached=false`. |
-| 9 | Retry both first-hour measurements with unchanged identities and content. | HTTP `202`; no additional receipt, charge, or credit debit. |
+| 9 | Retry both first-hour measurements with unchanged identities and content. | HTTP `202`; no additional usage_inbox row, charge, or credit debit. |
 | 10 | Send the October 20, 12:00–13:00 measurements: `200_000_000` units for each customer. | HTTP `202`; two additional measurements are accepted. |
 | 11 | Poll Acme's credit after October usage. | HTTP `200`; another 8 USD consumed, 13 USD remaining (`1_300_000_000` microcents); state version 4. |
 | 12 | Poll Cyberdyne's October limit status. | HTTP `200`; gross usage `1_817_283_945` microcents (18.17283945 USD), limit 15 USD, `limit_reached=true`. |
 | 13 | Issue Acme's October invoice; discard the committed reply and retry unchanged. | HTTP `200`; one `ACME-0001` snapshot: usage 12 USD + add-on 20 USD − credit 12 USD = **20 USD**. Exact gross and used credit are each `1_200_000_000` microcents. |
 | 14 | Issue Cyberdyne's October invoice after its limit was reached. | HTTP `200`; `CYBERDYNE-0001`: usage lines 6.17 USD and 12 USD, credit 0, total **18.17 USD**. Exact gross is `1_817_283_945` microcents; all usage remains billable. |
-| 15 | Deliver Acme's late October 30, 12:00–13:00 measurement of `50_000_000` units after October closing; discard the committed reply and retry. | HTTP `202`; one receipt, priced using October consumption time; billing month November under the required receipt-time assumptions. |
-| 16 | Deliver Acme's November 3, 12:00–13:00 measurement of `100_000_000` units. | HTTP `202`; one additional receipt. |
+| 15 | Deliver Acme's late October 30, 12:00–13:00 measurement of `50_000_000` units after October closing; discard the committed reply and retry. | HTTP `202`; one usage_inbox row, priced using October consumption time; billing month November under the required usage_inbox row-time assumptions. |
+| 16 | Deliver Acme's November 3, 12:00–13:00 measurement of `100_000_000` units. | HTTP `202`; one additional usage_inbox row. |
 | 17 | Poll Acme's credit after late October and November usage. | HTTP `200`; 7 USD remaining (`700_000_000` microcents); state version 7. |
 | 18 | Poll Cyberdyne's November limit status. | HTTP `200`; gross usage 0, retained limit 15 USD, `limit_reached=false`. |
 | 19 | Issue Acme's November invoice. | HTTP `200`; `ACME-0002`: late October usage 2 USD + November usage 4 USD + add-on 20 USD − credit 6 USD = **20 USD**. Exact gross and used credit are each `600_000_000` microcents. |
@@ -283,7 +283,7 @@ October must be a completed UTC month before step 5.
 Source: [billing-subcent-invoices.json](billing-subcent-invoices.json).
 Use fresh Acme seed data with no credit or add-ons. The fixed business clock must
 be at least `2027-01-01T00:00:00Z` to close all three months; integration tests use
-that instant. Each receipt contains `50_000` units at the existing Acme override
+that instant. Each usage_inbox row contains `50_000` units at the existing Acme override
 of 4 cents per million, worth exactly `200_000` microcents (USD 0.002).
 Each month's group rounds independently to zero cents. The three exact charges
 sum to USD 0.006, but no rounding remainder is carried into a later invoice.
@@ -391,8 +391,8 @@ Historical catalog repair uses [controlled operator SQL](../guides/accounting-re
 | 1 | Read Cyberdyne's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
 | 2 | Insert a default price of 8 cents per million, effective `2026-10-12`, key `new-default`. | HTTP `200`; price scheduled before activation; capture the new price-version ID. |
 | 3 | Insert Cyberdyne's override of 3 cents per million, effective `2026-10-19`, key `new-override`. | HTTP `200`; capture the customer price-version ID. |
-| 4 | Send Cyberdyne `100_000_000` units for each hour: October 13, 12:00–13:00 and October 20, 12:00–13:00. | HTTP `202`; two receipts accepted for the new default and customer override respectively. |
-| 5 | Poll Cyberdyne's credit after rating. | HTTP `200`; credit 0, state version 2; both receipts processed without errors. |
+| 4 | Send Cyberdyne `100_000_000` units for each hour: October 13, 12:00–13:00 and October 20, 12:00–13:00. | HTTP `202`; two usage_inbox rows accepted for the new default and customer override respectively. |
+| 5 | Poll Cyberdyne's credit after rating. | HTTP `200`; credit 0, state version 2; both usage_inbox rows processed without errors. |
 | 6 | Try a new default of 9 cents per million, effective `2026-10-12`, key `retroactive-default`. | HTTP `422`, `invalid_command`, field `effective_from`; rated history remains unchanged. |
 | 7 | Try a new Cyberdyne override of 1 cent per million, effective `2026-10-10`, key `retroactive-override`. | HTTP `422`, `invalid_command`, field `effective_from`; rated history remains unchanged. |
 | 8 | Issue Cyberdyne's October invoice. | HTTP `200`; `CYBERDYNE-0001`, usage 8 USD and 3 USD, credit 0, total **11 USD**. Exact gross `1_100_000_000` microcents; line IDs match the captured prices, ordered by price-version ID. |
@@ -407,7 +407,7 @@ October must be a completed UTC month before step 4.
 | 1 | Read Cyberdyne's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
 | 2 | Send 100 units spanning `2026-10-14T23:30:00Z`–`2026-10-15T00:30:00Z`, across the seed price change. | HTTP `202`; the unsupported interval is durably accepted into the inbox. |
 | 3 | Poll Cyberdyne's credit after worker inspection. | HTTP `200`; credit 0, pending 0, processing errors 1, state version 0; quarantine creates no financial charge or credit effect. |
-| 4 | Issue Cyberdyne's October invoice with the receipt quarantined. | HTTP `200`; `CYBERDYNE-0001`, total 0, exact gross and used credit 0; only a zero-valued credit line. Quarantine does not block issuance. |
+| 4 | Issue Cyberdyne's October invoice with the usage_inbox row quarantined. | HTTP `200`; `CYBERDYNE-0001`, total 0, exact gross and used credit 0; only a zero-valued credit line. Quarantine does not block issuance. |
 | 5 | Read Cyberdyne's October invoice. | HTTP `200`; `CYBERDYNE-0001` remains readable with total 0. |
 
 ## UTC month boundary
@@ -420,7 +420,7 @@ October must be a completed UTC month before step 4.
 | 1 | Read Acme's fresh account. | HTTP `200`; zero credit, pending events, errors, and state version. |
 | 2 | Send 100 units spanning `2026-10-31T23:30:00Z`–`2026-11-01T00:30:00Z`, across the UTC month boundary. | HTTP `202`; the unsupported interval is durably accepted into the inbox. |
 | 3 | Poll Acme's credit after worker inspection. | HTTP `200`; credit 0, pending 0, processing errors 1, state version 0; quarantine creates no financial charge or credit effect. |
-| 4 | Issue Acme's October invoice with the receipt quarantined. | HTTP `200`; `ACME-0001`, total 0, exact gross and used credit 0; only a zero-valued credit line. Quarantine does not block issuance. |
+| 4 | Issue Acme's October invoice with the usage_inbox row quarantined. | HTTP `200`; `ACME-0001`, total 0, exact gross and used credit 0; only a zero-valued credit line. Quarantine does not block issuance. |
 | 5 | Read Acme's October invoice. | HTTP `200`; `ACME-0001` remains readable with total 0. |
 
 Financial command fixtures use the public calendar-date contract:
@@ -448,7 +448,7 @@ make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json A
 ```
 
 Preserve the database, scenario file, source, and state file throughout recovery.
-Completing all 24 assignment steps requires the same calendar and receipt-time
+Completing all 24 assignment steps requires the same calendar and usage_inbox row-time
 prerequisites as the [assignment table](#billing-assignment).
 
 ### Lost committed grant and a new producer process
@@ -543,4 +543,4 @@ The [recovery timeline](delayed-billing.md#missed-manual-invoice) documents
 [billing-missed-invoice.json](billing-missed-invoice.json): a normal October invoice,
 a forgotten November, and atomic catch-up through December. The GUI offers the
 same 27-step plan and a manual recovery form. Expected monthly totals are USD 20,
-USD 25, USD 32 and USD 25, including late receipts and recurring add-on fees.
+USD 25, USD 32 and USD 25, including late usage_inbox rows and recurring add-on fees.

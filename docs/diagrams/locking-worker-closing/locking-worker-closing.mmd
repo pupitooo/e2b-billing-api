@@ -1,0 +1,36 @@
+---
+title: Worker and invoice closing account-lock order
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant W as Usage worker
+    participant C as Invoice closing API
+    participant D as PostgreSQL
+    Note over W,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E<br/>Catalog advisory (65102, 2): protects price_versions, not a column
+    Note over W,D: A valid usage_inbox row already exists for month M.<br/>Month M has ended and is eligible for closing.
+    alt Worker gets the account first
+        W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        C->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over C,D: WAIT until worker commit or rollback
+        W->>D: Shared catalog lock, FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E<br/>Account usage into M, allocate credit, COMMIT
+        D-->>C: Account lock granted
+        C->>D: Read processed M groups and allocated credit
+        C->>D: Publish immutable invoice and closure, COMMIT
+        Note over C,D: This usage_inbox row is included in invoice M
+    else Closing gets the account first
+        C->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over W,D: WAIT, no financial changes yet
+        C->>D: Publish only already processed M groups, COMMIT
+        D-->>W: Account lock granted
+        W->>D: Shared catalog lock, FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E<br/>Read the committed closure
+        W->>D: Account into an eligible later billing_month, COMMIT
+        Note over W,D: Keep original usage_month and historical price.<br/>Invoice M is unchanged.
+    end

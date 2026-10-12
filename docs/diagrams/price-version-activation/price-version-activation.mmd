@@ -9,7 +9,7 @@ config:
     useMaxWidth: false
 ---
 %% System contracts: no ordinary backdating; consumption-time pricing;
-%% quarantined receipts never block invoices; historical repair uses operator SQL.
+%% quarantined usage_inbox rows never block invoices; historical repair uses operator SQL.
 flowchart TB
     subgraph command["A. Ordinary POST /prices - one atomic transaction"]
         lock["Validate JSON idempotency_key<br/>Acquire scoped operation lock"]

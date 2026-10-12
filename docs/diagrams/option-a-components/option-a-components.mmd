@@ -9,14 +9,14 @@ config:
 ---
 %% Considered alternative; not the selected implementation.
 %% SQLite and its Go service share one billing host.
-%% Receipt identity and financial effects commit together before acknowledgement.
+%% usage_inbox row identity and financial effects commit together before acknowledgement.
 flowchart LR
     platform["Sandbox platform - separate system<br/>Go simulator in the assignment<br/>Durable sender buffer<br/>Stable IDs + retry + status polling"]
     callers["Customer / E2B administrator<br/>Closing operator"]
 
     subgraph host["One billing host"]
         api["Billing service - Go<br/>HTTP API + synchronous accounting<br/>Pricing, credit, spend, invoice closing"]
-        database[("SQLite file<br/>Receipt identities + accounting<br/>Credit ledger + spend state<br/>Immutable invoices")]
+        database[("SQLite file<br/>usage_inbox row identities + accounting<br/>Credit ledger + spend state<br/>Immutable invoices")]
         api <-->|"SQL: one write transaction<br/>Deduplicate + financial effect<br/>SQL reads and commands"| database
     end
 

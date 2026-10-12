@@ -26,6 +26,8 @@ import (
 // Uncredited sub-cent charges retain exact values while booking zero cents;
 // the adjacent exact half-cent boundary books one cent without a credit debit.
 func TestProcessBatch(t *testing.T) {
+	t.Run("maintenance lock order and deadlock rollback", testMaintenanceLockOrder)
+	t.Run("oldest locked customer blocks unrelated work", testOldestLockedCustomer)
 	t.Run("generated accounting sequences", testGeneratedAccountingSequences)
 	t.Run("partitioned usage preserves one financial group", testPartitionedUsage)
 	t.Run("sequence IDs and earlier groups", testAccountingGroupIdentities)

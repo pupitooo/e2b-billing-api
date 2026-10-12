@@ -25,7 +25,7 @@ flowchart TB
     subgraph processing["B. Worker processes each event atomically (1 cent = 1_000_000 microcents)"]
         direction LR
         rating["2. Price each event (Rating)<br/>Historical rate: 5 cents per million units<br/>Charge in microcents = units × rate<br/>1_000 × 5 = 5_000 microcents"]
-        group["3. Accumulate compatible events<br/>(RatedUsageGroup)<br/>After all events: 1_000_000 units<br/>Gross: 5_000_000 microcents = USD 0.05"]
+        group["3. Accumulate compatible events<br/>(rated_usage_groups)<br/>After all events: 1_000_000 units<br/>Gross: 5_000_000 microcents = USD 0.05"]
         credits["4. Apply available usage credit<br/>Starting credit: USD 0.02<br/>Total used: 2_000_000 microcents; left: 0<br/>Final net: 3_000_000 microcents"]
 
         rating --> group --> credits
