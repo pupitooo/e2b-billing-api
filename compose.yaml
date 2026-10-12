@@ -1,6 +1,28 @@
 name: e2b-local
 
 services:
+  e2e:
+    profiles: ["test"]
+    build:
+      context: .
+      target: e2e
+    working_dir: ${E2B_E2E_ROOT:-/app}
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      E2B_E2E_PROJECT: ${E2B_E2E_PROJECT:-}
+      E2B_E2E_ROOT: ${E2B_E2E_ROOT:-/app}
+      E2B_E2E_EVIDENCE: /evidence
+      E2B_E2E_SOCKET: ${E2B_E2E_SOCKET:-/var/run/docker.sock}
+      E2B_E2E_OUTPUT: ${E2B_E2E_OUTPUT:-/tmp/e2b-e2e}
+      E2B_POSTGRES_PORT: "0"
+      E2B_API_PORT: "0"
+      E2B_POSTGRES_PASSWORD: e2b_local_dev
+    volumes:
+      # Matching paths let the inner Compose CLI resolve host bind mounts.
+      - ${E2B_E2E_ROOT:-.}:${E2B_E2E_ROOT:-/app}:ro
+      - ${E2B_E2E_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      - ${E2B_E2E_OUTPUT:-/tmp/e2b-e2e}:/evidence
+
   simulator:
     build: .
     init: true

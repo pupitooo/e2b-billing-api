@@ -16,6 +16,8 @@
 !tests/inbox/**
 !tests/worker/
 !tests/worker/**
+!tests/e2e/
+!tests/e2e/**
 !migrations/
 !migrations/**
 !docs/

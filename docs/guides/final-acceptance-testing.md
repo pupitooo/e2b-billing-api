@@ -1,5 +1,10 @@
 # Final acceptance test procedure
 
+The [backend E2E suite](e2e-testing.md) automatically covers the executable
+backend checks in this procedure and runs in CI. For a shorter terminal-only
+presentation, use the [manual checkpoint walkthrough](e2e-walkthrough.md).
+This procedure retains detailed evidence, SQL and visual review instructions.
+
 ## Contents
 
 Read the [introduction](#introduction), then start with section 1.

@@ -50,7 +50,12 @@ Automatic interval segmentation would require additional measurement detail or a
 
 For approximately 50_000 customers and billions of monthly measurements, the [scaling proposal](../brainstorming/architecture-options.md#scaling-to-billions-of-records) separates raw receipt, archival/aggregation and transactional finance. It preserves stable identities, price and month boundaries, account ownership and the processed-usage invoice cutoff. Kafka, analytical storage and customer sharding are proposed extensions. Workload calculations and short local samples do not establish production capacity.
 
-Use the [acceptance procedure](../guides/final-acceptance-testing.md) to record one revision's test results, expected invoices, persisted balances and restart behaviour.
+The [backend E2E suite](../guides/e2e-testing.md) runs the public scenarios
+against separate API, worker and PostgreSQL services in CI, including configuration
+clock changes, outages, rollback and restart. The [manual walkthrough](../guides/e2e-walkthrough.md)
+lets you inspect each intermediate request and persisted result. Use the
+[acceptance procedure](../guides/final-acceptance-testing.md) for detailed SQL,
+invoice tables and human presentation/review evidence.
 
 ## Runtime boundaries
 

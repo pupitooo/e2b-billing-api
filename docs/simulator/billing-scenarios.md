@@ -49,8 +49,12 @@ The exact November invoice also requires the late October receipt to route to
 November. Receipt in December or later routes that charge to a later billing
 month, so waiting until December does not by itself reproduce every fixture result.
 For a live fixed-clock walkthrough, use the [demo environment](../guides/demo-console.md#fixed-clock-invoice-demo). The short invoice scenario needs one fixed November instant; the complete assignment advances from November to December between steps 18 and 19.
-For complete verification independent of the runtime calendar, run
-`make inbox-test RUN=BillingSimulator`. Those
+For complete backend E2E verification independent of the runtime calendar, run
+`make e2e-test`. The [E2E scenario guide](../guides/e2e-testing.md) describes
+separate service containers, configuration clock transitions and CI evidence.
+Use the [manual checkpoint walkthrough](../guides/e2e-walkthrough.md) to inspect
+intermediate results. `make inbox-test RUN=BillingSimulator` additionally runs
+the existing isolated integration workflows. Those
 isolated integration servers declare an invoice clock at `2026-12-01T00:00:00Z`, and declare November receipt times for late usage, while
 exercising the same month guard, router, worker, and persistence. The price-version
 case additionally declares separate insertion times, described below. Requests have no
@@ -470,6 +474,11 @@ such as `SANDBOXES`, `INTERVAL`, `DUPLICATES`, `REVERSE`, and `ADVANCE` belong t
 legacy transport scenarios and are rejected when changed for a billing workflow.
 
 ## Verification
+
+Every published billing fixture runs in `make e2e-test` and the CI `Backend E2E`
+job against separate API, worker and PostgreSQL containers. Keep these checks
+distinct from the integration router/worker fixtures below and from the
+[manual checkpoint walkthrough](../guides/e2e-walkthrough.md).
 
 ```sh
 make test RUN=BillingSimulator

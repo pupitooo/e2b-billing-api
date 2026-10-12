@@ -260,3 +260,8 @@ displays each returned snapshot separately in chronological order. A larger gap
 than 12 missing months needs consecutive earlier targets; successful retry keys
 retain the original range. The ordinary Issue and Load controls keep their own
 billing month. SQL inspection includes catch-up command history.
+
+Backend correctness runs separately through [Go E2E scenarios](e2e-testing.md)
+in CI, without a browser. Use the [manual backend walkthrough](e2e-walkthrough.md)
+for independently inspectable API and worker checkpoints. The existing Node GUI
+tests use simulated DOM and mocked responses; interactive GUI requests use real HTTP.

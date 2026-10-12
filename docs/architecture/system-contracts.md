@@ -28,3 +28,9 @@ resolve conflicts with the assignment before adopting or implementing them.
 
 Automatic invoice scheduling/delivery, external invoice references, configurable
 price denominators, and alternative catalog locking remain proposals.
+
+Backend verification uses [Go E2E scenarios](../guides/e2e-testing.md) against
+separate application services with trusted configuration clock changes. The
+[manual walkthrough](../guides/e2e-walkthrough.md) preserves inspectable operator
+checkpoints. These test controls do not add public clock parameters or change
+financial runtime contracts.

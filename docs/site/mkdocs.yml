@@ -56,6 +56,8 @@ nav:
       - Scenario format: simulator/scenario-style.md
   - Testing:
       - Tests: guides/testing.md
+      - Backend E2E scenarios: guides/e2e-testing.md
+      - Manual backend walkthrough: guides/e2e-walkthrough.md
       - Test quality: guides/test-mutation-audit.md
       - Acceptance:
           - Overview: guides/final-acceptance-testing.md

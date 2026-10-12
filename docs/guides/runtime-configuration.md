@@ -31,6 +31,12 @@ Keep the database and simulator/browser checkpoint. `make restart` alone does
 not apply changed environment variables. Advance time only between finished
 scenario steps; stored invoices and earlier audit timestamps remain immutable.
 
+The [backend E2E controller](e2e-testing.md#calendar-and-completion-boundaries)
+uses these same startup settings, gracefully stops both processes and changes
+time between completed scenario steps. The [manual clock helper](e2e-walkthrough.md#change-time-without-removing-history)
+provides the equivalent presentation procedure. Neither changes OS or database
+clocks; migration audit timestamps and runtime timers retain real time.
+
 ## API runtime budgets
 
 The API reads configuration once at startup. Compose passes the settings below

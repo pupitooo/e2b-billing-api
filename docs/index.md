@@ -42,3 +42,6 @@ Only explicitly selected public files appear in this portal; ignored assignment
 materials and local working documents remain outside it.
 
 [Delayed billing scenarios](simulator/delayed-billing.md) combine physical platform lag, missed manual invoices, immutable snapshots, credit and add-on lifecycle changes.
+
+Backend verification: [E2E scenarios](guides/e2e-testing.md) and
+[manual checkpoint walkthrough](guides/e2e-walkthrough.md).

@@ -13,7 +13,7 @@ Prepare the shared session here before running the following parts.
 | [1.1](#11-prerequisites-repository-tools-and-docker) | Open the repository root in Bash or Zsh; check `git`, `docker`, `make`, `curl`, `jq`, `cmp`, Compose, and the Docker daemon. | `compose.yaml` and `Makefile` exist; every tool resolves; Compose and Docker print their versions; block exit status `0`. Local Go is optional. |
 | [1.2](#12-initial-setup-evidence-directory-and-results-checklist) | Create an evidence directory outside the repository; save revision, working-tree status, UTC start time, and checklist. | Evidence files exist; scenario rows and all twelve requirement rows start at **NOT RUN**. Retain the printed directory path. |
 | [1.3](#13-assignment-inputs-and-acceptance-criteria) | Review the literal seed values and binding requirement matrix. | Inputs and pass conditions are known; no financial command is sent. |
-| [1.4](#14-date-prerequisites-for-invoice-scenarios) | Check the calendar and receipt-time prerequisites for the intended workflow. | An unmet prerequisite leaves the corresponding manual check **NOT RUN**, with its reason; automated fixtures use explicit clocks. |
+| [1.4](#14-date-prerequisites-for-invoice-scenarios) | Prepare the fixed business-clock phases for the intended workflow. | All required phases are explicit; changing configuration preserves database and producer state. |
 | [1.5](#15-prerequisites-reset-after-each-completed-scenario) | Read the reset procedure now; execute it only at checkpoints 2.5, 7.4, and 8.4 after saving evidence. | Only the selected acceptance project's data and producer state are removed; schema and seed catalog are restored; external evidence is retained. |
 
 Complete steps 1.1–1.4 and read step 1.5 before starting the acceptance checks in
@@ -185,21 +185,47 @@ unexpected result. This step itself sends no financial commands.
 
 ### 1.4 Date prerequisites for invoice scenarios
 
-New invoices require a completed UTC calendar month. Check the live API clock in
-step 3.2 and the [assignment's receipt-time prerequisites](../../simulator/billing-scenarios.md#run-the-complete-assignment).
-HTTP inputs cannot override either the server clock or the receipt time.
+Use one trusted fixed business clock for API and worker in the presentation
+project. No waiting for the host calendar is needed. HTTP timestamps never set
+receipt time or the server's clock. Export `E2B_DEMO_NOW=2026-10-31T00:00:00Z`
+before initial startup and after each independent-scenario reset.
 
-| Scenario action | Calendar or receipt-time prerequisite | Expected result |
+| Scenario action | Business-clock phase | Expected result |
 | --- | --- | --- |
-| Issue the assignment's October invoices (steps 13–14). | API clock at or after `2026-11-01T00:00:00Z`. | October can close; an earlier request returns HTTP `422` without invoice effects. |
-| Deliver late October usage (step 15). | October is closed; the receipt arrives during November 2026. | Charge routes to November. Receipt in December or later routes it to a later month and cannot match the fixed November expectations. |
-| Issue the assignment's November invoice (step 19). | API clock at or after `2026-12-01T00:00:00Z`. | November can close. An uninterrupted live run started in December cannot also satisfy step 15's November receipt time. |
-| Issue section 8's October invoice. | API clock at or after `2026-11-01T00:00:00Z`. | October can close; this separate scenario needs no late receipt. |
-| Verify the complete assignment independently of the live calendar. | Use section 2's isolated-schema regression suite with explicit invoice and receipt times. | All 24 steps can match the literal expected results without changing the public API's clock contract. |
+| Assignment steps 1–12 | `2026-10-31T00:00:00Z` | Initial usage is accounted before closing. |
+| Assignment steps 13–18 | `2026-11-01T00:00:00Z` | October closes; late October usage physically arrives in November and routes there. |
+| Assignment steps 19–24 | `2026-12-01T00:00:00Z` | November closes; earlier snapshots and receipt times remain unchanged. |
+| Combined credit/limit scenario | `2026-11-01T00:00:00Z` | October can close with its literal USD 20 add-on invoice. |
+| Price versions | October before insertion, November accounting, December rejection/closing | See the [manual clock table](../e2e-walkthrough.md#other-public-fixtures). |
 
-The automated invoice and simulator tests use explicit test-server clocks and
-can run before these dates. Record each unexecuted manual check as **NOT RUN**
-with its date precondition as the reason when that precondition prevents execution.
+Define the following phase helper in the same shell. It checks the selected
+project and pending receipts, stops both business processes and recreates them
+with the new environment. Database and producer volumes remain intact.
+
+```sh
+acceptance_advance() {
+  (
+    set -euo pipefail
+    test "${COMPOSE_PROJECT_NAME:-}" = e2b-acceptance-01
+    acceptance_pending=$(docker compose exec -T postgres psql -X -At -U e2b -d e2b_billing \
+      -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM usage_inbox WHERE processed_at IS NULL AND processing_error IS NULL')
+    test "$acceptance_pending" = 0
+    docker compose stop api worker
+    E2B_DEMO_NOW="$1" make up SERVICE=api
+    E2B_DEMO_NOW="$1" make up SERVICE=worker
+    E2B_DEMO_NOW="$1" make up SERVICE=docs
+  ) || return $?
+  export E2B_DEMO_NOW="$1"
+  docker compose exec -T api printenv E2B_DEMO_NOW
+  docker compose exec -T worker printenv E2B_DEMO_NOW
+}
+```
+
+Both printed timestamps must match. Wait for ordinary accounting before a phase
+change; investigate errors without moving the clock. Runtime deadlines, logs and
+OS `date` retain real time. The [backend E2E suite](../e2e-testing.md) performs the
+same transitions automatically. Human review can still record FAIL/NOT RUN for
+an unmet setup or failed observation, but the runtime calendar is no obstacle.
 
 ### 1.5 Prerequisites: reset after each completed scenario
 
@@ -218,6 +244,7 @@ Read these commands now; run them at the completion checkpoints in steps 2.5,
     printf '%s\n' 'Wrong project: select e2b-acceptance-01 before continuing.' >&2
     exit 1
   }
+  export E2B_DEMO_NOW=2026-10-31T00:00:00Z
   docker compose down --volumes
   make up SERVICE=postgres
   make migrate

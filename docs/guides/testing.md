@@ -6,7 +6,9 @@ Follow the [final acceptance test procedure](final-acceptance-testing.md) to ver
 
 | Command | Purpose |
 | --- | --- |
-| `make test` | Run all test suites. |
+| `make test` | Run SQL, Go integration and isolated backend E2E suites. |
+| `make e2e-test` | Run all backend E2E scenarios against separate API/worker/PostgreSQL containers. |
+| `make test SUITE=e2e` | Run only the isolated backend E2E suite. |
 | `make go-test` | Run Go package tests without starting external services. |
 | `make db-test` | Run only the database integrity suite. |
 | `make api-test` | Start PostgreSQL, migrate, and run HTTP/database acceptance tests against the API. |
@@ -16,11 +18,15 @@ Follow the [final acceptance test procedure](final-acceptance-testing.md) to ver
 | `make test SUITE=db` | Run only the database integrity suite in both configured time zones. |
 | `make test RUN='^TestPostUsageBatches$/^usage_batches_happy_path$'` | Run only the named Go scenario. Supplying `RUN` selects the Go suite by default. |
 
-`SUITE` accepts `all` (the default), `go`, or `db`. `RUN` uses the standard [Go `-run` regular-expression filter](https://go.dev/src/cmd/go/internal/test/test.go): anchors select an exact test name; a pattern such as `Usage` selects matching names. Explicit `SUITE=all RUN=Usage` runs the full SQL suite and matching Go tests. Unknown suites and `SUITE=db` combined with `RUN` fail before starting test work.
+`SUITE` accepts `all` (the default), `go`, `db`, or `e2e`. `RUN` uses the standard [Go `-run` regular-expression filter](https://go.dev/src/cmd/go/internal/test/test.go): anchors select an exact test name; a pattern such as `Usage` selects matching names. Explicit `SUITE=all RUN=Usage` runs the full SQL suite and matching Go tests. Unknown suites and `SUITE=db` combined with `RUN` fail before starting test work.
 
 The [handler tests](../../internal/httpapi/handler_test.go) use `httptest` to check routes, method restrictions, and the current usage response without a running server. With a local Go toolchain, run `go test ./...`; the integration build tag keeps external API tests out of this command. `make go-test` runs the same package tests in a container without starting services.
 
 The SQL suite applies pending migrations and discovers all `tests/sql/*.sql` files. [Inbox tests](../../tests/sql/usage_inbox.sql), [billing model tests](../../tests/sql/billing_model.sql), and [assignment seed tests](../../tests/sql/assignment_seed.sql) run in UTC and `Asia/Shanghai` and roll back their data. Seed checks use a private schema, preserving edited application data. Output identifies the file and time zone; any failure makes the command fail.
+
+When a demo clock is configured, use `E2B_DEMO_NOW= make api-test` for the
+ordinary receipt suite, which checks timestamps against real time. The E2E
+launcher supplies its own clock phases and ignores the demo environment.
 
 The original [API happy-path request](../../tests/api/usage_batches_test.go) and response
 expectations remain unchanged. The [acceptance tests](../../tests/api/usage_batches_test.go)
@@ -75,7 +81,12 @@ E2B_TEST_DATABASE_URL='postgres://e2b:e2b_local_dev@127.0.0.1:5432/e2b_billing?s
 go test -tags=integration -count=1 -v ./tests/api ./tests/inbox
 ```
 
-[CI](../../.github/workflows/ci.yml) runs `make check` and the complete test gate on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. Separate CI steps identify SQL integrity, unit tests, PostgreSQL workflows, HTTP tests against the running API and worker executable checks. They execute the same suites and order as unfiltered `make test`; integration suites are mandatory. The required `All tests` check includes Go formatting and static analysis, SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
+Read [backend E2E scenarios](e2e-testing.md) for the real-container coverage,
+clock transitions, filters and CI evidence. The [manual walkthrough](e2e-walkthrough.md)
+lets you inspect each intermediate output independently. GUI tests are Node tests
+with a simulated DOM and mock HTTP responses; GUI is outside backend E2E.
+
+[CI](../../.github/workflows/ci.yml) runs `make check` and the complete test gate on every push and pull request, using a fresh PostgreSQL volume and the same Compose configuration. Separate CI steps identify SQL integrity, unit tests, PostgreSQL workflows, HTTP tests against the running API and worker executable checks. The separate `Backend E2E` job executes `make e2e-test`, completing the same suites as unfiltered `make test`; both jobs are mandatory. The required `All tests` check includes Go formatting and static analysis, SQL integrity tests, Go package tests, PostgreSQL repository tests, HTTP integration tests, and worker lifecycle tests; the branch must also be up to date with `main`. Failed runs include service logs, and each run removes its test containers and volume.
 
 Read the [test-quality and mutation audit](test-mutation-audit.md) for the findings, regression scenarios, exact mutation evidence and a practical workflow for reviewing AI-generated tests.
 

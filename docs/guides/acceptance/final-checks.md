@@ -18,21 +18,21 @@ Complete [Assignment walkthrough](assignment.md) before continuing here.
   a freshly seeded database and no simulator progress. Reset again after it
   completes. Changing only source does not reset the accounts.
 - A live workflow's invoice months must already be completed UTC months.
-- The fixed `billing-price-versions` workflow uses the isolated-schema automated
-  runner. Its first two price commands see `2026-10-01T00:00:00Z`; its two rejected
-  backdated commands and invoice see `2026-12-01T00:00:00Z`. A live December server
-  cannot create those October versions through ordinary `POST /prices`; measurement
-  dates cannot advance or override the server clock.
+- Price versions require explicit clock changes before insertion, accounting and
+  rejected backdating. Both E2E and the [manual clock table](../e2e-walkthrough.md#other-public-fixtures)
+  provide those phases; measurement dates do not change server time.
 
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
 | [6.1](#61-check-that-every-required-regression-scenario-actually-ran) | Inspect step 2.3's `test.log` for each regression entry below. | Every required scenario has a passing result; missing/skipped cases are **NOT RUN**, failures require investigation. |
 | [6.2](#62-investigate-a-failing-scenario-with-its-existing-filter) | If needed, rerun the listed filters after step 2.3 and before reset 2.5. | The intended named subtest actually appears and its result is saved; diagnostic reruns do not replace the full gate. |
-| [6.3](#63-verify-the-current-month-public-api-response) | After section 5, read Cyberdyne's `/limit-status` in the assignment project and compare with synchronized host UTC month. | HTTP `200`; `jq` prints `true`; returned month matches, with zero pending events and processing errors. |
+| [6.3](#63-verify-the-current-month-public-api-response) | After section 5, read Cyberdyne's `/limit-status` in the assignment project and compare with its configured UTC business month. | HTTP `200`; `jq` prints `true`; returned month matches, with zero pending events and processing errors. |
 
 ### 6.1 Check that every required regression scenario actually ran
 
-Open the `test.log` saved in step 2.3. Find each scenario below and its passing
+Open the `test.log` saved in step 2.3 and the printed E2E evidence directory.
+The [E2E coverage map](../e2e-testing.md#acceptance-procedure-coverage) connects
+manual checkpoints to container scenarios. Find each scenario below and its passing
 result. Record a missing or skipped scenario as **NOT RUN**; investigate a failed
 scenario using step 6.2 in the automated project before continuing.
 
@@ -92,7 +92,7 @@ Run this step in the assignment project after section 5.
 - Section 4's assignment has completed in `e2b-acceptance-01`, with
   the API running and zero pending events or processing errors.
 - The shell session selects that assignment project and retains `acceptance_api`.
-- The host clock is synchronized with the server clock.
+- API and worker retain the fixed December business-clock phase.
 
 `TestSpendLimitAPI` checks that the current-month route responds successfully.
 Independently check its returned month in this completed assignment project:
@@ -100,7 +100,7 @@ Independently check its returned month in this completed assignment project:
 ```sh
 (
   set -euo pipefail
-  acceptance_current_month=$(date -u +%Y-%m)
+  acceptance_current_month=$(docker compose exec -T api printenv E2B_DEMO_NOW | cut -c1-7)
   curl --fail-with-body "$acceptance_api/customers/cyberdyne/limit-status" \
     | jq -e --arg month "$acceptance_current_month" \
       '.month == $month and .pending_events == 0 and .processing_errors == 0'
@@ -109,8 +109,9 @@ acceptance_step_status=$?
 printf 'Step exit status: %s\n' "$acceptance_step_status"
 ```
 
-If UTC rolls into a new month during the request, sample and read again. The
-explicit November assignment read checks the new-month business calculation.
+The assignment's fixed December phase must return `2026-12`; the current-month
+route uses that configured clock, not the host calendar. The backend E2E suite
+also checks this route on both sides of the October/November boundary.
 Neither case demonstrates an automatic invoice scheduler.
 
 
@@ -129,11 +130,11 @@ set -o pipefail
 acceptance_run_diagnostic_filters() {
   (
     set -euo pipefail
-    make test RUN='^TestBillingSimulatorExecutable$'
-    make test RUN='^TestCloseMonth$/^concurrent_closing_allocates_one_number$'
-    make test RUN='^TestProcessBatch$'
-    make test RUN='^TestPostUsageBatches$|^TestPostgresInsertBatch$'
-    make test RUN='^TestWorkerExecutable$'
+    E2B_DEMO_NOW= make test RUN='^TestBillingSimulatorExecutable$'
+    E2B_DEMO_NOW= make test RUN='^TestCloseMonth$/^concurrent_closing_allocates_one_number$'
+    E2B_DEMO_NOW= make test RUN='^TestProcessBatch$'
+    E2B_DEMO_NOW= make test RUN='^TestPostUsageBatches$|^TestPostgresInsertBatch$'
+    E2B_DEMO_NOW= make test RUN='^TestWorkerExecutable$'
   )
   acceptance_step_status=$?
   printf 'Step exit status: %s\n' "$acceptance_step_status"
@@ -160,7 +161,7 @@ set -o pipefail
 acceptance_run_current_month_check() {
   (
     set -euo pipefail
-    acceptance_current_month=$(date -u +%Y-%m)
+    acceptance_current_month=$(docker compose exec -T api printenv E2B_DEMO_NOW | cut -c1-7)
     curl --fail-with-body "$acceptance_api/customers/cyberdyne/limit-status" \
       | jq -e --arg month "$acceptance_current_month" \
         '.month == $month and .pending_events == 0 and .processing_errors == 0'
@@ -272,6 +273,7 @@ comparisons in the evidence directory. Save the service logs before resetting:
     printf '%s\n' 'Wrong project: select e2b-acceptance-01 before continuing.' >&2
     exit 1
   }
+  export E2B_DEMO_NOW=2026-10-31T00:00:00Z
   docker compose down --volumes
   make up SERVICE=postgres
   make migrate
@@ -392,7 +394,8 @@ SQL
       printf '%s\n' 'Wrong project: select e2b-acceptance-01 before continuing.' >&2
       exit 1
     }
-    docker compose down --volumes
+    export E2B_DEMO_NOW=2026-10-31T00:00:00Z
+  docker compose down --volumes
     make up SERVICE=postgres
     make migrate
     make up
@@ -430,6 +433,9 @@ printf 'Scenario exit status: %s\n' "$acceptance_scenario_status"
 | [8.4](#84-save-the-combined-result-and-reset-after-the-scenario) | Save results and service logs, then reset using step 1.5. | Original seed catalog and empty accounts restored; section 9 can review all saved evidence. |
 
 ### 8.1 Verify the reset environment for the combined credit and limit case
+
+After reset, run `acceptance_advance 2026-11-01T00:00:00Z` before this independent
+scenario. Seed accounts are still empty; the configured phase permits October closing.
 
 Step 7.4 has already restarted the project. Confirm service health, then repeat
 section 3's seed checks. Save that query output as `credit-limit-seed.txt` so the
@@ -518,6 +524,7 @@ Save its service logs, then reset using the same procedure as step 1.5:
     printf '%s\n' 'Wrong project: select e2b-acceptance-01 before continuing.' >&2
     exit 1
   }
+  export E2B_DEMO_NOW=2026-10-31T00:00:00Z
   docker compose down --volumes
   make up SERVICE=postgres
   make migrate
@@ -542,10 +549,11 @@ set +u
 set -o pipefail
 
 acceptance_run_combined_case_checkpoints() {
+  acceptance_advance 2026-11-01T00:00:00Z || return $?
   (
     set -euo pipefail
     LC_ALL=C
-    acceptance_api_clock=$(docker compose exec -T api date -u +%Y-%m-%dT%H:%M:%SZ)
+    acceptance_api_clock=$(docker compose exec -T api printenv E2B_DEMO_NOW)
     if [[ "$acceptance_api_clock" < "2026-11-01T00:00:00Z" ]]; then
       printf 'NOT RUN: server UTC time %s is before 2026-11-01T00:00:00Z.\n' "$acceptance_api_clock" >&2
       exit 1
@@ -583,7 +591,8 @@ acceptance_run_combined_case_checkpoints() {
       printf '%s\n' 'Wrong project: select e2b-acceptance-01 before continuing.' >&2
       exit 1
     }
-    docker compose down --volumes
+    export E2B_DEMO_NOW=2026-10-31T00:00:00Z
+  docker compose down --volumes
     make up SERVICE=postgres
     make migrate
     make up
@@ -650,7 +659,8 @@ Review the [submission overview](../../architecture/submission-overview.md),
 Open the `acceptance-results.md` created in step 1.2. Update the numbered
 scenario results and all twelve requirement rows using the evidence collected
 above. Use **NOT RUN** with an explanation for every
-unexecuted part, including live scenarios blocked by their date precondition.
+unexecuted part and its actual setup or observation failure. Explicit business-clock
+phases remove host-calendar waiting from the manual backend scenarios.
 
 | Completion check | Required record / outcome |
 | --- | --- |
