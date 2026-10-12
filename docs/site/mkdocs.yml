@@ -70,7 +70,9 @@ nav:
       - Documentation: guides/documentation.md
   - Architecture:
       - Overview: architecture/submission-overview.md
-      - System contracts: architecture/system-contracts.md
+      - System contracts:
+          - Implemented contracts: architecture/implemented-contracts.md
+          - Proposed contracts: architecture/proposed-contracts.md
       - Limitations: architecture/limitations.md
       - Decisions: architecture/decisions.md
       - Design options: brainstorming/architecture-options.md

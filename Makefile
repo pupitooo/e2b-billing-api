@@ -37,7 +37,32 @@ export REVERSE SIM_API_URL SCENARIO_FILE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test e2e-test _test-db _test-go _test-worker docs api-docs docs-check demo-check adminer-check simulate simulate-help fmt fmt-check vet check install-hooks
+# Make treats the positional date as another goal; consume only this command's argument.
+ifneq ($(filter delorean,$(MAKECMDGOALS)),)
+KEEP_TIMELINE ?= 0
+ifneq ($(KEEP_TIMELINE),0)
+ifneq ($(KEEP_TIMELINE),1)
+$(error KEEP_TIMELINE must be 0 or 1)
+endif
+endif
+DELOREAN_DATE := $(word 2,$(MAKECMDGOALS))
+ifneq ($(words $(MAKECMDGOALS)),2)
+$(error Usage: make delorean YYYY-MM-DD [KEEP_TIMELINE=0|1])
+endif
+ifneq ($(firstword $(MAKECMDGOALS)),delorean)
+$(error Usage: make delorean YYYY-MM-DD [KEEP_TIMELINE=0|1])
+endif
+# Reject malformed arguments before they can become executable Make goals.
+ifneq ($(shell printf '%s\n' $(call shell_quote,$(DELOREAN_DATE)) | sed -n '/^[1-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$$/p'),$(DELOREAN_DATE))
+$(error Usage: make delorean YYYY-MM-DD [KEEP_TIMELINE=0|1])
+endif
+.PHONY: $(DELOREAN_DATE)
+$(DELOREAN_DATE): ; @:
+override E2B_DEMO_NOW := $(DELOREAN_DATE)T00:00:00Z
+export E2B_DEMO_NOW
+endif
+
+.PHONY: help services check-service up delorean stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test e2e-test _test-db _test-go _test-worker docs api-docs docs-check demo-check adminer-check simulate simulate-help fmt fmt-check vet check install-hooks
 
 help:
 	@printf '%s\n' \
@@ -45,6 +70,8 @@ help:
 	  'Testing: make test [SUITE=all|go|db|e2e] [RUN=<regexp>]' \
 	  '' \
 	  'up       Build and start services; wait up to 120 seconds for readiness' \
+	  'delorean <date> Delete project volumes, start all services, and migrate at midnight UTC' \
+	  '                Add KEEP_TIMELINE=1 to preserve database history and simulator checkpoints' \
 	  'stop     Stop services; keep containers and volumes' \
 	  'down     Stop and remove containers; keep volumes' \
 	  'restart  Restart services and wait for readiness' \
@@ -77,6 +104,8 @@ help:
 	  'Service commands apply to all services when SERVICE is omitted.' \
 	  'Database commands always target postgres; start it with make up first.' \
 	  'Example: make up SERVICE=postgres' \
+	  'Example: make delorean 2026-11-01' \
+	  'Example: make delorean 2026-12-01 KEEP_TIMELINE=1' \
 	  'Example: make simulate SCENARIO=assignment MODE=step' \
 	  'Example: make test RUN="^TestPostUsageBatches$$/^usage_batches_happy_path$$"'
 
@@ -149,6 +178,38 @@ check-service:
 up: check-service
 	@$(COMPOSE) up --build -d --wait --wait-timeout 120 $(SERVICE_ARG)
 	@$(MAKE) --no-print-directory links
+
+delorean:
+	@set -eu; \
+	demo_date=$(call shell_quote,$(DELOREAN_DATE)); \
+	year=$${demo_date%%-*}; month_day=$${demo_date#*-}; \
+	month=$${month_day%%-*}; day=$${month_day#*-}; \
+	case "$$month" in \
+	  01|03|05|07|08|10|12) days_in_month=31 ;; \
+	  04|06|09|11) days_in_month=30 ;; \
+	  02) \
+	    days_in_month=28; \
+	    if [ $$((year % 4)) -eq 0 ] && { [ $$((year % 100)) -ne 0 ] || [ $$((year % 400)) -eq 0 ]; }; then \
+	      days_in_month=29; \
+	    fi ;; \
+	  *) days_in_month=0 ;; \
+	esac; \
+	if [ "$$day" -lt 1 ] || [ "$$day" -gt "$$days_in_month" ]; then \
+	  printf 'Invalid calendar date: %s\n' "$$demo_date" >&2; exit 2; \
+	fi; \
+	if [ $(call shell_quote,$(KEEP_TIMELINE)) = 1 ]; then \
+	  printf 'DeLorean KEEP_TIMELINE: preserving database history and simulator checkpoints; travelling to %s.\n' "$$E2B_DEMO_NOW"; \
+	else \
+	  printf 'DeLorean: resetting project volumes and travelling to %s.\n' "$$E2B_DEMO_NOW"; \
+	fi
+	@set -eu; \
+	if [ $(call shell_quote,$(KEEP_TIMELINE)) = 1 ]; then \
+	  $(COMPOSE) stop api worker; \
+	else \
+	  $(COMPOSE) down --volumes --remove-orphans; \
+	fi
+	@$(MAKE) --no-print-directory up SERVICE= E2B_DEMO_NOW="$$E2B_DEMO_NOW"
+	@$(MAKE) --no-print-directory migrate E2B_DEMO_NOW="$$E2B_DEMO_NOW"
 
 stop: check-service
 	@$(COMPOSE) stop $(SERVICE_ARG)

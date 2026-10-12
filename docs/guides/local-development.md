@@ -47,6 +47,8 @@ before sending a scenario.
 | Command | Purpose |
 | --- | --- |
 | `make up` | Start all services and wait for readiness. |
+| `make delorean 2026-11-01` | Delete project volumes, start all services at midnight UTC on the supplied date, and apply migrations. |
+| `make delorean 2026-12-01 KEEP_TIMELINE=1` | Change demo time while preserving database history, simulator checkpoints, and browser progress. |
 | `make up SERVICE=postgres` | Start PostgreSQL and wait for readiness. |
 | `make up SERVICE=api` | Build and start the Go API and wait for readiness. |
 | `make api-docs` | Start the portal and print the Scalar reference link. |
@@ -67,6 +69,45 @@ before sending a scenario.
 PostgreSQL uses the pinned `public.ecr.aws/docker/library/postgres:18.6-alpine` image, UTC timestamps, and a named volume. Its port is published on `127.0.0.1`. Database data survives `make stop`, `make restart`, and `make down`.
 
 `E2B_POSTGRES_PASSWORD` initializes the role password when the volume is empty. Changing the environment variable later does not update the password in an existing database.
+
+## Reset a demo with DeLorean
+
+Named after the time machine in *Back to the Future*, this command accepts a
+positional calendar date and fixes demo time at midnight UTC:
+
+```sh
+make delorean 2026-11-01
+```
+
+It validates the date before running `docker compose down --volumes --remove-orphans`,
+then runs `make up` for all services and `make migrate`, sequentially even with
+`make -j`. It deletes the selected Compose project's database and simulator
+checkpoints, including existing financial history. Browser walkthrough cursors
+and request history remain in browser storage; reset them separately for a fresh run.
+The date must use `YYYY-MM-DD`, with a year from 1000 through 9999.
+
+Add `KEEP_TIMELINE=1` to keep the existing timeline while travelling to another
+date:
+
+```sh
+make delorean 2026-12-01 KEEP_TIMELINE=1
+```
+
+This validates the date, stops API and worker, then runs `make up` and
+`make migrate` sequentially. It preserves all project volumes, including invoices,
+credit history and simulator checkpoints, plus the browser cursor and request
+history. Use the same Compose project and resume the same scenario checkpoint.
+Existing receipt times, accounting decisions, and issued invoices retain their
+stored values. Advance time between completed scenario steps; changing the clock
+does not replay earlier events. `KEEP_TIMELINE` accepts only `0` (the default
+volume reset) or `1` (preserve history); other values fail before service changes.
+
+The command supplies the selected date at midnight UTC through `E2B_DEMO_NOW`
+to API, worker and portal for this invocation. It preserves project and port configuration and
+starts all services regardless of `SERVICE`. It does not change the parent
+terminal's environment or `.env`. Before a subsequent `make up`, export the same
+`E2B_DEMO_NOW` to retain fixed time, or clear it to return to real time; see
+[clock configuration](runtime-configuration.md#shared-business-clock).
 
 ## Compose projects and ports
 

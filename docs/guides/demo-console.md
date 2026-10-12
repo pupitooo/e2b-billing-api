@@ -121,6 +121,18 @@ request. This demonstrates server idempotency without causing a real outage.
 
 ## Fixed-clock invoice demo
 
+To erase and recreate the selected Compose project's demo data at midnight UTC,
+use the [DeLorean reset](local-development.md#reset-a-demo-with-delorean):
+
+```sh
+make delorean 2026-11-01
+```
+
+This deletes database and simulator volumes and applies migrations after starting
+all services. Reset the browser walkthrough cursor separately before starting
+the scenario again. The environment setup below is useful when preserving another
+project's data and selecting a separate project for the demo.
+
 Use a previously unused Compose project and free ports, preserving the original
 seed catalog. These commands create a separate database; choose another project
 name for another fresh financial run:
@@ -160,13 +172,12 @@ For the complete assignment, keep the November fixed clock through step 18,
 including late October receipt and November accounting. Between steps 18 and 19:
 
 ```sh
-make stop SERVICE=api
-make stop SERVICE=worker
-export E2B_DEMO_NOW=2026-12-01T00:00:00Z
-make up
+make delorean 2026-12-01 KEEP_TIMELINE=1
 ```
 
-Resume the existing walkthrough at step 19, keeping its database and cursor.
+`KEEP_TIMELINE=1` stops API and worker and recreates services at the new time,
+preserving all project volumes and browser progress. Resume the existing
+walkthrough at step 19, keeping its database and cursor.
 Sending the late October receipt with a December clock would bill it in December
 instead of the declared November fixture.
 

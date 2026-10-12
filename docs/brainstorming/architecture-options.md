@@ -26,7 +26,7 @@ Go is fixed for every option. Storage, transport and processing arrangements var
 | C — selected | Go API, PostgreSQL inbox, asynchronous Go worker | After the inbox transaction commits | Recoverable pending work; accounting and spend status can lag. |
 | D | Go ingress, Kafka, aggregation, PostgreSQL accounting | After the configured durable broker acknowledgement | Separate ingestion and processing; more services and recovery boundaries. |
 
-Every option requires stable `(source, event_id)` identities, durable sender storage outside the sandbox lifecycle, and retries until the matching acknowledgement. The [system contracts](../architecture/system-contracts.md) record the required identities, delivery guarantees, and processing boundaries. Storage must preserve each measurement's original consumption time.
+Every option requires stable `(source, event_id)` identities, durable sender storage outside the sandbox lifecycle, and retries until the matching acknowledgement. The [implemented contracts](../architecture/implemented-contracts.md) record the required identities, delivery guarantees, and processing boundaries. Storage must preserve each measurement's original consumption time.
 
 ## Option A: synchronous Go service with SQLite
 

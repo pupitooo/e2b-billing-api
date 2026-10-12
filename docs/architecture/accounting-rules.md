@@ -27,8 +27,8 @@ add-on charges, immutable invoices, and the example's numerical results. The
 system must allocate **credit in exact microcents before rounding** and preserve whole
 UTC calendar months as fixed billing periods. Half-up rounding, allocation order,
 and the processed-usage closing cutoff are implementation policies for this reference
-implementation. The [system contract register](system-contracts.md)
-distinguishes assignment requirements from these additional policies.
+implementation. The [implemented-contract list](implemented-contracts.md)
+separates assignment requirements, added contracts and selected refinements.
 
 ## Fixed calendar-month contract
 

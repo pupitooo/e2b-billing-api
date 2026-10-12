@@ -7,7 +7,7 @@ rounding difference. We explicitly account for these limitations and will decide
 whether to retain the policies or introduce mitigation from measured results.
 
 This page records the behavior, rationale, and investigation plan. It complements
-the [system contracts](system-contracts.md) and [financial rules](accounting-rules.md).
+the [implemented contracts](implemented-contracts.md) and [financial rules](accounting-rules.md).
 The operating targets below need agreement for a real deployment; they do not
 add requirements to the assignment. Proposed instrumentation and mitigation are
 not implemented guarantees.
