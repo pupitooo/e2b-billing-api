@@ -46,14 +46,14 @@ container so Compose bind mounts refer to the host checkout.
 ## Calendar and completion boundaries
 
 API and worker use the same `E2B_DEMO_NOW` value. Before changing it, the controller
-waits for ordinary pending receipts to finish, captures logs and gracefully stops
+waits for ordinary pending usage_inbox rows to finish, captures logs and gracefully stops
 both services. It then recreates them with the new timestamp, keeping PostgreSQL
 and the producer checkpoint. No HTTP parameter changes the clock.
 
-Business time drives receipts, price validation, financial audit records,
+Business time drives usage_inbox rows, price validation, financial audit records,
 current-month reads and publication. HTTP deadlines, polling, retry, heartbeat,
 shutdown, migration audit time and service log timestamps keep real time.
-Changing the business clock does not rewrite an existing receipt or invoice.
+Changing the business clock does not rewrite an existing usage_inbox row or invoice.
 
 The assignment receives late October usage during November and publishes the
 November invoice in December. The price-version scenario creates its versions
@@ -74,8 +74,8 @@ presentation/review activities outside backend E2E.
 | Scenario under `TestBillingE2E` | Inputs and actions | Required result | Manual counterpart |
 | --- | --- | --- | --- |
 | `fresh_and_concurrent_migrations_preserve_seeds` | Two fresh runners, repeated and concurrent reruns, PostgreSQL restart | Versions 1–13 exactly once; complete migration timestamps and literal customers, addresses, metric, prices, add-on and empty accounts preserved | Acceptance 2.2, 2.4, 3.4 |
-| `assignment_survives_API_outage_worker_pause_and_service_restart` | All 24 assignment steps; stopped API; lost committed grant/invoice/usage replies; stopped worker; receipt replay; November/December transitions | Failed delivery advances no checkpoint; one grant; two durable unprocessed receipts before worker restart; six receipts/rating links; five groups; Acme invoices 2_000/2_000 cents and Cyberdyne 1_817 cents; Acme balance 700_000_000 microcents; complete SQL and HTTP snapshots unchanged after restart/retries | Acceptance 4–7 |
-| `usage_conflicts_and_concurrent_retries_recover_once` | Original receipt, batch with new + changed receipt, batch with new + invalid receipt, eight concurrent retries, worker restart | HTTP 409/422 leave all rows unchanged; only one receipt is pending and later rated; gross 400_000_000 microcents for 100_000_000 units, no credit entries | HTTP conflict/retry checks and worker recovery |
+| `assignment_survives_API_outage_worker_pause_and_service_restart` | All 24 assignment steps; stopped API; lost committed grant/invoice/usage replies; stopped worker; usage_inbox row replay; November/December transitions | Failed delivery advances no checkpoint; one grant; two durable unprocessed usage_inbox rows before worker restart; six usage_inbox rows/rating links; five groups; Acme invoices 2_000/2_000 cents and Cyberdyne 1_817 cents; Acme balance 700_000_000 microcents; complete SQL and HTTP snapshots unchanged after restart/retries | Acceptance 4–7 |
+| `usage_conflicts_and_concurrent_retries_recover_once` | Original usage_inbox row, batch with new + changed usage_inbox row, batch with new + invalid usage_inbox row, eight concurrent retries, worker restart | HTTP 409/422 leave all rows unchanged; only one usage_inbox row is pending and later rated; gross 400_000_000 microcents for 100_000_000 units, no credit entries | HTTP conflict/retry checks and worker recovery |
 | `credit_covered_gross_limit_excludes_add-on` | USD 25 credit, USD 20 add-on, USD 15 limit, 400_000_000 units, invoice, USD 20 raised limit | Gross USD 16 reaches the limit despite credit; add-on excluded; October invoice USD 20; USD 9 credit remains; raising limit clears signal; current UTC month resets gross | Acceptance 6.3 and 8 |
 | `six_month_clock_jump_catches_up_recurring_invoices` | Buy in October; reject March closing at its last microsecond; jump to exact April boundary; retry purchase and catch-up | Rejection changes nothing; six consecutive full USD 20 fees, total 12_000 cents, numbering 1–6; no usage or ledger entries; original October command timestamp preserved | [Six-month manual case](e2e-walkthrough.md#six-month-clock-jump) |
 
@@ -109,7 +109,7 @@ covers connection loss after commit and producer death at the commit/checkpoint
 boundary; both suites remain in CI.
 
 All public workflows independently check ledger/balance conservation, one rating
-per completed receipt, zero ratings for quarantined receipts, credit within gross,
+per completed usage_inbox row, zero ratings for quarantined usage_inbox rows, credit within gross,
 and invoice line sums. Literal invoice expectations are never calculated by the
 production accounting code.
 

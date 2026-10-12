@@ -15,7 +15,7 @@ make migration-status
 
 [migrations/migrate.sql](../../migrations/migrate.sql) applies only pending versions,
 including on existing Docker volumes. Schema changes and version records commit
-atomically; concurrent runners are serialized. Restarting a container does not
+atomically; concurrent runners are serialized. The runner advisory does not coordinate live API/worker activity or remove DDL relation-lock cycles. Follow the quiesced upgrade procedures below; the [locking assessment](../architecture/concurrency-and-locking.md#reproduced-unsafe-cycles) explains the reproduced maintenance pattern. Restarting a container does not
 apply migrations. See the [billing model — Initial data and migrations](../architecture/billing-model.md#initial-data-and-migrations)
 for seed values; the migration details below describe conversion and repeat-run behavior.
 
@@ -77,7 +77,7 @@ stored invoice and command-response JSON must use the same microcent field names
 
 For migration `009_processed_usage_closing.sql`, stop the API and worker before
 running `make migrate`, then restart them with the updated code. It removes the
-former closing-attempt, receipt-cohort and exclusion tables, including unfinished
+former closing-attempt, usage_inbox row-cohort and exclusion tables, including unfinished
 attempts. Raw usage, financial history, group freezes and issued invoices remain.
 Tests upgrade existing pending and quarantined attempts in UTC and Asia/Shanghai
 and verify retained balances, numbers and invoice immutability.
@@ -131,4 +131,4 @@ credit entries retain their separate operation identity for retries. Sequence
 numbers are not rolled back, so failed financial transactions can leave gaps.
 See the [accounting identity rules](../architecture/accounting-rules.md#accounting-resource-identities).
 
-Public command and accounting tests use private schemas. The [billing simulator](../simulator/billing-scenarios.md) verifies the complete assignment through HTTP, including retries, unavailable replies, exact invoices and credit, and monthly-limit reads. Ingestion acknowledges receipt before asynchronous accounting finishes.
+Public command and accounting tests use private schemas. The [billing simulator](../simulator/billing-scenarios.md) verifies the complete assignment through HTTP, including retries, unavailable replies, exact invoices and credit, and monthly-limit reads. Ingestion acknowledges usage_inbox row before asynchronous accounting finishes.

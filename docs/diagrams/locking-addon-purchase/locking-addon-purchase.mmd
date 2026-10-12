@@ -1,0 +1,36 @@
+---
+title: Add-on purchase versus invoice closing
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant P as Purchase API
+    participant C as Closing API
+    participant D as PostgreSQL
+    Note over P,D: Row selector: customer_billing_state.customer_id = C<br/>Request advisory identity: api_idempotency_operations.operation_scope<br/>plus api_idempotency_operations.idempotency_key (not a row lock)
+    Note over P,D: New add-on purchase and closing both target month M.<br/>Month M has ended, and closing history permits M.
+    alt Purchase gets the account first
+        P->>D: BEGIN, scoped request lock, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        C->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over C,D: WAIT for purchase completion
+        P->>D: Check closure, snapshot addons monthly price<br/>INSERT addon_subscriptions
+        Note over P,D: Purchase trigger uses the same account lock.<br/>It rejects overlapping active purchase months.
+        P->>D: Advance state_version, store result, COMMIT
+        D-->>C: Account lock granted
+        C->>D: Include the full monthly add-on price<br/>Publish invoice and COMMIT
+    else Closing gets the account first
+        C->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        P->>D: BEGIN, scoped request lock<br/>FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over P,D: WAIT for the invoice
+        C->>D: Publish invoice without the new purchase, COMMIT
+        D-->>P: Account lock granted, closure is now visible
+        P->>D: ROLLBACK, return 409 billing_conflict
+        Note over P,D: No retroactive subscription or request result
+    end
+    Note over P,D: If an older purchase wins before a later first close,<br/>closing rejects skipping its earlier active month.

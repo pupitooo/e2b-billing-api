@@ -30,7 +30,7 @@ Every option requires stable `(source, event_id)` identities, durable sender sto
 
 ## Option A: synchronous Go service with SQLite
 
-The API validates, deduplicates, prices usage, allocates credit, and updates spend in one SQLite transaction before responding. SQLite stores receipt identities, accounting records, and immutable invoices on the billing host. This keeps local setup small.
+The API validates, deduplicates, prices usage, allocates credit, and updates spend in one SQLite transaction before responding. SQLite stores usage event identities, accounting records, and immutable invoices on the billing host. This keeps local setup small.
 
 **Weak point:** an Acme usage write and a Cyberdyne invoice closing compete for the same database writer. Short transactions and bounded batches reduce waiting, at the cost of more batch coordination; spreading writers over hosts requires a storage change. SQLite WAL permits only one writer at a time and requires participating processes on the same host. [SQLite WAL concurrency](https://www.sqlite.org/wal.html#concurrency).
 
@@ -40,7 +40,7 @@ The API validates, deduplicates, prices usage, allocates credit, and updates spe
 
 ## Option B: synchronous Go service with PostgreSQL
 
-The API performs ingestion and accounting in one PostgreSQL transaction. Receipt identity, usage charges, credit allocation, and spend state commit together; the response confirms that accounting has completed. Customer locks coordinate shared credit and closing while independent customers can proceed separately. [PostgreSQL row locks](https://www.postgresql.org/docs/18/explicit-locking.html#LOCKING-ROWS).
+The API performs ingestion and accounting in one PostgreSQL transaction. usage_inbox row identity, usage charges, credit allocation, and spend state commit together; the response confirms that accounting has completed. Customer locks coordinate shared credit and closing while independent customers can proceed separately. [PostgreSQL row locks](https://www.postgresql.org/docs/18/explicit-locking.html#LOCKING-ROWS).
 
 **Weak point:** a slow accounting transaction delays usage acknowledgement and spend-status updates. For example, a large Cyberdyne batch can keep its other financial operations waiting on the customer lock. Smaller batches and shorter transactions reduce that delay, but add coordination and do not remove the customer's shared-credit serialization.
 
@@ -50,9 +50,9 @@ The API performs ingestion and accounting in one PostgreSQL transaction. Receipt
 
 ## Option C: PostgreSQL inbox and asynchronous Go worker
 
-The ingestion API atomically commits validated measurements to `usage_inbox`, then returns `202` with `{"status":"accepted"}`. The worker processes one receipt per transaction, locking the customer account before rechecking and locking the pending receipt. Its financial effects and completion marker commit together. The API and worker are separate Go processes and Compose services sharing one PostgreSQL database; they can restart independently. The simulator retains stable measurements and retries after lost replies or outages.
+The ingestion API atomically commits validated measurements to `usage_inbox`, then returns `202` with `{"status":"accepted"}`. The worker processes one usage_inbox row per transaction, locking the customer account before rechecking and locking the pending usage_inbox row. Its financial effects and completion marker commit together. The API and worker are separate Go processes and Compose services sharing one PostgreSQL database; they can restart independently. The simulator retains stable measurements and retries after lost replies or outages.
 
-Process isolation contains a worker crash and allows separate resource limits. It does not isolate shared database contention: workers can delay API writes through transactions or exhausted database capacity. The API has bounded admission, connection pools and deadlines; adding worker replicas still requires measured database headroom and does not remove contention over the earliest pending receipt.
+Process isolation contains a worker crash and allows separate resource limits. It does not isolate shared database contention: workers can delay API writes through transactions or exhausted database capacity. The API has bounded admission, connection pools and deadlines; adding worker replicas still requires measured database headroom and does not remove contention over the earliest pending usage_inbox row.
 
 **Weak point:** accepted input can be ahead of the financial state. If Cyberdyne's second example hour is waiting in the inbox, the platform can still see spend below its USD 15 limit. Limit and credit reads expose pending/error counts, but cannot see undelivered platform measurements. Closing snapshots only accounting committed before it acquires the customer lock; even previously accepted input can bill later. This keeps closing independent of backlog size, at the cost of incomplete current invoices, separate rounding groups and a freshness agreement. The shared database remains an availability and capacity dependency.
 
@@ -72,9 +72,9 @@ A Go ingress publishes stable raw measurements to Kafka. An archive consumer pre
 
 ## Why option C was selected
 
-Option C keeps incoming measurements durable independently of the accounting worker, makes pending work visible and avoids operating a broker in the assignment implementation. PostgreSQL supplies receipt identity, exact financial storage and account locks in one local service. Separate API and worker lifecycles allow recovery without coupling receipt availability to a running worker.
+Option C keeps incoming measurements durable independently of the accounting worker, makes pending work visible and avoids operating a broker in the assignment implementation. PostgreSQL supplies usage_inbox row identity, exact financial storage and account locks in one local service. Separate API and worker lifecycles allow recovery without coupling usage_inbox row availability to a running worker.
 
-C adds a second transaction and a gap between receipt and accounting. The inbox key and content comparison protect receipt retries; financial correctness requires accounting writes and completion to commit together. The source buffer retains unacknowledged measurements. Choosing C does not establish production capacity or adopt D as the eventual architecture.
+C adds a second transaction and a gap between usage_inbox row and accounting. The inbox key and content comparison protect usage_inbox row retries; financial correctness requires accounting writes and completion to commit together. The source buffer retains unacknowledged measurements. Choosing C does not establish production capacity or adopt D as the eventual architecture.
 
 ## Workload assumptions for further analysis
 
@@ -92,15 +92,15 @@ Calculated rate = customers × average active sandboxes × metrics ÷ 60. Monthl
 
 | Implemented contract | Detail and verification |
 | --- | --- |
-| Strict measurement validation and atomic receipt | [OpenAPI](../api/openapi.yaml) defines JSON, time, identity, body and batch limits. [HTTP tests](../../tests/api/usage_batches_test.go) and [repository tests](../../tests/inbox/usage_inbox_test.go) verify retries, conflicts, cancellation and rollback. |
-| Exactly-once financial effects through retries | Account-first locking, pending-receipt recheck and one financial transaction are described in the [billing model](../architecture/decisions.md#architectural-decisions-and-rationale); [accounting tests](../../tests/inbox/billing_test.go) cover concurrent workers and rollback. |
+| Strict measurement validation and atomic usage_inbox row | [OpenAPI](../api/openapi.yaml) defines JSON, time, identity, body and batch limits. [HTTP tests](../../tests/api/usage_batches_test.go) and [repository tests](../../tests/inbox/usage_inbox_test.go) verify retries, conflicts, cancellation and rollback. |
+| Exactly-once financial effects through retries | Account-first locking, pending-usage_inbox row recheck and one financial transaction are described in the [billing model](../architecture/decisions.md#architectural-decisions-and-rationale); [accounting tests](../../tests/inbox/billing_test.go) cover concurrent workers and rollback. |
 | Historical prices, exact credit and cumulative rounding | [Financial rules](../architecture/accounting-rules.md) distinguish consumption prices, microcents, group rounding and serialized credit allocation. [Primitive tests](../../internal/accounting/money_test.go) and [price tests](../../internal/accounting/pricing_test.go) cover boundaries and overflow. |
 | Closing from processed usage, immutable invoices and numbering | The [closing contract](../architecture/accounting-rules.md#transaction-and-closing-contract) and [processed-closing tests](../../tests/inbox/processed_closing_test.go) cover pending input, both lock orders, month order, retries and separate rounding groups. |
 | Assignment values and durable platform recovery | [Public workflows](../simulator/billing-scenarios.md) and [executable tests](../../tests/inbox/billing_simulator_test.go) reproduce invoices, balances, limits, lost committed replies and outages. |
 
-Intervals must fit one applicable price version and one UTC month; ambiguous crossings are quarantined, not automatically split. Missing valid prices produce a P0 incident without charges. Historical catalog repair and explicit receipt release use the [operator procedure](../guides/accounting-recovery.md#controlled-historical-price-repair); ordinary price commands cannot backdate a new version. Closing never drains or repairs input, and pending/quarantined target-month usage can bill later.
+Intervals must fit one applicable price version and one UTC month; ambiguous crossings are quarantined, not automatically split. Missing valid prices produce a P0 incident without charges. Historical catalog repair and explicit usage_inbox row release use the [operator procedure](../guides/accounting-recovery.md#controlled-historical-price-repair); ordinary price commands cannot backdate a new version. Closing never drains or repairs input, and pending/quarantined target-month usage can bill later.
 
-Credit allocation follows serialized processing order. Splitting a compatible group preserves its cumulative amount; reordering around grants or closing can change credit timing or the billing group. No inbox cleanup is implemented: deduplication depends on retained receipt identities and content. Automatic interval segmentation, correction policy and replay-safe retention remain extensions.
+Credit allocation follows serialized processing order. Splitting a compatible group preserves its cumulative amount; reordering around grants or closing can change credit timing or the billing group. No inbox cleanup is implemented: deduplication depends on retained usage_inbox keys and content. Automatic interval segmentation, correction policy and replay-safe retention remain extensions.
 
 ## TODO: freshness, durability, and operations
 
@@ -123,7 +123,7 @@ Process large measurement volumes separately; send smaller accounting increments
 
 OLAP is optional; no engine is selected. A Go aggregator prepares increments; PostgreSQL remains the financial source of truth.
 
-1. **Keep receipt available during accounting outages.** C already separates receipt and accounting. D's replicated queue can accept measurements while the financial database is unavailable. Confirm durable receipt, then account later. **Cost:** another service and a finite buffer that can fill during prolonged overload.
+1. **Keep ingestion available during accounting outages.** C already separates ingestion and accounting. D's replicated queue can accept measurements while the financial database is unavailable. Confirm durable storage in usage_inbox, then account later. **Cost:** another service and a finite buffer that can fill during prolonged overload.
 
 2. **Reduce financial writes by combining usage.** One customer's 100 sandboxes at the same CPU price can produce one minute's accounting increment instead of 100 writes. Keep originals for audit. Combine matching metric, price, UTC usage month and billing destination; preserve credit-grant order, exact money and rounding. **Cost:** waiting for a sum delays limit visibility.
 

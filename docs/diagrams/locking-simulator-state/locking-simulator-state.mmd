@@ -1,0 +1,30 @@
+---
+title: Two simulator commands using one checkpoint
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant A as Simulator process A
+    participant B as Simulator process B
+    participant F as OS / checkpoint files
+    A->>F: Open state.lock<br/>flock LOCK_EX with LOCK_NB
+    F-->>A: Exclusive writer ownership granted
+    B->>F: Open the same state.lock<br/>flock LOCK_EX with LOCK_NB
+    F-->>B: Immediate lock error, do not wait
+    Note over B,F: No checkpoint rewrite or sender run by this command
+    A->>F: Load checkpoint, run the selected command<br/>Write temporary snapshot, fsync, rename, fsync directory
+    alt Normal command completion
+        A->>F: Close the lock file descriptor
+    else Process exits or is killed
+        F->>F: Release ownership when descriptors are closed
+    end
+    B->>F: Retry by opening the same lock file
+    F-->>B: Exclusive ownership granted
+    B->>F: Load the old or new complete checkpoint<br/>Resume with preserved event identities
+    Note over A,F: Transport and financial workflow commands use this store.<br/>Different checkpoint paths have separate ownership.<br/>File locking protects the checkpoint, not database accounting.

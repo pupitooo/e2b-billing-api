@@ -17,7 +17,7 @@ Follow [usage to invoice](usage-to-invoice.md) for the worked accounting flow,
 
 ## Logical data model (ERD)
 
-The logical model introduces customers, metered usage, historical prices, credit, add-on purchases, and monthly invoices before considering SQL tables and constraints. The diagram shows the main billing concepts and their relationships; the implementation sections below describe their PostgreSQL representation. Invoice lines and immutable monthly invoices are explained in the [usage-to-invoice guide](usage-to-invoice.md#8-invoiceline-what-appears-on-a-particular-invoice).
+The logical model introduces customers, metered usage, historical prices, credit, add-on purchases, and monthly invoices before considering SQL tables and constraints. The diagram shows the main billing concepts and their relationships; the implementation sections below describe their PostgreSQL representation. Invoice lines and immutable monthly invoices are explained in the [usage-to-invoice guide](usage-to-invoice.md#8-invoice-lines-what-appears-on-a-particular-invoice).
 
 ![Proposed MVP logical data model](../diagrams/data-model/data-model.png)
 
@@ -27,7 +27,7 @@ Conceptually, accepted usage is rated using historical prices, consumes availabl
 
 ## Implemented PostgreSQL schema (ERD, migrations 001–013)
 
-`UsageReceipt` maps to `usage_inbox` plus the separate `usage_ratings` link. Invoices use immutable JSON snapshots and frozen-group links rather than the separate line table proposed in the logical ERD.
+`usage_inbox` maps to `usage_inbox` plus the separate `usage_ratings` link. Invoices use immutable JSON snapshots and frozen-group links rather than the separate line table proposed in the logical ERD.
 
 This diagram shows all 17 tables and their SQL columns, primary keys, foreign keys, and relationship cardinalities after migrations `001` through `013`, including the runner's `schema_migrations` table. It uses the names and types from the migrations and includes closure, command history, invoice snapshots, and frozen-group links.
 
@@ -37,7 +37,7 @@ This diagram shows all 17 tables and their SQL columns, primary keys, foreign ke
 
 All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns belonging to primary and foreign keys, including composite keys. Solid relationships include the referenced identity in the child's primary key; dashed relationships are other declared foreign keys. The Mermaid source records the composite unique constraints. `billing_microcents` is an exact `numeric` domain for non-negative finite integer amounts in microcents; one cent is 1_000_000 microcents. Columns ending in `_microcents` contain microcents; the signed ledger uses `billing_signed_microcents`.
 
-`usage_inbox` has no customer or metric foreign keys. Its optional one-to-one relationship with `usage_ratings` records whether an event has been assigned to a group; each rating references one `rated_usage_groups` row. The diagram shows database cardinalities, so a customer may have zero or one account-state row even though the seed creates one for each initial customer. Receipt matching and price ownership checks are enforced by triggers, as described below.
+`usage_inbox` has no customer or metric foreign keys. Its optional one-to-one relationship with `usage_ratings` records whether an event has been assigned to a group; each rating references one `rated_usage_groups` row. The diagram shows database cardinalities, so a customer may have zero or one account-state row even though the seed creates one for each initial customer. usage_inbox row matching and price ownership checks are enforced by triggers, as described below.
 
 `invoices` references a closed customer/month; `invoiced_usage_groups` links each group to at most one invoice and activates the group-freeze trigger. Buyer details, issue time and lines live in the immutable JSON snapshot. Migration 009 retires the three pending-usage closing tables; the worker and closing coordinate through the existing account lock and committed closed months.
 
@@ -53,7 +53,7 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 | `rated_usage_groups` | Totals grouped by customer, price version, original usage month, and billing month; stores exact units/gross microcents, booked gross cents, and allocated credit microcents. |
 | `usage_ratings` | Links one `(source, event_id)` from `usage_inbox` to exactly one group. Many events can share a group. |
 | `monthly_usage` | Gross usage charges in exact microcents per customer and original UTC month, before credit and add-ons. |
-| `credit_entries` | Exact signed microcent history: positive grants without a group and negative usage debits referencing a group owned by the same customer. Server-generated `credit_entry_id` identifies each row; API keys live in the shared command history. Usage effects commit with the unique event rating and receipt checkpoint. |
+| `credit_entries` | Exact signed microcent history: positive grants without a group and negative usage debits referencing a group owned by the same customer. Server-generated `credit_entry_id` identifies each row; API keys live in the shared command history. Usage effects commit with the unique event rating and usage_inbox row checkpoint. |
 | `addons` | Add-on catalog and monthly price in cents. |
 | `addon_subscriptions` | Customer purchases with a monthly price snapshot and the UTC purchase month. Purchase periods are append-only, with no overlapping active months for one customer/add-on. Later purchases retain earlier IDs and snapshots. |
 | `addon_cancellations` | Append-only termination per purchase; `end_month` is its inclusive final charged UTC month. The period trigger shares the customer lock with financial commands. |
@@ -63,7 +63,7 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 
 Identifiers, balances, prices, and timestamps are supplied explicitly. `customer_billing_state.state_version` defaults to zero and `next_invoice_number` to one for new accounts; callers may supply explicit initial values. Version increments and text validation remain application responsibilities. The inbox remains independent of the catalog: ingestion can preserve unknown customers or metrics for an explicit processing error rather than losing the input.
 
-Foreign keys reject missing catalog records, missing receipts, and credit debits for another customer's group. A group's price must belong to its metric and be either a default or an override for that customer. Group identity cannot change after insertion; totals can increase as the worker processes more events. Rating links require the same customer and metric and an interval wholly within the original UTC month, including intervals ending exactly at the next month's boundary.
+Foreign keys reject missing catalog records, missing usage_inbox rows, and credit debits for another customer's group. A group's price must belong to its metric and be either a default or an override for that customer. Group identity cannot change after insertion; totals can increase as the worker processes more events. Rating links require the same customer and metric and an interval wholly within the original UTC month, including intervals ending exactly at the next month's boundary.
 
 Prices, credit entries, rating links, add-on purchases and cancellations reject row updates and deletes. Price changes append a new version; they do not rewrite past prices. Customer details, account projections, group totals, monthly totals, and the add-on catalog remain mutable. A subscription retains its purchased price when the catalog changes.
 ## Initial data and migrations

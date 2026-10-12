@@ -1,0 +1,35 @@
+---
+title: Two workers selecting the same usage_inbox row
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant A as Worker A
+    participant B as Worker B
+    participant D as PostgreSQL
+    Note over A,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E<br/>Catalog advisory (65102, 2): protects price_versions, not a column
+    A->>D: SELECT oldest pending candidate outside a transaction
+    B->>D: SELECT the same candidate outside a transaction
+    A->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+    B->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+    Note over B,D: WAIT, A owns the customer account
+    A->>D: Shared catalog lock, FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E<br/>Recheck pending state
+    alt A completes or quarantines the usage_inbox row
+        A->>D: COMMIT processed_at and financial writes<br/>Or processing_error with no financial effect
+        D-->>B: Account lock granted
+        B->>D: Shared catalog lock, reload pending usage_inbox row
+        D-->>B: No pending row for this identity
+        B->>D: COMMIT without financial writes
+    else A fails before commit
+        A->>D: ROLLBACK every financial and completion write
+        D-->>B: Account lock granted
+        B->>D: Shared catalog lock, FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E<br/>usage_inbox row is still pending
+        B->>D: Account once and COMMIT
+    end
+    Note over A,D: Same-customer usage_inbox rows also serialize when identities differ.<br/>Different accounts can rate concurrently under shared catalog locks.

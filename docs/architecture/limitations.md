@@ -22,9 +22,9 @@ not implemented guarantees.
 
 ### Behavior and rationale
 
-`POST /usage/batches` returns `202` after durable inbox receipt. The independent
+`POST /usage/batches` returns `202` after durable storage in usage_inbox. The independent
 worker subsequently commits rating, original-month gross spend, credit allocation,
-and receipt completion together. The [limit-status endpoints](submission-overview.md#interfaces-and-ownership)
+and usage_inbox row completion together. The [limit-status endpoints](submission-overview.md#interfaces-and-ownership)
 read this committed gross spend; they exclude credit and add-ons.
 
 For example, Cyberdyne has exact October gross spend of USD 6.17283945 and a
@@ -34,7 +34,7 @@ USD 18.17283945 and status reports `true`. Periodic platform polling adds anothe
 delay before the platform observes the change.
 
 **We explicitly accept delayed financial visibility as a consequence of separating
-durable receipt from accounting.** Receipt can continue during a worker outage,
+durable storage in usage_inbox from accounting.** Ingestion into usage_inbox can continue during a worker outage,
 subject to PostgreSQL availability and storage capacity. Accounting keeps its
 atomic financial transaction and can recover from the backlog. The assignment
 also anticipates platform lag and requires billing all measured usage above the
@@ -52,7 +52,7 @@ for the worker.
 
 ### What to measure
 
-- Measure platform measurement-to-receipt, receipt-to-accounting, and
+- Measure platform measurement-to-usage_inbox row, usage_inbox row-to-accounting, and
   accounting-to-platform-observation separately, with p95/p99 and the oldest
   pending age. Include normal load, bursts, large customers, a stopped worker,
   and backlog recovery.
@@ -79,7 +79,7 @@ undelivered input or an accounting backlog. If a product requires a strict
 non-exceedable budget, evaluate a different control protocol, such as reserving
 budget before work starts, and verify its failure behavior with the platform.
 
-Implementation: [durable receipt](../../internal/httpapi/usage.go),
+Implementation: [durable usage_inbox row](../../internal/httpapi/usage.go),
 [limit reads and changes](../../internal/postgres/limits.go), and
 [transactional accounting](../../internal/postgres/processor.go).
 
@@ -111,7 +111,7 @@ credit grant. Count alone is insufficient: a few expensive events can have a
 large customer impact.
 
 Reconcile input identities with exactly one accounting effect and eventual invoice
-inclusion. Stored receipt and processing times alone do not establish the closing
+inclusion. Stored usage_inbox row and processing times alone do not establish the closing
 lock cutoff precisely; investigation needs suitable closure/cutoff evidence.
 Quarantined valid usage requires explicit recovery, not an assumption of automatic
 eventual processing.
@@ -160,7 +160,7 @@ and verify the mitigation under the same scenarios. Missing observations remain
 open limitations; successful functional tests alone do not establish acceptable
 operating impact.
 
-Other implementation boundaries and production work, including receipt segmentation,
+Other implementation boundaries and production work, including usage_inbox row segmentation,
 processing-order credit, explicit invoice invocation, retention, and backup recovery,
 remain described in the [implementation overview](submission-overview.md#remaining-limits-and-improvements)
 and [capacity assessment](capacity-and-measurements.md).

@@ -32,7 +32,7 @@ while proration would conflict with the assignment's full-price rule.
 
 The USD 100 grant is processed before October's delayed USD 5. Credit pays newly
 processed usage, including historical usage, without rewriting earlier debits.
-Processing those receipts before the grant would produce different net invoices;
+Processing those usage_inbox rows before the grant would produce different net invoices;
 the additional integration cases demonstrate that allocation-order policy.
 
 | Billing month | Usage on invoice | Add-on | Used credit | Total | Issued at UTC |
@@ -52,7 +52,7 @@ ends at USD 105 and October at USD 200; November has USD 2, December USD 120 and
 January USD 0. Delayed October usage does not make November's current-month limit
 reached. Every usage invoice retains original month, units, exact gross and credit;
 all five complete snapshots are reloaded after the backlog and must remain equal.
-Lost replies and January retries preserve the original receipt times and allocate
+Lost replies and January retries preserve the original arrival times and allocate
 no duplicate credit, charges, subscriptions or invoice numbers.
 
 ## Run from the GUI or CLI
@@ -102,12 +102,12 @@ shows how to inspect each phase yourself.
 `TestBillingSimulatorExecutable/multi-month_platform_delay_with_real_receipt_clocks`
 executes all 35 public steps in new CLI processes against one private schema, real
 HTTP router and worker. An atomic test clock is shared by ingestion, financial
-commands and worker; raw receipt timestamps are checked independently of invoice
-results. Final storage must contain 15 unique rated receipts, five invoices and
+commands and worker; raw arrival timestamps are checked independently of invoice
+results. Final storage must contain 15 unique rated usage_inbox rows, five invoices and
 one cancellation, with USD 407 total and no remaining credit.
 
 `TestCloseMonth/platform_and_worker_backlog_boundaries` checks four distinct cases:
-a closed origin routes to the receipt month; another closure before worker
+a closed origin routes to the UTC arrival month; another closure before worker
 processing moves it forward again; an unissued origin keeps its original month;
 and a grant after rating does not retroactively pay previously processed usage.
 Each preserves every earlier snapshot and the original price and consumption month.
@@ -136,7 +136,7 @@ command issues separate November and December invoices together.
 
 The USD 15 credit grant covers usage only. Combined usage is USD 37; credit of
 USD 15 plus four USD 20 add-on fees gives **USD 102**, preserving every charge.
-November remains open until catch-up, so its January receipt joins November's
+November remains open until catch-up, so its January usage_inbox row joins November's
 original group rather than receiving a late-usage label. December usage received
 and processed after catch-up appears on January's invoice with its original price
 and consumption month. Previously issued snapshots remain unchanged.
@@ -166,11 +166,11 @@ A new key for an existing target returns only that target's original snapshot.
 
 The implementation begins after the latest closed month. On a first run it begins
 at the earliest known raw usage, rated group or purchase month, including pending
-and quarantined receipts. It then issues every intervening month, including empty
+and quarantined usage_inbox rows. It then issues every intervening month, including empty
 months, under one account lock and transaction. The trusted issue timestamp is
 sampled once; invoice numbers, snapshots, freezes, closures and successful command
 history commit together. A later-month failure rolls all publication writes back.
-Credit is not allocated again. Pending receipts do not block the batch; subsequent
+Credit is not allocated again. Pending usage_inbox rows do not block the batch; subsequent
 worker processing routes beyond the complete committed range without losing usage.
 
 At most 12 missing months fit one command to bound transaction length and account
@@ -189,7 +189,7 @@ when the second invoice fails. Worker-cutoff tests verify one rating and one gro
 freeze across both processing orders. `TestCatchUpInvoicesAPI` verifies explicit
 transport fields and no financial effects on errors.
 `TestBillingSimulatorExecutable/missed_manual_invoice_with_real_receipt_clocks`
-checks all 27 CLI/API steps, six physical receipt timestamps, four immutable
+checks all 27 CLI/API steps, six physical arrival timestamps, four immutable
 invoices and USD 102 total. GUI tests execute the actual selection, clock gate,
 command construction and multiple-snapshot rendering handlers.
 

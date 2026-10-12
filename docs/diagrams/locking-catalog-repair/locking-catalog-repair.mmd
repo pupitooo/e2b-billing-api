@@ -1,0 +1,42 @@
+---
+title: Controlled historical catalog repair and worker recovery
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant O as Operator SQL repair
+    participant W as Usage worker / closing
+    participant D as PostgreSQL
+    Note over O,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E<br/>Catalog advisory (65102, 2): protects price_versions, not a column
+    Note over O,D: Repair follows the documented controlled SQL procedure.<br/>The investigated usage_inbox row is quarantined, not financially pending.
+    O->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+    O->>D: Exclusive catalog advisory lock
+    W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+    Note over W,D: WAIT on the investigated customer's account
+    Note over O,D: A worker for another customer may hold a shared catalog lock.<br/>The repair then waits for that worker to commit.
+    O->>D: Insert historical price<br/>Revalidate affected rated history across the metric
+    alt Repair would change rated history
+        O->>D: ROLLBACK price and any release
+        D-->>W: Account released, usage_inbox row remains quarantined
+    else Repair preserves history
+        O->>D: UPDATE only the investigated processing_error to NULL
+        O->>D: COMMIT catalog change and usage_inbox row release together
+        D-->>W: Account lock granted
+        alt Waiting operation is invoice closing
+            W->>D: Publish already processed groups only, COMMIT
+            Note over W,D: Released pending usage_inbox row still does not block closing
+        else Waiting worker selected another pending usage_inbox row
+            W->>D: Shared catalog lock, FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E<br/>Read new price and committed closure state
+            W->>D: Account once into an eligible billing_month, COMMIT
+        end
+        W->>D: A later poll selects the investigated released usage_inbox row
+        W->>D: BEGIN, account lock, shared catalog, usage_inbox row lock<br/>Rate with repaired price and current closure state
+        W->>D: Commit this usage_inbox row and its financial effects together
+    end
+    Note over W,D: A quarantined usage_inbox row is excluded from candidate polling.<br/>Only a poll after release can newly select that usage_inbox row.<br/>Issued invoices are never rewritten by repair.

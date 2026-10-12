@@ -53,7 +53,7 @@ by ID. There is no customer-creation API in the current application.
 | Screen | Operations and verification |
 | --- | --- |
 | Overview | Read exact credit, consumption-month gross usage, limit state, pending counts and errors. |
-| Usage | Submit a measurement or a JSON batch, load an example of late usage, and trace receipts to rated groups. |
+| Usage | Submit a measurement or a JSON batch, load an example of late usage, and trace usage_inbox rows to rated groups. |
 | Prices | Insert default/customer versions using today or a future UTC date; inspect live historical versions in SQL. |
 | Credit | Grant credit as E2B, inspect balance, grants, debits and allocations. |
 | Add-ons | Purchase or cancel a catalog add-on and inspect its immutable activation periods. |
@@ -73,7 +73,7 @@ inspector exposes microcent amounts in the API fields named `*_microcents`
 (1 cent = 1_000_000 microcents). Invoice lines use
 the server's stored cent presentation rather than calculating another invoice.
 
-A `202` reply means durable receipt, not successful financial processing. Refresh
+A `202` reply means durable storage in usage_inbox, not successful financial processing. Refresh
 account state to observe the worker. Pending and error counts remain visible;
 quarantined usage is not presented as processed spending.
 
@@ -169,7 +169,7 @@ not by a Go endpoint; [clock configuration](runtime-configuration.md#shared-busi
 explains timestamp and runtime-timer responsibilities.
 
 For the complete assignment, keep the November fixed clock through step 18,
-including late October receipt and November accounting. Between steps 18 and 19:
+including late October usage_inbox row and November accounting. Between steps 18 and 19:
 
 ```sh
 make delorean 2026-12-01 KEEP_TIMELINE=1
@@ -178,7 +178,7 @@ make delorean 2026-12-01 KEEP_TIMELINE=1
 `KEEP_TIMELINE=1` stops API and worker and recreates services at the new time,
 preserving all project volumes and browser progress. Resume the existing
 walkthrough at step 19, keeping its database and cursor.
-Sending the late October receipt with a December clock would bill it in December
+Sending the late October usage_inbox row with a December clock would bill it in December
 instead of the declared November fixture.
 
 ## Fresh assignment data
@@ -205,9 +205,9 @@ assignment completes steps 1–12 and stops at October invoice issuance with HTT
 clocks. The server, not the browser's eligibility hint, decides whether a month
 can close. The completed operations remain stored for inspection.
 
-Late usage received after closure can also route according to receipt month;
+Late usage received after closure can also route according to UTC arrival month;
 reproducing the exact fixed November invoice requires the original workflow's
-receipt-time assumptions. See [public billing scenario prerequisites](../simulator/billing-scenarios.md#run-the-complete-assignment)
+usage_inbox row-time assumptions. See [public billing scenario prerequisites](../simulator/billing-scenarios.md#run-the-complete-assignment)
 and the [late usage contract](../architecture/accounting-rules.md#utc-months-limits-add-ons-and-late-usage).
 
 Changing project names selects separate volumes; `make down` retains them. Use a
@@ -230,7 +230,7 @@ SQL. Statements show raw audit values, consumption/billing months, pending/error
 markers and operation identities. Bounded queries avoid dumping the entire inbox.
 
 Maintenance accepts only an explicit `demo-ui/` source. Pending cleanup deletes
-only matching unprocessed, error-free receipts with no rating. Stop the worker
+only matching unprocessed, error-free usage_inbox rows with no rating. Stop the worker
 first if a stable preview is needed; otherwise it can process a qualifying row
 before cleanup, which will then leave that row intact. Error release requires an
 exact event ID, no rating, and repair of the underlying cause before execution.

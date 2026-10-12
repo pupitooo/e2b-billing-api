@@ -1,0 +1,35 @@
+---
+title: Spend-limit commands and consistent status reads
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant A as Limit command A
+    participant B as Limit command B / status read
+    participant D as PostgreSQL
+    Note over A,D: Row selector: customer_billing_state.customer_id = C<br/>Request advisory identity: api_idempotency_operations.operation_scope<br/>plus api_idempotency_operations.idempotency_key (not a row lock)
+    Note over A,D: Commands A and B have different request keys.<br/>The customer account is the same.
+    A->>D: BEGIN, scoped request lock, FOR UPDATE<br/>customer_billing_state.customer_id = C
+    B->>D: BEGIN, its own scoped request lock<br/>FOR UPDATE<br/>customer_billing_state.customer_id = C
+    Note over B,D: B's write WAITS on A's account lock
+    A->>D: Set limit, increment state_version<br/>Store immutable operation result, COMMIT
+    D-->>B: Account lock granted, sees committed account
+    B->>D: Set its limit, increment state_version<br/>Store its operation result, COMMIT
+    A->>D: Retry A's original key under its request lock
+    D-->>A: Original result, do not overwrite B's newer limit
+    Note over A,D: Worker, grants and invoice publication use the same account lock.<br/>Limit changes do not change recorded usage or credit.
+    rect rgb(233, 247, 238)
+        A->>D: BEGIN a new limit write, hold FOR UPDATE<br/>customer_billing_state.customer_id = C
+        B->>D: Ordinary SELECT for limit-status or credit snapshot
+        D-->>B: One committed statement snapshot<br/>No wait for the writer's row lock
+        A->>D: COMMIT new account state
+        B->>D: A later ordinary SELECT
+        D-->>B: New committed values and state_version
+    end
+    Note over B,D: Reads may lag accepted inbox data.<br/>Counts show pending and quarantined usage.

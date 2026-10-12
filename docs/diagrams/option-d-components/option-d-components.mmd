@@ -8,7 +8,7 @@ config:
     rankSpacing: 75
 ---
 %% Proposed growth alternative; not selected or implemented.
-%% Broker acknowledgement means receipt, not a completed financial effect.
+%% Broker acknowledgement means usage_inbox row, not a completed financial effect.
 %% The metering store atomically records raw identity, bucket state, and delta outbox.
 %% Delta publication retries preserve immutable IDs and content.
 %% Financial writes and delta deduplication commit together before consumer progress.
@@ -17,7 +17,7 @@ config:
 flowchart TB
     platform["Sandbox platform - separate system<br/>Durable sender buffer<br/>Stable IDs + retry + status polling"]
     ingress["Usage ingress - Go<br/>Validate stable events"]
-    raw[("Kafka raw usage<br/>Configured replicated receipt<br/>Retained input log")]
+    raw[("Kafka raw usage<br/>Configured replicated usage_inbox row<br/>Retained input log")]
     archiveConsumer["Raw archive consumer - Go"]
     archive[("Object storage<br/>Raw usage history")]
     aggregator["Aggregator + delta publisher - Go<br/>Deduplicate raw events<br/>Prepare stable accounting deltas"]
@@ -28,7 +28,7 @@ flowchart TB
     api["Billing API - Go<br/>Commands, spend status, closing"]
     callers["Customer / E2B administrator<br/>Closing operator"]
 
-    platform <-->|"HTTP / JSON<br/>POST /usage/batches<br/>Acknowledgement after broker receipt"| ingress
+    platform <-->|"HTTP / JSON<br/>POST /usage/batches<br/>Acknowledgement after broker usage_inbox row"| ingress
     ingress -->|"Kafka producer protocol<br/>Stable raw events"| raw
     raw -->|"Kafka consumer protocol"| archiveConsumer
     archiveConsumer -->|"Object storage API<br/>Persist before archive progress"| archive

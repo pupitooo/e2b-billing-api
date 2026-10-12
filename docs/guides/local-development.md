@@ -97,7 +97,7 @@ This validates the date, stops API and worker, then runs `make up` and
 `make migrate` sequentially. It preserves all project volumes, including invoices,
 credit history and simulator checkpoints, plus the browser cursor and request
 history. Use the same Compose project and resume the same scenario checkpoint.
-Existing receipt times, accounting decisions, and issued invoices retain their
+Existing arrival times, accounting decisions, and issued invoices retain their
 stored values. Advance time between completed scenario steps; changing the clock
 does not replay earlier events. `KEEP_TIMELINE` accepts only `0` (the default
 volume reset) or `1` (preserve history); other values fail before service changes.
@@ -155,5 +155,5 @@ Follow the [isolated assignment setup](../simulator/billing-scenarios.md#start-a
 for the complete migration, startup, simulation, and GUI sequence. Named volumes
 survive `make down`; use a previously unused project name for another fresh run.
 
-For missing API names, occupied ports, or pending receipts, follow
+For missing API names, occupied ports, or pending usage_inbox rows, follow
 [troubleshooting](troubleshooting.md).

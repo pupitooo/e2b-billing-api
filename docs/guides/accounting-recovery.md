@@ -1,6 +1,6 @@
 # Accounting quarantine and historical price recovery
 
-## Investigate and release a receipt
+## Investigate and release a usage_inbox row
 
 The worker accounts for accepted usage asynchronously. Financial effects and
 inbox completion commit together; database failures roll back for retry.
@@ -12,14 +12,14 @@ for pricing and supported interval boundaries.
 Unsupported input remains in `usage_inbox.processing_error` until explicitly
 released. A missing valid price is a **P0 catalog incident**, reported in worker
 JSON logs with `priority=P0` and `error_code=missing_valid_price`. It quarantines the
-receipt without financial effects and never blocks invoice issuance. Follow the
+usage_inbox row without financial effects and never blocks invoice issuance. Follow the
 [financial rules — Catalog provisioning and P0 recovery](../architecture/accounting-rules.md#catalog-provisioning-and-p0-recovery)
 for the complete diagnostic and recovery contract.
 
 To recover, correct the cause first. Missing historical prices require the
 [controlled database repair](#controlled-historical-price-repair); ordinary
 `POST /prices` rejects backdated versions. Then explicitly release only the
-investigated receipt:
+investigated usage_inbox row:
 
 ```sql
 UPDATE usage_inbox SET processing_error = NULL
@@ -33,11 +33,11 @@ Adding a price or replaying the usage request does not clear a processing error.
 
 Initial seed data and investigated missing-price repairs are the only historical
 catalog provisioning paths. Ordinary API commands cannot backdate a version.
-The example below must be adapted to the investigated customer, metric, receipt,
+The example below must be adapted to the investigated customer, metric, usage_inbox row,
 price, and original effective time. It locks the account before the catalog,
-checks the resulting catalog against every affected rated receipt, and rolls
+checks the resulting catalog against every affected rated usage_inbox row, and rolls
 back if it would reprice or invalidate an interval. It does not recalculate
-charges, credit, or issued invoices. Run it through `make psql`.
+charges, credit, or issued invoices. Run it through `make psql`. Keep the customer-row-before-catalog order: reversing it reproduces a deadlock with the worker. Prepare the input before opening the transaction and commit or roll back promptly; see the [locking assessment](../architecture/concurrency-and-locking.md#reproduced-unsafe-cycles).
 
 ```sql
 BEGIN;

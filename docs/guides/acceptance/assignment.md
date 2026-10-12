@@ -122,7 +122,7 @@ Expect server time zone `UTC` and the following literal catalog:
 | `cpu-acme-2026-10-01` | Acme override, 4 cents per million, `2026-10-01T00:00:00Z` |
 | `concurrency_pack` | 2_000 cents per month |
 | Each account | Zero microcents, NULL limit, `state_version=0`, `next_invoice_number=1` |
-| Activity counts | Zero receipts, credit entries, subscriptions, and invoices |
+| Activity counts | Zero usage_inbox rows, credit entries, subscriptions, and invoices |
 
 Any different starting balance, version, activity, or catalog is a failed
 precondition. Investigate the mismatch, then reset using step 1.5 and repeat the
@@ -216,10 +216,10 @@ printf 'Scenario exit status: %s\n' "$acceptance_scenario_status"
 
 - Section 3's seed checks have passed in `e2b-acceptance-01`. Both
   accounts have zero credit, NULL limits, version 0, and next invoice number 1;
-  there are no receipts, grants, subscriptions, or invoices.
+  there are no usage_inbox rows, grants, subscriptions, or invoices.
 - PostgreSQL, API, worker, docs, and api-docs are healthy; the simulator is idle.
   The shell session retains `acceptance_api`, `acceptance_evidence`, and port exports.
-- The calendar and receipt-time prerequisites in step 1.4 hold at each relevant
+- The calendar and usage_inbox row-time prerequisites in step 1.4 hold at each relevant
   checkpoint. Advance configuration to November before step 13 and December
   before step 19. The same fixed clock drives API and worker; no host-calendar
   wait is necessary. The [E2E suite](../e2e-testing.md) automates these transitions.
@@ -235,8 +235,8 @@ Each command below creates a new producer process while reusing its durable stat
 | [4.1](#41-configure-the-simulator-for-one-step-per-command) | Define `acceptance_next`; keep source `acceptance-assignment` and state `/state/acceptance-assignment.json`. | Each successful call completes one observed JSON step; `await` reads poll the worker's result. |
 | [4.2](#42-stop-the-api-verify-failed-delivery-and-recover-steps-12) | Stop the API, attempt step 1 once, inspect the checkpoint, restart, and complete steps 1–2. | Transport failure leaves completed count 0 and empty accounts; recovery reaches `completed=2 steps=24`. |
 | [4.3](#43-verify-the-lost-grant-reply-and-complete-steps-35) | Lose the committed 25 USD grant reply; inspect credit and progress; retry and complete purchase/limit commands. | One grant, one 20 USD subscription, Cyberdyne limit 15 USD; completed count 5. |
-| [4.4](#44-stop-the-worker-and-verify-durable-receipt-at-step-6) | Stop the worker, send step 6, inspect accounts and inbox rows, then restart the worker. | HTTP `202`; completed count 6; one pending receipt per customer, no rating links or financial processing before restart. |
-| [4.5](#45-complete-steps-79-and-compare-receipt-metadata) | Await accounting reads 7–8, snapshot the receipts, replay step 9, and compare metadata. | Acme credit 21 USD; Cyberdyne gross `617_283_945` microcents; completed count 9; identical receipt files and no extra financial effects. |
+| [4.4](#44-stop-the-worker-and-verify-durable-storage-in-usage_inbox-at-step-6) | Stop the worker, send step 6, inspect accounts and inbox rows, then restart the worker. | HTTP `202`; completed count 6; one pending usage_inbox row per customer, no rating links or financial processing before restart. |
+| [4.5](#45-complete-steps-79-and-compare-usage_inbox-row-metadata) | Await accounting reads 7–8, snapshot the usage_inbox rows, replay step 9, and compare metadata. | Acme credit 21 USD; Cyberdyne gross `617_283_945` microcents; completed count 9; identical usage_inbox row files and no extra financial effects. |
 | [4.6](#46-complete-steps-1024-against-the-checkpoint-table) | Execute one command for each remaining row 10–24 in the linked canonical table, observing step 1.4's prerequisites. | Every declared HTTP response and literal amount matches; completed count 24; no pending events or processing errors. |
 | [4.7](#47-save-and-verify-the-completed-simulator-checkpoint) | Save CLI status and the complete producer state. | `completed=24 steps=24`, `next_step=24`, `step_count=24`, and no `last_error`; both evidence files exist. |
 
@@ -255,9 +255,9 @@ and `completed=N steps=24`, with `N` matching the row below. GET steps marked
 is a failure for this valid scenario. Do not replace polling with a fixed sleep.
 An ERROR worker log with `priority=P0` and `error_code=missing_valid_price` identifies
 a missing eligible catalog version. Use the [controlled SQL repair](../accounting-recovery.md#controlled-historical-price-repair),
-then explicitly release the receipt using the [recovery procedure](../accounting-recovery.md#investigate-and-release-a-receipt).
+then explicitly release the usage_inbox row using the [recovery procedure](../accounting-recovery.md#investigate-and-release-a-usage_inbox-row).
 Ordinary `POST /prices` rejects new backdated versions; invoice issuance never
-repairs or processes the receipt.
+repairs or processes the usage_inbox row.
 The assignment seed's effective starts remain unchanged; additional metrics must
 be priced before their first measurement, and `effective_from` cannot be null.
 Use explicit month paths for October/November; `/limit-status` uses the real
@@ -334,21 +334,21 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 ```
 
 
-### 4.4 Stop the worker and verify durable receipt at step 6
+### 4.4 Stop the worker and verify durable storage in usage_inbox at step 6
 
 **Initial state**
 
 - Steps 3 through 5 have passed (`completed=5`); API and worker are running.
 - Acme has 2_500_000_000 credit microcents, version 2, and the `acme-pack` subscription.
 - Cyberdyne has zero credit, a 1_500-cent limit, and version 1.
-- Neither customer has usage receipts, pending events, or processing errors.
+- Neither customer has usage_inbox rows, pending events, or processing errors.
 
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
-| 1 | Stop the worker and execute assignment step 6. | HTTP `202`; completed count 6; both first-hour receipts are durable. |
+| 1 | Stop the worker and execute assignment step 6. | HTTP `202`; completed count 6; both first-hour usage_inbox rows are durable. |
 | 2 | Read Acme's credit and Cyberdyne's October status while the worker is stopped. | Acme credit `2_500_000_000` microcents, version 2; Cyberdyne gross 0, version 1. Each customer has one pending event and zero errors. |
-| 3 | Query the two inbox rows and their rating links before restarting the worker; save `receipts-worker-stopped.txt`. | Exactly two rows; both `processed_at` and `processing_error` are NULL; `rating_links=0` for each receipt. |
-| 4 | Restart the worker, then proceed to the next accounting reads. | The existing receipts are processed; the canonical assignment's steps 7–8 establish the expected credit and gross amounts. |
+| 3 | Query the two inbox rows and their rating links before restarting the worker; save `receipts-worker-stopped.txt`. | Exactly two rows; both `processed_at` and `processing_error` are NULL; `rating_links=0` for each usage_inbox row. |
+| 4 | Restart the worker, then proceed to the next accounting reads. | The existing usage_inbox rows are processed; the canonical assignment's steps 7–8 establish the expected credit and gross amounts. |
 
 ```sh
 (
@@ -375,21 +375,21 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 ```
 
 
-### 4.5 Complete steps 7–9 and compare receipt metadata
+### 4.5 Complete steps 7–9 and compare usage_inbox row metadata
 
 **Initial state**
 
-- Step 6 has passed (`completed=6`), and both first-hour receipts have been accepted.
+- Step 6 has passed (`completed=6`), and both first-hour usage_inbox rows have been accepted.
 - The worker has restarted. Steps 7 and 8 below await the resulting accounting
-  state before the receipt snapshot and replay.
+  state before the usage_inbox row snapshot and replay.
 
-Complete the two accounting reads, snapshot the first receipts, and repeat them:
+Complete the two accounting reads, snapshot the first usage_inbox rows, and repeat them:
 
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
 | 1 | Execute assignment steps 7–8 to await both accounts' processing. | Acme credit 21 USD; Cyberdyne October gross `617_283_945` microcents, below its 15 USD limit; pending/errors 0. |
-| 2 | Save both first-hour inbox rows, including their receipt and processing timestamps. | Two processed rows saved in `receipts-before-retry.jsonl`. |
-| 3 | Execute assignment step 9 to resend the same measurements. | HTTP `202`; completed count 9; no new receipt or financial effect. |
+| 2 | Save both first-hour inbox rows, including their usage_inbox row and processing timestamps. | Two processed rows saved in `receipts-before-retry.jsonl`. |
+| 3 | Execute assignment step 9 to resend the same measurements. | HTTP `202`; completed count 9; no new usage_inbox row or financial effect. |
 | 4 | Save the same rows again and compare the files with `cmp`. | Files identical, including `received_at` and `processed_at`; `cmp` exits zero. |
 
 ```sh
@@ -419,8 +419,8 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 
 **Initial state**
 
-- Steps 7 through 9 have passed (`completed=9`); both first-hour receipts are
-  processed, and the saved receipt comparisons are identical.
+- Steps 7 through 9 have passed (`completed=9`); both first-hour usage_inbox rows are
+  processed, and the saved usage_inbox row comparisons are identical.
 - Acme has 2_100_000_000 credit microcents and version 3. Cyberdyne's October gross is
   617_283_945 microcents, below its 1_500-cent limit. Both have zero pending events and
   processing errors.
@@ -475,7 +475,7 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 ```
 
 An unattended `make simulate SCENARIO=billing-assignment MAX_ATTEMPTS=10` still
-requires step 1.4's calendar and receipt times and does not reproduce the operator
+requires step 1.4's calendar and arrival times and does not reproduce the operator
 fault checks. Running it on this completed state sends no further actions; a new
 state on used accounts fails the fresh-account precondition.
 
@@ -499,8 +499,8 @@ E2E suite verifies the same transitions and operator checks without human input.
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
 | [5.1](#51-compare-the-complete-invoice-responses) | Read Acme October/November and Cyberdyne October invoices; save full JSON and compare fields and ordered lines. | Three HTTP `200` responses; identities, currency, months, numbers, exact microcents, and amounts match the tables below; line amounts sum to totals. |
-| [5.2](#52-query-the-final-database-state-independently) | Query receipts, rating links/groups, monthly usage, account state, ledger, subscriptions, invoices, and closed months through PostgreSQL. | Independent output is saved in `final-state.txt`; expected values come from the literal tables, not production calculations. |
-| [5.3](#53-compare-the-persisted-state-with-the-literal-expectations) | Compare every SQL record with the group and persisted-state tables below. | Six processed receipts, six rating links, five frozen groups, three invoices/closed months, and all literal financial values match. |
+| [5.2](#52-query-the-final-database-state-independently) | Query usage_inbox rows, rating links/groups, monthly usage, account state, ledger, subscriptions, invoices, and closed months through PostgreSQL. | Independent output is saved in `final-state.txt`; expected values come from the literal tables, not production calculations. |
+| [5.3](#53-compare-the-persisted-state-with-the-literal-expectations) | Compare every SQL record with the group and persisted-state tables below. | Six processed usage_inbox rows, six rating links, five frozen groups, three invoices/closed months, and all literal financial values match. |
 
 ### 5.1 Compare the complete invoice responses
 
@@ -596,7 +596,7 @@ Compare `final-state.txt` with both tables below.
 
 | Persisted record / check | Expected result |
 | --- | --- |
-| Receipts and rating links | Six receipts and six links: exactly one each for `acme-first`, `acme-second`, `acme-late`, `acme-november`, `cyberdyne-first`, and `cyberdyne-second`. All processed; no errors. |
+| usage_inbox rows and rating links | Six usage_inbox rows and six links: exactly one each for `acme-first`, `acme-second`, `acme-late`, `acme-november`, `cyberdyne-first`, and `cyberdyne-second`. All processed; no errors. |
 | Retry metadata | Original `received_at` and `processed_at` survive identical retries; step 4.5's files compare equal. |
 | Acme monthly gross | October `1_400_000_000` microcents including late usage; November `400_000_000` microcents. Consumption-month gross can differ from invoice gross. |
 | Cyberdyne monthly gross | October `1_817_283_945` microcents; November row absent, with the API projecting zero. |

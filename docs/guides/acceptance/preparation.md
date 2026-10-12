@@ -180,26 +180,26 @@ unexpected result. This step itself sends no financial commands.
 | Limit uses gross usage, excludes add-ons, and never stops accounting | Section 8 combines credit, an add-on, and a finite limit. The limit workflow checks raised/zero/unlimited states; Cyberdyne is billed all 1_817 cents after exceeding its limit. |
 | Monthly invoices in cents, with separate customer numbering | Acme receives `ACME-0001` and `ACME-0002`; Cyberdyne receives `CYBERDYNE-0001`. Lines sum to each total. |
 | Late usage preserves historical pricing and an issued invoice | Late October usage appears on Acme's November invoice at 4 cents per million; the October snapshot stays identical. |
-| Correctness through retries, delay, and unavailability | Sections 4 and 7 verify failed delivery, lost committed replies, durable receipt, immutable replay, and retained data after restart. Regression tests cover concurrent writers and transaction rollback. |
+| Correctness through retries, delay, and unavailability | Sections 4 and 7 verify failed delivery, lost committed replies, durable storage in usage_inbox, immutable replay, and retained data after restart. Regression tests cover concurrent writers and transaction rollback. |
 | Explain architecture, responsibilities, tools, unfinished work, and improvements | Section 9 reviews the delivered documentation and records remaining limitations. |
 
 ### 1.4 Date prerequisites for invoice scenarios
 
 Use one trusted fixed business clock for API and worker in the presentation
 project. No waiting for the host calendar is needed. HTTP timestamps never set
-receipt time or the server's clock. Export `E2B_DEMO_NOW=2026-10-31T00:00:00Z`
+arrival time or the server's clock. Export `E2B_DEMO_NOW=2026-10-31T00:00:00Z`
 before initial startup and after each independent-scenario reset.
 
 | Scenario action | Business-clock phase | Expected result |
 | --- | --- | --- |
 | Assignment steps 1–12 | `2026-10-31T00:00:00Z` | Initial usage is accounted before closing. |
 | Assignment steps 13–18 | `2026-11-01T00:00:00Z` | October closes; late October usage physically arrives in November and routes there. |
-| Assignment steps 19–24 | `2026-12-01T00:00:00Z` | November closes; earlier snapshots and receipt times remain unchanged. |
+| Assignment steps 19–24 | `2026-12-01T00:00:00Z` | November closes; earlier snapshots and arrival times remain unchanged. |
 | Combined credit/limit scenario | `2026-11-01T00:00:00Z` | October can close with its literal USD 20 add-on invoice. |
 | Price versions | October before insertion, November accounting, December rejection/closing | See the [manual clock table](../e2e-walkthrough.md#other-public-fixtures). |
 
 Define the following phase helper in the same shell. It checks the selected
-project and pending receipts, stops both business processes and recreates them
+project and pending usage_inbox rows, stops both business processes and recreates them
 with the new environment. Database and producer volumes remain intact.
 
 ```sh

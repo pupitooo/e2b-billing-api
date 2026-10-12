@@ -4,7 +4,7 @@ The separate Go executable [cmd/platform-simulator](../../cmd/platform-simulator
 creates synthetic measurement increments and sends them through the actual
 `POST /usage/batches` interface. It supplies no prices or monetary charges.
 The named `simulator_data` volume retains the plan, stable identities, release
-cursor, and delivery receipts across commands and container restarts.
+cursor, and delivery acknowledgements across commands and container restarts.
 
 Select the same [Compose project](../guides/local-development.md#compose-projects-and-ports)
 for startup, migrations, and every simulator command. `make simulate` does not
@@ -41,7 +41,7 @@ The legacy transport scenario uses an operator barrier. The separate
 [public billing scenarios](billing-scenarios.md) automate accounting,
 credit, add-on purchases, invoice issuance, and platform monthly-status reads through
 the documented financial APIs. HTTP `202`
-confirms the whole batch's durable inbox receipt, not financial processing.
+confirms the whole batch's durable storage in usage_inbox, not financial processing.
 
 For financial commands and invoice assertions, use the
 [billing assignment step table and prerequisites](billing-scenarios.md#billing-assignment)
@@ -60,7 +60,7 @@ make simulate SCENARIO=billing-assignment STATE=/state/billing-assignment.json
 The tables below are the human-readable transport scenario descriptions. They
 use one sandbox per customer and one-hour assignment intervals unless a row
 states otherwise. All measurements use `cpu_seconds`, schema version 1, and
-UTC timestamps. Receipt counts apply only to the scenario's source namespace.
+UTC timestamps. usage_inbox row counts apply only to the scenario's source namespace.
 Use a separate state file and source for each independent run; independent
 financial experiments also require a fresh database. Keep the same Compose
 project for startup, migrations, API, worker, and simulator commands.
@@ -72,10 +72,10 @@ Commands use `SCENARIO=assignment MODE=step` and the same source and state file.
 
 | Step | Simulator action | Expected result |
 | --- | --- | --- |
-| 1 | Release October 10, 2026, 12:00–13:00: Acme `100_000_000` units, Cyberdyne `123_456_789` units. | HTTP `202`; 2 durable receipts. No financial command is sent. |
-| 2 | Release October 20, 2026, 12:00–13:00: `200_000_000` units for each customer. | HTTP `202`; 4 receipts in total. |
-| 3 | After manually verifying October accounting and issuing October invoices, pass the barrier with `ADVANCE=1`; release Acme's October 30, 12:00–13:00, `50_000_000` units. | HTTP `202`; 5 receipts in total. Without `ADVANCE=1`, the simulator reports `Waiting at barrier` and retains 4 receipts. |
-| 4 | Release Acme's November 3, 12:00–13:00, `100_000_000` units. | HTTP `202`; 6 receipts in total. |
+| 1 | Release October 10, 2026, 12:00–13:00: Acme `100_000_000` units, Cyberdyne `123_456_789` units. | HTTP `202`; 2 durable usage_inbox rows. No financial command is sent. |
+| 2 | Release October 20, 2026, 12:00–13:00: `200_000_000` units for each customer. | HTTP `202`; 4 usage_inbox rows in total. |
+| 3 | After manually verifying October accounting and issuing October invoices, pass the barrier with `ADVANCE=1`; release Acme's October 30, 12:00–13:00, `50_000_000` units. | HTTP `202`; 5 usage_inbox rows in total. Without `ADVANCE=1`, the simulator reports `Waiting at barrier` and retains 4 usage_inbox rows. |
+| 4 | Release Acme's November 3, 12:00–13:00, `100_000_000` units. | HTTP `202`; 6 usage_inbox rows in total. |
 
 ### Lost acknowledgement, restart, assignment barrier, and replay
 
@@ -86,12 +86,12 @@ Use the same source and state file for all rows.
 
 | Step | Simulator action | Expected result |
 | --- | --- | --- |
-| 1 | Run `SCENARIO=lost-response MODE=step MAX_ATTEMPTS=1`: October 10, 12:00–13:00, Acme `100_000_000` units and Cyberdyne `123_456_789` units. | First HTTP `202` is discarded after commit; process fails with `generated=2 pending=2 delivered=0`, while the inbox already contains 2 receipts. |
-| 2 | Start a new process with `ACTION=send BATCH_SIZE=1`. | Both original measurements are confirmed; process succeeds, receipt count remains 2, and stored content and receipt metadata remain unchanged. |
-| 3 | Run `MODE=fast`: October 20, 12:00–13:00, `200_000_000` units for each customer. | Second-hour measurements are accepted; process succeeds, receipt count 4. |
-| 4 | Run `MODE=fast` again without advancing the barrier. | Process succeeds with `Waiting at barrier`; receipt count 4, inbox unchanged. |
-| 5 | Run `ADVANCE=1 MODE=fast` after the operator's October-closing check: Acme `50_000_000` units for October 30, 12:00–13:00, and `100_000_000` units for November 3, 12:00–13:00. | Late October and November measurements are accepted; receipt count 6. |
-| 6 | Replay with `ACTION=replay SCENARIO=duplicates BATCH_SIZE=1 REVERSE=1`. | Reversed delivery and extra identical copies succeed; receipt count stays 6, with the complete inbox snapshot unchanged. |
+| 1 | Run `SCENARIO=lost-response MODE=step MAX_ATTEMPTS=1`: October 10, 12:00–13:00, Acme `100_000_000` units and Cyberdyne `123_456_789` units. | First HTTP `202` is discarded after commit; process fails with `generated=2 pending=2 delivered=0`, while the inbox already contains 2 usage_inbox rows. |
+| 2 | Start a new process with `ACTION=send BATCH_SIZE=1`. | Both original measurements are confirmed; process succeeds, usage_inbox row count remains 2, and stored content and usage_inbox row metadata remain unchanged. |
+| 3 | Run `MODE=fast`: October 20, 12:00–13:00, `200_000_000` units for each customer. | Second-hour measurements are accepted; process succeeds, usage_inbox row count 4. |
+| 4 | Run `MODE=fast` again without advancing the barrier. | Process succeeds with `Waiting at barrier`; usage_inbox row count 4, inbox unchanged. |
+| 5 | Run `ADVANCE=1 MODE=fast` after the operator's October-closing check: Acme `50_000_000` units for October 30, 12:00–13:00, and `100_000_000` units for November 3, 12:00–13:00. | Late October and November measurements are accepted; usage_inbox row count 6. |
+| 6 | Replay with `ACTION=replay SCENARIO=duplicates BATCH_SIZE=1 REVERSE=1`. | Reversed delivery and extra identical copies succeed; usage_inbox row count stays 6, with the complete inbox snapshot unchanged. |
 
 ### Duplicate delivery
 
@@ -100,10 +100,10 @@ Every batch has one extra identical copy. The assignment's operator barrier stil
 
 | Step | Simulator action | Expected result |
 | --- | --- | --- |
-| 1 | Send October 10, 12:00–13:00 and its extra copy: Acme `100_000_000` units, Cyberdyne `123_456_789` units. | Both sends receive HTTP `202`; only 2 receipts are stored. |
-| 2 | Send October 20, 12:00–13:00 and its extra copy: `200_000_000` units for each customer. | Both sends receive HTTP `202`; only 4 receipts in total. |
-| 3 | Pass the operator barrier with `ADVANCE=1`; send Acme's October 30, 12:00–13:00, `50_000_000` units and their extra copy. | HTTP `202`; only 5 receipts in total. |
-| 4 | Send Acme's November 3, 12:00–13:00, `100_000_000` units and their extra copy. | HTTP `202`; only 6 receipts in total; duplicate delivery adds no consumption. |
+| 1 | Send October 10, 12:00–13:00 and its extra copy: Acme `100_000_000` units, Cyberdyne `123_456_789` units. | Both sends receive HTTP `202`; only 2 usage_inbox rows are stored. |
+| 2 | Send October 20, 12:00–13:00 and its extra copy: `200_000_000` units for each customer. | Both sends receive HTTP `202`; only 4 usage_inbox rows in total. |
+| 3 | Pass the operator barrier with `ADVANCE=1`; send Acme's October 30, 12:00–13:00, `50_000_000` units and their extra copy. | HTTP `202`; only 5 usage_inbox rows in total. |
+| 4 | Send Acme's November 3, 12:00–13:00, `100_000_000` units and their extra copy. | HTTP `202`; only 6 usage_inbox rows in total; duplicate delivery adds no consumption. |
 
 ### Offline generation survives a failed delivery process
 
@@ -116,8 +116,8 @@ Use a fresh state file and source, retaining them across all four processes.
 | --- | --- | --- |
 | 1 | Run `ACTION=generate MODE=step` for October 10, 12:00–13:00: Acme `100_000_000` and Cyberdyne `123_456_789` units. | Process succeeds without HTTP; both measurements are saved locally; inbox count 0. |
 | 2 | Run `ACTION=send MAX_ATTEMPTS=1` against an unavailable API endpoint. | Process fails with `pending=2 delivered=0`; inbox count remains 0 and the original buffer survives. |
-| 3 | Start a new process with `ACTION=send` against the available API. | Process succeeds; 2 receipts stored with the original identities and measurements. |
-| 4 | Run `ACTION=send` again. | Process succeeds without resending a confirmed buffer; receipt count remains 2, inbox snapshot unchanged. |
+| 3 | Start a new process with `ACTION=send` against the available API. | Process succeeds; 2 usage_inbox rows stored with the original identities and measurements. |
+| 4 | Run `ACTION=send` again. | Process succeeds without resending a confirmed buffer; usage_inbox row count remains 2, inbox snapshot unchanged. |
 
 ### API downtime during delivery
 
@@ -126,7 +126,7 @@ Use a fresh assignment state file and source. Run the API restart from another t
 | Step | Simulator action | Expected result |
 | --- | --- | --- |
 | 1 | Stop the API with `make stop SERVICE=api`, then run `make simulate MODE=step`: October 10, 12:00–13:00, Acme `100_000_000` units and Cyberdyne `123_456_789` units. | Both measurements remain pending; connection attempts fail and retry, with no acknowledgement recorded. |
-| 2 | Start the same project's API using `make up SERVICE=api`. | The running simulator retries unchanged measurements and receives HTTP `202`; 2 receipts stored. |
+| 2 | Start the same project's API using `make up SERVICE=api`. | The running simulator retries unchanged measurements and receives HTTP `202`; 2 usage_inbox rows stored. |
 | 3 | Read progress using `make simulate ACTION=status`. | Generated 2, pending 0, delivered 2; no future assignment phase has been released. |
 
 ### Generate, pause, resume, and replay
@@ -148,7 +148,7 @@ Status reports released steps, generated, pending and delivered measurements,
 HTTP attempt count, the next barrier, and the last delivery error.
 
 The complete plan is saved before sending, and each released step is persisted
-before its first request. Each receipt uses a synced atomic file replacement.
+before its first request. Each usage_inbox row uses a synced atomic file replacement.
 An OS file lock permits one writer per state file; read-only status remains
 available during retries. Ctrl+C or a killed process releases the lock.
 Timeouts, lost responses, `429`, and server errors retain
@@ -160,7 +160,7 @@ buffer retained for investigation. Default retries continue until interrupted;
 The guarantee begins after successful storage and assumes the sender volume
 survives. Disk loss is outside this local simulator's guarantee. Keep
 `simulator_data` together with its database: if PostgreSQL is reset while sender
-receipts remain, use `ACTION=replay` to restore released events to the inbox.
+usage_inbox rows remain, use `ACTION=replay` to restore released events to the inbox.
 Deleting only sender state and changing identities can add consumption again.
 
 ### Controls and fault scenarios
@@ -223,9 +223,9 @@ Use the commands above with a new state file and an unused source.
 
 | Step | Simulator action | Expected result |
 | --- | --- | --- |
-| 1 | Release `first-minute`: Acme sandbox `acme-sandbox-001`, event `custom-acme-minute-001`, October 10, 2026, 12:00–12:01, 60 units. | HTTP `202`; one receipt stored. |
-| 2 | Attempt to continue without `ADVANCE=1`. | `Waiting at barrier`; the second minute remains unreleased and receipt count stays 1. |
-| 3 | Pass the barrier with `ADVANCE=1`; release `second-minute`, event `custom-acme-minute-002`, 12:01–12:02, explicitly 0 units. | HTTP `202`; a valid zero-unit receipt is stored, for 2 receipts in total. |
+| 1 | Release `first-minute`: Acme sandbox `acme-sandbox-001`, event `custom-acme-minute-001`, October 10, 2026, 12:00–12:01, 60 units. | HTTP `202`; one usage_inbox row stored. |
+| 2 | Attempt to continue without `ADVANCE=1`. | `Waiting at barrier`; the second minute remains unreleased and usage_inbox row count stays 1. |
+| 3 | Pass the barrier with `ADVANCE=1`; release `second-minute`, event `custom-acme-minute-002`, 12:01–12:02, explicitly 0 units. | HTTP `202`; a valid zero-unit usage_inbox row is stored, for 2 usage_inbox rows in total. |
 
 Every later `run` or `generate` must match the saved plan, including source,
 identities, timestamps, splitting, and units. To explore another plan, select a

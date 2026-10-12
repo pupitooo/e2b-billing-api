@@ -1,0 +1,44 @@
+---
+title: Monthly closing and late October usage
+---
+sequenceDiagram
+    autonumber
+    actor O as Closing operator
+    participant P as Sandbox platform
+    participant B as Go billing service
+    participant W as Usage worker
+    participant D as PostgreSQL
+    Note over O,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E
+
+    Note over B,D: Acme has USD 12.00 October usage and USD 12.00 allocated credit.<br/>Credit balance is USD 13.00. the USD 20.00 add-on is active.
+    O->>B: Close Acme October after the UTC month ends
+    B->>D: BEGIN and lock FOR UPDATE<br/>customer_billing_state.customer_id = C
+    Note over B,D: Pending usage is not processed by closing.
+    B->>D: Snapshot already processed groups, allocated credit, add-on, and address
+    B->>D: Assign ACME-0001 and freeze groups atomically
+    B->>D: COMMIT immutable invoice, total USD 20.00
+    D-->>B: Committed
+    B-->>O: ACME-0001
+
+    P->>B: Late October 30 usage: 50 million units
+    B->>D: Persist usage in usage_inbox
+    B-->>P: 202 Accepted
+    W->>D: BEGIN. lock account. reload pending usage
+    W->>D: Price at October usage time: USD 0.04 per million
+    W->>D: Add USD 2.00 to an open November billing group
+    W->>D: Debit USD 2.00 credit. update October gross usage. COMMIT
+    Note over W,D: Credit balance is USD 11.00.<br/>ACME-0001 is unchanged.<br/>Late October does not increase November gross usage.
+
+    P->>B: November 3 usage: 100 million units
+    B->>D: Persist usage in usage_inbox
+    B-->>P: 202 Accepted
+    W->>D: Account transaction: November charge USD 4.00 and credit debit USD 4.00
+    D-->>W: Committed. credit balance USD 7.00
+
+    O->>B: Close Acme November after the UTC month ends
+    B->>D: Customer transaction: USD 4.00 current usage + USD 2.00 late usage
+    B->>D: Snapshot USD 6.00 allocated credit and USD 20.00 add-on
+    B->>D: Assign ACME-0002, freeze groups, and COMMIT
+    D-->>B: Committed. invoice total USD 20.00
+    B-->>O: ACME-0002
+    Note over B,D: Closing uses prior credit allocations. it does not debit credit again.

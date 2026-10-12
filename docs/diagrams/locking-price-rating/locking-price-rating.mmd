@@ -1,0 +1,41 @@
+---
+title: Price insertion versus historical rating
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant P as Price API command
+    participant W as Usage worker
+    participant D as PostgreSQL
+    Note over P,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E<br/>Request advisory identity: api_idempotency_operations.operation_scope<br/>plus api_idempotency_operations.idempotency_key (not a row lock)<br/>Catalog advisory (65102, 2): protects price_versions, not a column
+    alt New price gets the catalog first
+        P->>D: BEGIN, scoped request lock, no stored result
+        P->>D: Exclusive catalog advisory lock
+        W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        W->>D: Shared catalog advisory lock
+        Note over W,D: WAIT for the exclusive catalog owner
+        P->>D: Sample UTC day after locking<br/>Validate activation and preserve rated history
+        P->>D: Insert price and request result, COMMIT
+        D-->>W: Shared catalog lock granted
+        W->>D: FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E, read committed price_versions
+        W->>D: Rate at consumption time and COMMIT
+    else Worker gets the shared catalog first
+        W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C, shared catalog lock
+        P->>D: BEGIN, scoped request lock<br/>Request exclusive catalog lock
+        Note over P,D: WAIT for all shared catalog holders
+        W->>D: FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E, rate and COMMIT
+        D-->>P: Exclusive catalog lock granted
+        P->>D: Sample UTC day, recheck affected rated usage_inbox rows
+        alt Proposed price preserves rated history
+            P->>D: Insert price and request result, COMMIT
+        else Price changes a selected version or valid interval
+            P->>D: ROLLBACK, return 409 billing_conflict
+        end
+    end
+    Note over P,D: An activation that became backdated while waiting returns 422.<br/>Ordinary price creation does not take an account lock.<br/>The catalog lock is global within this database.

@@ -12,7 +12,8 @@ for this searchable portal; its guides also remain readable in the repository.
 | Connect to the database | [Database](guides/database-operations.md#database-connection), [Database browser](/database/) |
 | Run tests | [Tests](guides/testing.md) |
 | Send an API request | [API reference](/reference/) with the embedded request client |
-| Understand the billing flow | [Usage to invoice](architecture/usage-to-invoice.md) |
+| Understand the billing flow | [Usage to invoice](architecture/usage-to-invoice.md), [processing sequences and edge cases](architecture/processing-sequences.md) |
+| Understand competing operations | [Concurrency and locking](architecture/concurrency-and-locking.md) |
 | Review selected and open contracts | [Implemented contracts](architecture/implemented-contracts.md), [proposed contracts](architecture/proposed-contracts.md) |
 | Review limitations and investigation plans | [Limitations](architecture/limitations.md) |
 
@@ -25,7 +26,7 @@ These categories and page names match the navigation menu.
 | Get started | [Local setup](guides/local-development.md), [Demo guide](guides/demo-console.md), [Demo console](/demo/) |
 | Operations | [Database](guides/database-operations.md), [Migrations](guides/migrations.md), [Configuration](guides/runtime-configuration.md), [Troubleshooting](guides/troubleshooting.md), [Recovery](guides/accounting-recovery.md), [Database browser](/database/) |
 | API | [API guide](guides/api-reference.md), [API reference](/reference/), [OpenAPI specification](api/openapi.yaml) |
-| Billing | [Financial rules](architecture/accounting-rules.md), [Data model](architecture/billing-model.md), [Usage to invoice](architecture/usage-to-invoice.md), [Invoice creation](diagrams/invoice-issuance/README.md) |
+| Billing | [Vocabulary](guides/billing-vocabulary.md), [Financial rules](architecture/accounting-rules.md), [Data model](architecture/billing-model.md), [Usage to invoice](architecture/usage-to-invoice.md), [Processing sequences](architecture/processing-sequences.md), [Concurrency and locking](architecture/concurrency-and-locking.md), [Invoice creation](diagrams/invoice-issuance/README.md) |
 | Simulator | [Transport scenarios](simulator/transport-scenarios.md), [Billing scenarios](simulator/billing-scenarios.md), [Scenario format](simulator/scenario-style.md) |
 | Testing | [Tests](guides/testing.md), [Test quality](guides/test-mutation-audit.md), [Acceptance](guides/final-acceptance-testing.md) |
 | Development | [Conventions](guides/development.md), [Documentation](guides/documentation.md) |

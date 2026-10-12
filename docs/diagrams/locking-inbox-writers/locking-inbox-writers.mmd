@@ -1,0 +1,38 @@
+---
+title: Competing usage inbox batches
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant A as API batch A
+    participant B as API batch B
+    participant D as PostgreSQL
+    Note over A,D: Event row: usage_inbox.source = S and usage_inbox.event_id = E
+    Note over A,D: Both batches contain the same (source, event_id).<br/>Each batch sorts all event keys before writing.
+    A->>D: BEGIN and INSERT usage_inbox identity
+    D-->>A: New row, still uncommitted
+    B->>D: BEGIN and INSERT the same identity
+    Note over B,D: WAIT for the conflicting unique-index insertion
+    alt A commits
+        A->>D: COMMIT the complete batch
+        D-->>B: ON CONFLICT DO NOTHING, no new row
+        B->>D: Compare measurement fields<br/>FOR SHARE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E
+        alt Same content
+            B->>D: COMMIT, preserve the original received_at
+            Note over B,D: Return 202, no duplicate usage_inbox row
+        else Changed content
+            B->>D: ROLLBACK the entire batch
+            Note over B,D: Return 409 event_conflict<br/>Other new rows in B are also rolled back
+        end
+    else A rolls back
+        A->>D: ROLLBACK and release the identity
+        D-->>B: INSERT succeeds with B's usage_inbox row time
+        B->>D: COMMIT before returning 202
+    end
+    Note over A,D: Sorted keys prevent opposite batch-key acquisition order.<br/>Disjoint event identities do not share this identity lock.

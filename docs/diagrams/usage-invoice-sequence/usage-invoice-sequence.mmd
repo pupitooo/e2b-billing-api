@@ -1,0 +1,83 @@
+---
+title: usage_inbox row, worker accounting and invoice publication
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+%% Implemented PostgreSQL inbox path. Each colored phase owns a separate transaction.
+%% The caller represents the platform for usage and an operator for monthly closing.
+%% Rated groups are stored results<br/>Go worker functions perform the calculation.
+sequenceDiagram
+    autonumber
+    actor C as Platform / operator
+    participant A as Go billing API
+    participant W as Go usage worker
+    participant D as PostgreSQL
+    Note over C,D: Row selector: customer_billing_state.customer_id = C<br/>Event row: usage_inbox.source = S and usage_inbox.event_id = E<br/>Catalog advisory (65102, 2): protects price_versions, not a column
+
+    rect rgb(233, 247, 238)
+        Note over C,D: A. Receive a batch<br/>financial accounting is asynchronous
+        C->>A: POST /usage/batches with stable (source, event_id)
+        A->>A: Validate the batch<br/>supply UTC received_at
+        A->>D: BEGIN<br/>synchronous_commit = on
+        A->>D: INSERT usage_inbox<br/>compare content on duplicate keys
+        Note over A,D: Identical retry preserves the original usage_inbox row and processing state.<br/>Changed content rolls back the entire batch with 409.
+        A->>D: COMMIT the complete usage_inbox row batch
+        D-->>A: Durable usage_inbox rows
+        A-->>C: 202 accepted
+    end
+
+    rect rgb(237, 240, 255)
+        Note over W,D: B. Account one pending usage_inbox row<br/>One atomic transaction
+        W->>D: SELECT pending usage_inbox candidate<br/>Outside the transaction
+        D-->>W: usage_inbox row identity and customer
+        W->>D: BEGIN<br/>lock FOR UPDATE<br/>customer_billing_state.customer_id = C
+        W->>D: Shared catalog lock<br/>recheck FOR UPDATE<br/>usage_inbox.source = S<br/>usage_inbox.event_id = E
+        Note over W,D: Recheck: another worker completed this usage_inbox row?<br/>Commit without financial writes.
+        W->>D: SELECT price_versions
+        D-->>W: Historical default and customer prices
+        W->>W: Rate at consumption time<br/>Determine usage_month and exact charge
+        W->>D: SELECT closed_billing_months
+        D-->>W: Committed closure history
+        W->>W: Choose billing_month<br/>Allocate exact available credit
+        W->>D: SELECT rated_usage_groups<br/>Existing cumulative gross
+        W->>W: Add the exact charge to cumulative gross<br/>Round the total to booked cents
+        W->>D: UPSERT rated_usage_groups<br/>INSERT usage_ratings link
+        W->>D: INSERT credit_entries debit<br/>Only when credit is used
+        W->>D: UPSERT monthly_usage<br/>Original usage_month
+        W->>D: UPDATE customer_billing_state<br/>Credit and state_version
+        W->>D: UPDATE usage_inbox.processed_at
+        W->>D: COMMIT all accounting effects together
+        Note over W,D: Domain error: commit processing_error<br/>Without financial effects.<br/>Database error: roll back and retry.
+    end
+
+    rect rgb(255, 244, 223)
+        Note over C,D: C. Explicit monthly close<br/>independent of the worker loop
+        C->>A: POST /customers/{customer_id}/invoices with month
+        A->>D: BEGIN<br/>lock the same FOR UPDATE<br/>customer_billing_state.customer_id = C
+        A->>D: SELECT invoices for customer and month
+        alt Invoice already exists
+            D-->>A: Original immutable snapshot
+            A->>D: COMMIT without publication writes
+        else First publication for this customer and month
+            A->>D: Validate ended UTC month and chronological closing history
+            A->>D: SELECT customers and next_invoice_number
+            A->>D: SELECT rated_usage_groups for billing_month
+            A->>D: SELECT addon_subscriptions and addon_cancellations
+            D-->>A: Buyer details, processed group totals and active add-ons
+            A->>A: Round group gross and net<br/>assemble lines and total cents
+            Note over A,D: Credit was allocated by the worker<br/>do not debit it again.<br/>Pending and quarantined target-month usage_inbox rows are not processed here.
+            A->>D: INSERT closed_billing_months
+            A->>D: INSERT invoices with snapshot.lines
+            A->>D: INSERT invoiced_usage_groups to freeze included groups
+            A->>D: UPDATE customer_billing_state number and state_version
+            A->>D: COMMIT closure, snapshot, frozen links and counters together
+            D-->>A: Durable immutable invoice
+        end
+        A-->>C: 200 with invoice snapshot and number
+        Note over W,D: Worker reads closure under the account lock.<br/>Closed or skipped original month?<br/>Route to an eligible later billing_month.<br/>Keep usage_month and historical price.<br/>Issued invoices remain unchanged.
+    end

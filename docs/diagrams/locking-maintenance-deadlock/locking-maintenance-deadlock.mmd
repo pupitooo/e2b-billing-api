@@ -1,0 +1,36 @@
+---
+title: Maintenance lock inversion versus the worker
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant M as Maintenance SQL
+    participant W as Usage worker
+    participant D as PostgreSQL
+    Note over M,D: Reproduced unsafe maintenance orders, not an ordinary API path.<br/>A row selector names the row key, not a column-level lock.
+    alt Catalog advisory taken before the account row
+        M->>D: BEGIN, EXCLUSIVE advisory (65102, 2)<br/>Protects price_versions, not a column
+        W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        W->>D: Request SHARED catalog advisory (65102, 2)
+        Note over W,D: WAIT for M's catalog advisory lock
+        M->>D: Request FOR UPDATE<br/>customer_billing_state.customer_id = C
+        Note over M,D: Cycle: M waits for W's account row<br/>W waits for M's catalog resource
+    else Inbox relation taken before the account relation
+        M->>D: BEGIN, LOCK TABLE usage_inbox<br/>SHARE ROW EXCLUSIVE, whole relation
+        W->>D: BEGIN, FOR UPDATE<br/>customer_billing_state.customer_id = C
+        W->>D: SHARED catalog, lock event row FOR UPDATE<br/>usage_inbox.source = S and usage_inbox.event_id = E
+        W->>D: Prepare financial writes<br/>UPDATE usage_inbox.processed_at
+        Note over W,D: WAIT for M's incompatible inbox relation lock
+        M->>D: Request LOCK TABLE customer_billing_state<br/>ACCESS EXCLUSIVE, whole relation
+        Note over M,D: Cycle: M waits for W's account relation lock<br/>W waits for M's usage_inbox relation lock
+    end
+    Note over M,D: PostgreSQL aborts one participant with SQLSTATE 40P01
+    Note over M,D: The victim can be M or W, not a promised winner.<br/>If W is the victim, all financial writes roll back together.<br/>If M is the victim, W can finish after M rolls back.
+    W->>D: Retry with the same usage_inbox key if still pending
+    Note over M,D: Correct repair order: account row, then catalog advisory.<br/>DDL: stop API and worker before schema changes.<br/>The migration runner advisory only coordinates runners.

@@ -49,7 +49,7 @@ queried month's gross usage.
 
 `state_version` counts customer account changes from usage accounting, credit
 grants, limit changes, add-on purchases/cancellations, and invoice issuance. It can help observe
-account changes, but it is not a version of the complete response: receipt and
+account changes, but it is not a version of the complete response: usage_inbox row and
 processing errors can change the counts without advancing it.
 
 `limit_reached` compares exact processed gross usage with the current limit,
@@ -80,10 +80,10 @@ required fields, identifier limits, numeric ranges, and timestamp bounds.
 A batch commits atomically. Keep `(source, event_id)` and measurement content
 unchanged across retries and batch boundaries, including duplicate identities
 within a batch. Timestamp offsets representing the same instant are equivalent.
-Identical retries preserve receipt and accounting state; changed content returns
+Identical retries preserve usage_inbox row and accounting state; changed content returns
 `409` without accepting any new events. The request envelope contains only
 `events`; additional fields return `400` without storing any events.
-`202` confirms durable receipt; accounting runs asynchronously.
+`202` confirms durable storage in usage_inbox; accounting runs asynchronously.
 
 After `503` or a lost response, the commit outcome may be unknown: retain the
 batch and retry unchanged events with backoff, observing `Retry-After` when present.
@@ -119,7 +119,7 @@ curl -i http://127.0.0.1:8081/usage/batches \
 
 A valid request returns `202` with `{"status":"accepted"}`. Keep the identity and
 content unchanged when retrying; changed content returns `409`. Acceptance
-confirms durable receipt; the worker processes its financial effects asynchronously.
+confirms durable storage in usage_inbox; the worker processes its financial effects asynchronously.
 
 ## Price activation
 

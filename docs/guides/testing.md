@@ -25,13 +25,13 @@ The [handler tests](../../internal/httpapi/handler_test.go) use `httptest` to ch
 The SQL suite applies pending migrations and discovers all `tests/sql/*.sql` files. [Inbox tests](../../tests/sql/usage_inbox.sql), [billing model tests](../../tests/sql/billing_model.sql), and [assignment seed tests](../../tests/sql/assignment_seed.sql) run in UTC and `Asia/Shanghai` and roll back their data. Seed checks use a private schema, preserving edited application data. Output identifies the file and time zone; any failure makes the command fail.
 
 When a demo clock is configured, use `E2B_DEMO_NOW= make api-test` for the
-ordinary receipt suite, which checks timestamps against real time. The E2E
+ordinary usage_inbox row suite, which checks timestamps against real time. The E2E
 launcher supplies its own clock phases and ignores the demo environment.
 
 The original [API happy-path request](../../tests/api/usage_batches_test.go) and response
 expectations remain unchanged. The [acceptance tests](../../tests/api/usage_batches_test.go)
 send HTTP requests to the running service and inspect committed rows through
-a separate PostgreSQL connection. They cover durable receipt, preserved retry
+a separate PostgreSQL connection. They cover durable storage in usage_inbox, preserved retry
 metadata, atomic conflicts, invalid later events, and concurrent HTTP retries.
 They remove only their owned rows, retaining any pre-existing fixed happy-path
 fixture. The [repository tests](../../tests/inbox/usage_inbox_test.go) additionally
@@ -107,7 +107,7 @@ unchanged literal assignment totals using the updated public commands.
 
 ## Rejection and recovery assertions
 
-The financial API tests compare complete catalog, receipt, rating, group, monthly
+The financial API tests compare complete catalog, usage_inbox row, rating, group, monthly
 usage, ledger, subscription, command, account and invoice rows before and after
 rejected commands. The scenarios pair zero grants with one cent, negative prices
 with free prices, invalid calendar days with valid month-end purchases, and
@@ -119,7 +119,7 @@ month with nonempty credit, ledger, rated usage and subscription rows. It then
 compares every field of the adjacent valid invoice, including price identity,
 units, original month, exact gross/credit, all lines, number and buyer snapshot.
 `TestPostgresInsertBatch/conflict_preserves_rated_financial_state` checks complete
-rollback of a batch containing both new input and a conflicting rated receipt.
+rollback of a batch containing both new input and a conflicting rated usage_inbox row.
 
 `TestSpendLimitAPI` verifies the persisted value and command count after changes,
 explicit `null` for unlimited configuration, unchanged state after invalid input,
@@ -141,7 +141,7 @@ model using integer microcents and exact rational half-up rounding. It never cal
 production rating, allocation, routing or presentation functions.
 
 After every command the test checks balance and ledger conservation, nonnegative
-credit bounded by gross, exactly one rating per completed receipt, group units and
+credit bounded by gross, exactly one rating per completed usage_inbox row, group units and
 debits, original-month gross, limit responses, immutable invoice snapshots and
 all financial line fields and sums. Stable seeds and named steps reproduce a
 failure without relying on a random CI environment.
@@ -160,23 +160,23 @@ make inbox-test RUN='^TestProcessBatch$/(generated_accounting_sequences|partitio
 
 `TestBillingSimulatorExecutable/committed_usage_survives_response_loss_and_producer_death`
 uses the real HTTP router, PostgreSQL and a separate simulator executable. One
-case closes the HTTP connection after committing the receipt; another withholds
+case closes the HTTP connection after committing the usage_inbox row; another withholds
 the reply and kills the producer only after observing that commit. Channels and
 the committed database row determine the failure point. Timeouts bound failures;
 sleeps do not choose which operation wins.
 
 Both cases retain the original unadvanced checkpoint, reopen storage through a
-new pool/store, process the receipt once, and resume a new producer process. The
+new pool/store, process the usage_inbox row once, and resume a new producer process. The
 replayed request body must be identical. Full-row comparisons, literal balance
 and ledger counts and accounting invariants prove no additional financial effect
-and preserve the original receipt timestamp despite the restarted API clock.
+and preserve the original arrival timestamp despite the restarted API clock.
 
 | Failure boundary | Automated scenario | Required outcome |
 | --- | --- | --- |
 | Before transaction commit | `TestProcessBatch/late_database_failure_rolls_back_all_financial_effects`; command/resource rollback cases | No partial financial write; valid retry succeeds. |
-| After commit, lost HTTP reply | `TestBillingSimulatorExecutable/committed_usage_survives_response_loss_and_producer_death/committed_HTTP_response_is_lost` | Original receipt survives; unchanged retry has no second effect. |
+| After commit, lost HTTP reply | `TestBillingSimulatorExecutable/committed_usage_survives_response_loss_and_producer_death/committed_HTTP_response_is_lost` | Original usage_inbox row survives; unchanged retry has no second effect. |
 | After commit, producer dies before checkpoint | `TestBillingSimulatorExecutable/committed_usage_survives_response_loss_and_producer_death/producer_killed_after_commit_before_checkpoint` | Durable cursor stays at zero; new process completes the same plan. |
-| Retained state and fresh producer | Both new cases and the existing lost committed grant workflow | Original identity, input, receipt timestamp, ledger and balance are preserved. |
+| Retained state and fresh producer | Both new cases and the existing lost committed grant workflow | Original identity, input, arrival timestamp, ledger and balance are preserved. |
 
 ```sh
 make inbox-test RUN='^TestBillingSimulatorExecutable$/committed_usage_survives_response_loss_and_producer_death$'
@@ -195,14 +195,14 @@ complete numerical example through the public API and separate executable.
 
 | Requirement / contract | Valid scenario | Boundary or conflict | Financial assertions | Operation / workflow test |
 | --- | --- | --- | --- | --- |
-| Durable incremental usage | New receipt with explicit values | Changed content after a new batch row; identical retries | Complete rollback, original receipt time, one rating and one financial effect | `TestPostgresInsertBatch`; `TestPostUsageBatches`; `TestProcessBatch` |
+| Durable incremental usage | New usage_inbox row with explicit values | Changed content after a new batch row; identical retries | Complete rollback, original arrival time, one rating and one financial effect | `TestPostgresInsertBatch`; `TestPostUsageBatches`; `TestProcessBatch` |
 | Historical prices and customer overrides | Original October default or eligible customer price | Price activation instant, conflicting retry, negative price beside zero | Exact price identity, units, original month, group and monthly gross | `TestRate`; `TestCreatePrice`; `TestPriceAPI`; `TestProcessBatch` |
 | Credit grants and allocation to usage | Distinct positive grants and partially covered usage | Zero beside one cent, exhausted balance, changed/repeated identity | Ledger equals balance, credit bounds, independent group debits, no second grant | `TestGrantCredit`; `TestCreditAPI`; generated processor sequences |
 | Full recurring add-on fee | First/last purchase day; consecutive October and November invoices | Older add-on without usage; future add-on; both purchase/close lock orders | Exactly one full fee per month, no skipped obligation, unchanged subscription and failed-close state | `TestPurchaseAddon`; `TestAddonAPI`; `TestCloseMonth/add-on_months_cannot_be_skipped`; purchase/closing lock workflow |
 | Gross monthly spend limits | Finite and explicit unlimited configuration | Below/equal threshold, zero/negative limit, UTC month boundary | Stored limit and version, concrete gross/month/reached fields, unchanged failed configuration | `TestLimitReached`; `TestSetSpendLimit`; `TestSpendLimitAPI` |
 | Monthly invoice presentation | Assignment and subcent totals | Group half-cent boundary, upfront partial credit, split increments | Every financial line, unit, price, original month, exact gross/credit and cent sum | `TestInvoiceAmounts`; `TestAssembleInvoice`; `TestCloseMonth`; partitioned processor scenarios |
 | Immutable issued invoices and late usage | October invoice followed by November and late October usage | Retry, pending cutoff and worker/closing lock order | Complete unchanged snapshot/number; late amount routes forward once | `TestCloseMonth`; generated processor sequences; `TestBillingSimulatorExecutable` |
-| Recovery and retries | New producer resumes retained state | Before commit, lost committed reply, process death before checkpoint | No partial write, original key/body/receipt time, one rating, ledger and balance | Command/resource rollback workflows; `TestProcessBatch`; committed usage recovery workflow |
+| Recovery and retries | New producer resumes retained state | Before commit, lost committed reply, process death before checkpoint | No partial write, original key/body/arrival time, one rating, ledger and balance | Command/resource rollback workflows; `TestProcessBatch`; committed usage recovery workflow |
 
 The five focused [business-rule mutations](test-mutation-audit.md#financial-rule-sensitivity)
 prove that concrete tests reject deliberately wrong implementations. Statement

@@ -2,24 +2,24 @@
 
 ## Summary
 
-This guide follows metered usage from receipt to an immutable monthly invoice,
+This guide follows metered usage from usage_inbox row to an immutable monthly invoice,
 connecting financial calculations, database fields, and the assignment's examples:
 
 - [How to read the flow diagram](#how-to-read-the-flow-diagram): the three timing boundaries, what the arrows carry, and the units used in the example.
 - [Implemented PostgreSQL schema (ERD)](#implemented-postgresql-schema-erd): all current tables, columns, keys, and declared relationships.
 - [Why storing everything in cents is insufficient](#1-why-storing-everything-in-cents-is-insufficient): how rounding small measurements loses charges and how exact microcents preserve their value.
 - [One example through the entire flow](#2-one-example-through-the-entire-flow): one workload across usage events, rating, groups, credit, rounding, invoice lines, and an invoice.
-- [Usage events](#3-usage-events-what-was-consumed): the inbox contract, timestamp bounds, durable receipt, and retry content checks.
+- [Usage events](#3-usage-events-what-was-consumed): the inbox contract, timestamp bounds, durable storage in usage_inbox, and retry content checks.
 - [Historical rating](#4-rating-the-cost-under-the-historical-price): price versions, customer overrides, exact charges, rating links, interval boundaries, and an [example of incorrect current-price billing](#example-why-summing-all-units-and-using-the-current-price-fails).
-- [Rated usage groups](#5-ratedusagegroup-the-rated-accounting-intermediate): grouping keys, stored totals, shared rounding boundaries, and frozen invoiced groups.
+- [Rated usage groups](#5-rated_usage_groups-the-rated-accounting-intermediate): grouping keys, stored totals, shared rounding boundaries, and frozen invoiced groups.
 - [Credits](#6-credits-gross-charge-allocated-credit-and-balance): gross charges, ledger entries, balances, group allocations, [gross spend limits](#why-the-limit-uses-gross-charges), and [credit before rounding](#what-credit-before-rounding-means).
 - [Rounding](#7-rounding-when-and-where-cents-are-produced): half-up boundaries, gross and net cent presentation, balancing credit lines, and the [running gross projection](#running-gross-projection-during-accounting).
-- [Invoice lines](#8-invoiceline-what-appears-on-a-particular-invoice): immutable usage and add-on snapshots, exact audit amounts, and traceability to source events.
+- [Invoice lines](#8-invoice-lines-what-appears-on-a-particular-invoice): immutable usage and add-on snapshots, exact audit amounts, and traceability to source events.
 - [Monthly invoices](#9-invoice-an-immutable-monthly-document): customer numbering, buyer snapshots, signed line totals, idempotent closing, and [complete assignment invoice examples](#example-complete-assignment-invoices).
 - [Late usage](#10-late-usage-why-there-are-two-distinct-periods): original consumption months, later billing months, historical prices, spend limits, and closing boundaries.
 - [Atomic processing](#11-what-must-stay-atomic-during-processing): the financial transaction, customer locks, rollback and retry guarantees, verification coverage, and operational extensions.
 
-Billing answers several different questions in sequence: what the customer consumed, how much that consumption costs, how much credit covers, and what appears on a particular invoice. `RatedUsageGroup` connects measured usage to its accounting result. It retains the shared pricing meaning of many measurements and their exact financial value, so small charges survive rounding.
+Billing answers several different questions in sequence: what the customer consumed, how much that consumption costs, how much credit covers, and what appears on a particular invoice. `rated_usage_groups` connects measured usage to its accounting result. It retains the shared pricing meaning of many measurements and their exact financial value, so small charges survive rounding.
 
 This document describes the application's current accounting flow and database model. It follows one small example through the entire flow, then explains price changes, credit allocation, rounding, late usage, and the assignment's invoices.
 
@@ -29,7 +29,7 @@ The diagram answers one question: **how do many small CPU measurements become th
 
 | Phase and color | When it happens | What it produces |
 | --- | --- | --- |
-| A, green: receipt | The API accepts measurements from the platform. | Durable raw usage events waiting in `usage_inbox`. |
+| A, green: usage_inbox row | The API accepts measurements from the platform. | Durable raw usage events waiting in `usage_inbox`. |
 | B, blue: accounting | The worker processes each accepted event. | Historical pricing, growing exact group totals, and credit allocations. Steps 2–4 commit together for each event. |
 | C, amber: issuance | An operator explicitly closes the customer's billing month. | Cent-valued lines, an invoice number and buyer snapshot, and an immutable issued invoice. |
 
@@ -47,9 +47,9 @@ Three different quantities appear in the boxes:
 
 Steps 3 and 4 show the cumulative state **after all 1_000 events**, while step 2 shows the price of **one event**. The worker updates the group and applies available credit as each event is processed. It does not wait for all events to arrive before allocating credit. It also maintains `booked_charge_cents`, a running rounded gross projection; exact credit allocation continues to use microcents. Step 5 shows the final gross/net rounding used to construct the invoice's lines.
 
-`Rating` means assigning the historical price and calculating the exact charge. `RatedUsageGroup` is the shared running total for compatible events: the same customer, price version, original usage month, and billing month. `InvoiceLine` is a frozen item on the issued document. An invoice can include several groups, so the single-group example is only the smallest complete path. Add-on purchases supply additional lines through a separate path and cannot consume usage credit.
+`Rating` means assigning the historical price and calculating the exact charge. `rated_usage_groups` is the shared running total for compatible events: the same customer, price version, original usage month, and billing month. an invoice line in `invoices.snapshot.lines` is a frozen item on the issued document. An invoice can include several groups, so the single-group example is only the smallest complete path. Add-on purchases supply additional lines through a separate path and cannot consume usage credit.
 
-The phase boxes distinguish receipt, accounting, and issuance. The seven numbered steps describe accounting transformations; they do not each require their own service or table. `InvoiceLine` values are stored together in `invoices.snapshot.lines`. The next section shows the actual tables and relationships.
+The phase boxes distinguish usage_inbox row, accounting, and issuance. The seven numbered steps describe accounting transformations; they do not each require their own service or table. an invoice line in `invoices.snapshot.lines` values are stored together in `invoices.snapshot.lines`. The next section shows the actual tables and relationships.
 
 Shared Go calculations are implemented in `internal/accounting`; the worker persists them transactionally through `internal/billing`. PostgreSQL stores the inbox, price catalog, rated groups, exact credit ledger and balances, monthly gross usage, closed months, and immutable invoice snapshots. The [financial rules](accounting-rules.md) describe the accounting contract.
 
@@ -71,7 +71,7 @@ Closing needs no separate attempt or pending-usage membership tables. `invoices`
 
 **Invoice lines are stored in `invoices.snapshot.lines`, not a separate SQL table.** The JSON snapshot also preserves buyer details, exact audit amounts, and issue time. Add-on lines use the purchased price stored in `addon_subscriptions`; the ERD shows that table's catalog and customer foreign keys, while invoice traceability to a subscription is stored in the JSON snapshot.
 
-`usage_inbox.customer_id` and `usage_inbox.metric` are input text without catalog foreign keys. Every drawn relationship corresponds to a declared SQL foreign key; receipt matching, price ownership, frozen-group protection, and the closing transaction add the integrity rules described in the [billing model guide](billing-model.md#tables-and-relationships). `schema_migrations` has no financial relationships.
+`usage_inbox.customer_id` and `usage_inbox.metric` are input text without catalog foreign keys. Every drawn relationship corresponds to a declared SQL foreign key; usage_inbox row matching, price ownership, frozen-group protection, and the closing transaction add the integrity rules described in the [billing model guide](billing-model.md#tables-and-relationships). `schema_migrations` has no financial relationships.
 
 ## 1. Why storing everything in cents is insufficient
 
@@ -110,10 +110,10 @@ This is the diagram's example, now mapped to the implementation. The example cus
 | --- | --- | --- |
 | 1. Usage events | 1_000 measurements × 1_000 CPU seconds → 1_000_000 resource units, retaining each event's identity and interval. | 1_000 `usage_inbox` rows, each with `units = 1_000`. |
 | 2. Rating | One event's 1_000 units + the historical price of 5 cents per million → 5_000 exact microcents. | `price_versions` supplies the rate; `accounting.Rate` calculates the charge. `usage_ratings` links each event to its group. |
-| 3. RatedUsageGroup | 1_000 rated events → one group with 1_000_000 units and 5_000_000 gross microcents (USD 0.05). | `rated_usage_groups.total_units = 1_000_000`, `exact_charge_microcents = 5_000_000`. |
+| 3. rated_usage_groups | 1_000 rated events → one group with 1_000_000 units and 5_000_000 gross microcents (USD 0.05). | `rated_usage_groups.total_units = 1_000_000`, `exact_charge_microcents = 5_000_000`. |
 | 4. Credits | Starting credit of 2_000_000 microcents pays for the first 400 events → total credit used of 2_000_000 microcents, zero credit left, and 3_000_000 net microcents. | `allocated_credit_microcents = 2_000_000`; `credit_entries` retains individual debits; `customer_billing_state.credit_balance_microcents = 0`. Gross microcents remain 5_000_000. |
 | 5. Rounding | Gross 5_000_000 microcents → 5 cents; net 3_000_000 microcents → 3 cents; their difference → 2 cents of displayed credit. | `accounting.InvoiceAmounts` calculates the final presentation. The worker's running gross projection is `booked_charge_cents = 5`. |
-| 6. InvoiceLine | The calculated cents → one usage line of +5 cents and one credit line of −2 cents. | Ordered `invoices.snapshot.lines`; `invoiced_usage_groups` links the invoice to its frozen group. |
+| 6. Invoice lines | The calculated cents → one usage line of +5 cents and one credit line of −2 cents. | Ordered `invoices.snapshot.lines`; `invoiced_usage_groups` links the invoice to its frozen group. |
 | 7. Invoice | Signed lines of +5 and −2 cents + buyer details and a reserved number → an immutable October invoice totaling 3 cents (USD 0.03). | One `invoices` row per customer/billing month, with `total_cents = 3` and the complete snapshot. |
 
 Each event costs 5_000 microcents. The first 400 events consume the initial `400 × 5_000 = 2_000_000` microcents of credit; the remaining 600 events add `600 × 5_000 = 3_000_000` payable microcents. Closing snapshots that result without debiting credit again. With zero starting credit, the same events would produce +5 cents of usage, a zero credit line, and a USD 0.05 invoice.
@@ -138,14 +138,14 @@ In the database this is one `usage_inbox` row:
 | `customer_id`, `sandbox_id`, `metric` | Who consumed which resource and in which sandbox. |
 | `period_start`, `period_end` | The consumption interval in `timestamptz`; the end must follow the start. Rating uses `[start, end)`. |
 | `units` | A non-negative integer `bigint` containing the resource quantity. |
-| `received_at` | The server-supplied receipt time. Historical pricing uses consumption time. |
+| `received_at` | The server-supplied arrival time. Historical pricing uses consumption time. |
 | `processed_at`, `processing_error` | Accounting processing state. Successful completion cannot coexist with an unresolved error. |
 
 The application supports UTC calendar years **1000 through 9999**, including the minimum instant `1000-01-01T00:00:00Z`. Validate these bounds after converting the supplied offset to UTC. For example, `1000-01-01T00:00:00+01:00` falls in UTC year 0999 and is rejected, while `0999-12-31T23:30:00-01:00` falls in UTC year 1000 and is accepted. Calendar years and timestamps use ordinary digits without underscore separators.
 
 The inbox has no financial columns, `group_id`, or foreign keys to customers and metrics. It can durably preserve input whose catalog records are missing; subsequent processing must record that problem visibly.
 
-The unique identity prevents duplicate rows. Ingestion also compares content: an identical retry preserves the original values and receipt time, while different content under the same ID produces a conflict. Successful inbox receipt confirms durable storage. Credit allocation and invoice issuance occur in later stages.
+The unique identity prevents duplicate rows. Ingestion also compares content: an identical retry preserves the original values and arrival time, while different content under the same ID produces a conflict. Successful ingestion confirms durable storage in usage_inbox. Credit allocation and invoice issuance occur in later stages.
 
 The meaning of a unit belongs to the event contract. Supporting fractions of CPU seconds would require defining another integer measurement unit, for example. Microcents provide a finer unit of **money**; fractional resource units need their own representation.
 
@@ -200,19 +200,19 @@ Acme has its own 4-cent price throughout the example period. The default change 
 All versions require a finite, non-null `effective_from`. The seed supplies the
 assignment's dated prices; ordinary new versions cannot start before the insertion UTC date; an additional metric must have its applicable price
 configured before its first measurement. There is no undated baseline. If no
-price covers the original consumption time, the receipt retains
+price covers the original consumption time, the usage_inbox row retains
 `P0 missing_valid_price: ...` and has no financial effect. Accounting reports the
 P0 incident after committing that error. An operator appends the correct dated
-price and explicitly releases the investigated receipt before another attempt.
+price and explicitly releases the investigated usage_inbox row before another attempt.
 See the [catalog provisioning and recovery contract](accounting-rules.md#catalog-provisioning-and-p0-recovery).
 
 A successful assignment is recorded in `usage_ratings(source, event_id, group_id)`. Its primary key lets one inbox identity contribute to one group exactly once. Foreign keys require both the event and group. The selected price is traceable through `rated_usage_groups.price_version_id`; the rating link does not store a separate amount for each event.
 
-Each rating segment must fit within one UTC month and one applicable price version. The link trigger checks the customer, metric, and month boundaries; it neither selects the price nor checks for a price change inside the interval. The initial rater rejects unsupported crossing segments as visible processing errors. Splitting one receipt across several price groups would require extending the current one-event-to-one-group relationship and defining how to divide units precisely.
+Each rating segment must fit within one UTC month and one applicable price version. The link trigger checks the customer, metric, and month boundaries; it neither selects the price nor checks for a price change inside the interval. The initial rater rejects unsupported crossing segments as visible processing errors. Splitting one usage_inbox row across several price groups would require extending the current one-event-to-one-group relationship and defining how to divide units precisely.
 
-## 5. RatedUsageGroup: the rated accounting intermediate
+## 5. rated_usage_groups: the rated accounting intermediate
 
-`RatedUsageGroup` answers: **"How much does this compatible consumption cost under one historical price?"** It contains both usage and its financial result. The group lets many measurements from different sandboxes share one rounding boundary.
+`rated_usage_groups` answers: **"How much does this compatible consumption cost under one historical price?"** It contains both usage and its financial result. The group lets many measurements from different sandboxes share one rounding boundary.
 
 The SQL table is `rated_usage_groups`. Its unique key is:
 
@@ -283,7 +283,7 @@ normal; retry identity is determined by business keys. See the
 
 The ledger contains a server-generated `credit_entry_id`, `customer_id`, optional `group_id`, a signed `amount_microcents`, and a server-owned `recorded_at` audit instant. Credit API requests and responses
 contain only `idempotency_key` and `amount_cents`; callers cannot supply the audit time.
-A grant is positive and has no group; a debit is negative and links to a group owned by the same customer. Zero debits are omitted. Records are append-only. Grant retries are protected by `(operation_scope, idempotency_key)` in the shared API command history. Usage debits commit with the unique event rating and locked receipt checkpoint, so retries cannot consume credit twice. Caller keys never become ledger IDs.
+A grant is positive and has no group; a debit is negative and links to a group owned by the same customer. Zero debits are omitted. Records are append-only. Grant retries are protected by `(operation_scope, idempotency_key)` in the shared API command history. Usage debits commit with the unique event rating and locked usage_inbox row checkpoint, so retries cannot consume credit twice. Caller keys never become ledger IDs.
 
 The balance is a fast ledger projection. Before allocating credit, the worker locks the `customer_billing_state` row and changes the balance, ledger, group allocation, and `state_version` together. The database does not calculate the ledger sum or verify agreement between these projections automatically.
 
@@ -370,9 +370,9 @@ Splitting the same consumption into different events preserves the exact gross t
 
 At closing, `InvoiceAmounts` calculates the invoice's cent presentation from the group's exact gross and allocated credit microcents. Closing does not allocate credit again. The snapshot preserves both the displayed cents and the exact audit amounts.
 
-## 8. InvoiceLine: what appears on a particular invoice
+## 8. Invoice lines: what appears on a particular invoice
 
-`RatedUsageGroup` retains the rated accounting intermediate. `InvoiceLine` preserves what appeared on a specific issued invoice. A group can grow during an open period; an issued line must retain its values when later measurements, prices, or addresses change.
+`rated_usage_groups` retains the rated accounting intermediate. an invoice line in `invoices.snapshot.lines` preserves what appeared on a specific issued invoice. A group can grow during an open period; an issued line must retain its values when later measurements, prices, or addresses change.
 
 The implementation stores ordered lines inside immutable `invoices.snapshot`, with `invoiced_usage_groups` linking
 back to frozen accounting groups. Each usage line snapshots metric, original month,
@@ -476,7 +476,7 @@ Separate billing months create separate rounding boundaries; see the
 
 The [editable workflow](../diagrams/closing-workflow/closing-workflow.mmd),
 [detailed issuance view](../diagrams/invoice-issuance/invoice-issuance.png), and
-[receipt accounting view](../diagrams/usage-worker-accounting/usage-worker-accounting.png)
+[usage_inbox row accounting view](../diagrams/usage-worker-accounting/usage-worker-accounting.png)
 show the same transaction and error-handling contracts.
 
 The [manual recovery command](../simulator/delayed-billing.md#missed-manual-invoice)

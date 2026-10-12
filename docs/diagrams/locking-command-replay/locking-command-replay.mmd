@@ -1,0 +1,38 @@
+---
+title: Concurrent financial command retries
+config:
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    wrap: true
+    messageFontSize: 15
+    noteFontSize: 14
+---
+sequenceDiagram
+    autonumber
+    participant A as API command A
+    participant B as API command B
+    participant D as PostgreSQL
+    Note over A,D: Row selector: customer_billing_state.customer_id = C<br/>Request advisory identity: api_idempotency_operations.operation_scope<br/>plus api_idempotency_operations.idempotency_key (not a row lock)
+    Note over A,D: Same operation_scope and idempotency_key.<br/>Applies to prices, credits, limits, purchases,<br/>cancellations and invoice catch-up.
+    A->>D: BEGIN, scoped advisory request lock
+    A->>D: SELECT api_idempotency_operations, no result yet
+    B->>D: BEGIN, same scoped advisory request lock
+    Note over B,D: WAIT for A's transaction to end
+    alt A succeeds
+        A->>D: Acquire the operation's business lock<br/>Apply changes, store request and response
+        A->>D: COMMIT effect and api_idempotency_operations
+        D-->>B: Scoped lock granted
+        B->>D: Read original stored response
+        alt Same semantic input
+            B->>D: COMMIT without taking business locks
+            Note over B,D: Return original result, no repeated effect
+        else Changed semantic input
+            B->>D: ROLLBACK, return 409 billing_conflict
+        end
+    else A fails before commit
+        A->>D: ROLLBACK effect and request-history insertion
+        D-->>B: Scoped lock granted, history still absent
+        B->>D: Validate and execute its own command normally
+    end
+    Note over A,D: Different scopes or keys usually have separate request locks.<br/>Hash collisions can cause waiting, but identity uses the full key.<br/>Same-customer commands can still meet at the account lock.
