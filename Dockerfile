@@ -26,3 +26,14 @@ ENV GOCACHE=/tmp/go-build
 USER 65532:65532
 EXPOSE 8080
 CMD ["billing-api"]
+
+# Only the isolated E2E controller needs Docker access; application services
+# retain the unprivileged API stage and their normal runtime configuration.
+FROM api AS e2e
+USER root
+RUN apk add --no-cache docker-cli docker-cli-compose
+COPY tests/e2e ./tests/e2e
+CMD ["go", "test", "-tags=integration", "-count=1", "-v", "-timeout=20m", "./tests/e2e"]
+
+# Preserve the default application image for existing Compose services.
+FROM api AS runtime

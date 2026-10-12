@@ -67,11 +67,14 @@ Use the same fixed clock for API, worker and portal. For each phase set the cloc
 through startup configuration, preserving the existing database volume:
 
 ```sh
-E2B_DEMO_NOW=2026-09-01T00:00:00Z make up
+E2B_DEMO_NOW=2026-09-01T00:00:00Z make up SERVICE=postgres
 make migrate
+E2B_DEMO_NOW=2026-09-01T00:00:00Z make up
 ```
 
-For the next phase, replace that value and run `make up` again; reload the GUI.
+For the next phase, use the [manual clock helper](../guides/e2e-walkthrough.md#change-time-without-removing-history)
+to wait for accounting, stop both processes and recreate them with the same value.
+For optional GUI presentation recreate docs and reload the page.
 Clock phases are 1 September, 20 September, 30 September, 1 October, 1 November,
 30 November, 1 December, 31 December, 1 January and 1 February. The fixture carries
 the year and exact UTC instant beside every step. Do not reset volumes between
@@ -89,6 +92,12 @@ phase. `business_time` is metadata, never a caller-supplied HTTP clock. CLI fast
 mode cannot advance service clocks itself.
 
 ## Related regression coverage
+
+`TestBillingE2E/multi_month_delayed_platform_billing` executes all 35 steps
+against separate Compose API and worker services, applying each declared clock
+phase through startup configuration. It runs in CI; the [E2E guide](../guides/e2e-testing.md)
+explains evidence and the [manual walkthrough](../guides/e2e-walkthrough.md#other-public-fixtures)
+shows how to inspect each phase yourself.
 
 `TestBillingSimulatorExecutable/multi-month_platform_delay_with_real_receipt_clocks`
 executes all 35 public steps in new CLI processes against one private schema, real
@@ -183,3 +192,7 @@ transport fields and no financial effects on errors.
 checks all 27 CLI/API steps, six physical receipt timestamps, four immutable
 invoices and USD 102 total. GUI tests execute the actual selection, clock gate,
 command construction and multiple-snapshot rendering handlers.
+
+`TestBillingE2E/missed_manual_invoices_recover_atomically` executes the same
+27-step fixture against separate service containers, including clock changes,
+new producer processes after lost replies and complete unchanged retry state.

@@ -94,3 +94,8 @@ Hook configuration is local Git metadata and must be enabled in each clone.
 Git permits bypassing local hooks with `--no-verify`; CI independently runs the
 same checks on every push and pull request. The standard tools are documented
 in [gofmt](https://pkg.go.dev/cmd/gofmt) and [go vet](https://pkg.go.dev/cmd/vet).
+
+Backend changes must retain both CI suites: `All tests` for static, SQL, unit and
+integration checks, and `Backend E2E` for the complete service scenarios. Keep
+[E2E scenario explanations](e2e-testing.md) and [manual checkpoints](e2e-walkthrough.md)
+aligned when inputs, clocks, expected responses or recovery steps change.

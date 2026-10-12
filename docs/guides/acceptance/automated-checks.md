@@ -21,9 +21,9 @@ only the simulator's `SOURCE` or state filename does not reset balances or invoi
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
 | [2.1](#21-select-an-isolated-project-and-start-postgresql) | Select `e2b-acceptance-01`, export free ports, list services, and start PostgreSQL. | Service list includes `postgres`, `api`, `worker`, `simulator`, `docs`, and `api-docs`; PostgreSQL is healthy; development data stays isolated. |
-| [2.2](#22-apply-migrations-twice-and-compare-their-records) | Apply migrations, save their records, repeat, and compare with `cmp`. | Both runs exit `0`; versions 1–12 appear exactly once; `cmp` exits `0`, preserving every `applied_at`. |
+| [2.2](#22-apply-migrations-twice-and-compare-their-records) | Apply migrations, save their records, repeat, and compare with `cmp`. | Both runs exit `0`; versions 1–13 appear exactly once; `cmp` exits `0`, preserving every `applied_at`. |
 | [2.3](#23-run-static-checks-and-the-complete-regression-suite) | Run `make check` and unfiltered `make test`; retain logs. | Both exit `0`; named scenarios in section 6 execute and pass; SQL integrity passes in UTC and Asia/Shanghai. |
-| [2.4](#24-run-two-migration-runners-concurrently) | Start two migration runners against the same migrated database; retain both logs and compare records. | Both exit `0`; the same twelve version rows and seed values remain; migration records are identical. |
+| [2.4](#24-run-two-migration-runners-concurrently) | Start two migration runners against the same migrated database; retain both logs and compare records. | Both exit `0`; the same thirteen version rows and seed values remain; migration records are identical. |
 | [2.5](#25-retain-the-evidence-and-reset-after-the-automated-gate) | Finish any section 6 diagnostic reruns, save results, then reset using step 1.5. | Fresh seed database and no saved producer progress; evidence remains outside Docker. Check step 1.4 before each manual scenario. |
 
 ### 2.1 Select an isolated project and start PostgreSQL
@@ -45,6 +45,7 @@ missing dependent services.
 ```sh
 export COMPOSE_PROJECT_NAME=e2b-acceptance-01
 export E2B_POSTGRES_PORT=25433 E2B_API_PORT=28081 E2B_DOCS_PORT=28082
+export E2B_DEMO_NOW=2026-10-31T00:00:00Z
 
 (
   set -euo pipefail
@@ -169,6 +170,7 @@ RESULTS
 
   export COMPOSE_PROJECT_NAME=e2b-acceptance-01
   export E2B_POSTGRES_PORT=25433 E2B_API_PORT=28081 E2B_DOCS_PORT=28082
+export E2B_DEMO_NOW=2026-10-31T00:00:00Z
 
   (
     set -euo pipefail
@@ -211,7 +213,7 @@ printf 'Scenario exit status: %s\n' "$acceptance_scenario_status"
   set -euo pipefail
   test -f "${acceptance_evidence:?Complete step 1.2 or restore its saved directory.}/acceptance-results.md"
   E2B_GO_CHECKS_DOCKER=1 make check 2>&1 | tee "$acceptance_evidence/check.log"
-  make test 2>&1 | tee "$acceptance_evidence/test.log"
+  E2B_DEMO_NOW= make test 2>&1 | tee "$acceptance_evidence/test.log"
 )
 acceptance_step_status=$?
 printf 'Step exit status: %s\n' "$acceptance_step_status"
@@ -219,7 +221,8 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 
 `make test` runs SQL integrity in **both UTC and Asia/Shanghai**, Go package tests,
 isolated-schema persistence tests, HTTP tests against the running API, and worker
-process lifecycle tests. Require the named billing scenarios in section 6 to
+process lifecycle tests, and backend E2E. The ordinary API receipt tests use real
+time (`E2B_DEMO_NOW=`); E2E supplies its own isolated clock phases. Require the named billing scenarios in section 6 to
 actually execute and pass; a filtered or skipped suite is not the full gate.
 SQL fixtures roll back, isolated schemas are dropped, and HTTP tests clean their
 owned receipts. Reset the project in step 2.5 before the manual assignment anyway.
@@ -369,6 +372,7 @@ RESULTS
 
   export COMPOSE_PROJECT_NAME=e2b-acceptance-01
   export E2B_POSTGRES_PORT=25433 E2B_API_PORT=28081 E2B_DOCS_PORT=28082
+export E2B_DEMO_NOW=2026-10-31T00:00:00Z
 
   (
     set -euo pipefail
@@ -400,7 +404,7 @@ RESULTS
     set -euo pipefail
     test -f "${acceptance_evidence:?Complete step 1.2 or restore its saved directory.}/acceptance-results.md"
     E2B_GO_CHECKS_DOCKER=1 make check 2>&1 | tee "$acceptance_evidence/check.log"
-    make test 2>&1 | tee "$acceptance_evidence/test.log"
+    E2B_DEMO_NOW= make test 2>&1 | tee "$acceptance_evidence/test.log"
   )
   acceptance_step_status=$?
   printf 'Step exit status: %s\n' "$acceptance_step_status"

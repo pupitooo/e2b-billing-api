@@ -99,5 +99,5 @@ For a past-month invoice with multiple usage prices and an add-on, use the
 | Setup and operations | [Local setup](docs/guides/local-development.md), [troubleshooting](docs/guides/troubleshooting.md) |
 | API requests | [API guide](docs/guides/api-reference.md), [OpenAPI specification](docs/api/openapi.yaml) |
 | Billing and architecture | [Implementation overview](docs/architecture/submission-overview.md), [system contracts](docs/architecture/system-contracts.md), [usage to invoice](docs/architecture/usage-to-invoice.md) |
-| Scenarios and verification | [Billing scenarios](docs/simulator/billing-scenarios.md), [tests](docs/guides/testing.md), [acceptance procedure](docs/guides/final-acceptance-testing.md) |
+| Scenarios and verification | [Billing scenarios](docs/simulator/billing-scenarios.md), [tests](docs/guides/testing.md), [backend E2E](docs/guides/e2e-testing.md), [manual walkthrough](docs/guides/e2e-walkthrough.md), [acceptance procedure](docs/guides/final-acceptance-testing.md) |
 | Development | [Conventions](docs/guides/development.md), [documentation maintenance](docs/guides/documentation.md) |

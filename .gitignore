@@ -137,3 +137,6 @@ node_modules/
 !/docs/brainstorming/invoice-scheduling.md
 
 !/docs/simulator/delayed-billing.md
+
+!/docs/guides/e2e-testing.md
+!/docs/guides/e2e-walkthrough.md

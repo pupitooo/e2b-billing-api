@@ -37,12 +37,12 @@ export REVERSE SIM_API_URL SCENARIO_FILE
 shell_quote = '$(subst ','"'"',$(1))'
 SERVICE_ARG = $(if $(SERVICE),$(call shell_quote,$(SERVICE)))
 
-.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test _test-db _test-go _test-worker docs api-docs docs-check demo-check adminer-check simulate simulate-help fmt fmt-check vet check install-hooks
+.PHONY: help services check-service up stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test e2e-test _test-db _test-go _test-worker docs api-docs docs-check demo-check adminer-check simulate simulate-help fmt fmt-check vet check install-hooks
 
 help:
 	@printf '%s\n' \
 	  'Usage: make <command> [SERVICE=<name>]' \
-	  'Testing: make test [SUITE=all|go|db] [RUN=<regexp>]' \
+	  'Testing: make test [SUITE=all|go|db|e2e] [RUN=<regexp>]' \
 	  '' \
 	  'up       Build and start services; wait up to 120 seconds for readiness' \
 	  'stop     Stop services; keep containers and volumes' \
@@ -60,6 +60,7 @@ help:
 	  'db-test  Run SQL integrity tests in both time zones' \
 	  'api-test Start the API and run HTTP integration tests' \
 	  'inbox-test Run PostgreSQL repository tests in private schemas' \
+	  'e2e-test Run isolated backend E2E scenarios and preserve evidence' \
 	  'docs     Start the Markdown guides, Scalar reference, and API' \
 	  'api-docs Start the portal and print the Scalar reference link' \
 	  'docs-check Validate published guides, links, and assets without services' \
@@ -200,8 +201,8 @@ psql:
 test:
 	@set -eu; \
 	case "$$SUITE" in \
-	  all|go|db) ;; \
-	  *) printf 'Unknown test suite "%s". Available suites: all, go, db.\n' "$$SUITE" >&2; exit 2 ;; \
+	  all|go|db|e2e) ;; \
+	  *) printf 'Unknown test suite "%s". Available suites: all, go, db, e2e.\n' "$$SUITE" >&2; exit 2 ;; \
 	esac; \
 	if [ "$$SUITE" = db ] && [ -n "$$RUN" ]; then \
 	  printf 'RUN filters Go tests and cannot be used with SUITE=db.\n' >&2; \
@@ -212,7 +213,13 @@ test:
 	fi; \
 	if [ "$$SUITE" = all ] || [ "$$SUITE" = go ]; then \
 	  $(MAKE) --no-print-directory _test-go; \
+	fi; \
+	if [ "$$SUITE" = all ] || [ "$$SUITE" = e2e ]; then \
+	  $(MAKE) --no-print-directory e2e-test; \
 	fi
+
+e2e-test:
+	@bash scripts/e2e.sh
 
 go-test:
 	@$(COMPOSE) build api

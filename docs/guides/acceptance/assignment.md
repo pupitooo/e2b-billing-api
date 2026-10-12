@@ -20,7 +20,7 @@ Complete [Automated checks](automated-checks.md) before continuing here.
 | Step | Action and inputs | Expected result |
 | --- | --- | --- |
 | [3.1](#31-confirm-the-reset-assignment-environment-is-running) | Confirm the project, inspect services, save API/docs URLs, and request `/healthz`. | Healthy PostgreSQL, API, worker, docs, and api-docs; idle simulator; health HTTP `200`. Seed and financial reads establish database access. |
-| [3.2](#32-check-the-live-servers-utc-clock) | Save the API container's UTC time and compare with step 1.4. | Calendar and receipt-time prerequisites for the intended next step hold; otherwise record that manual check **NOT RUN**. Future usage timestamps do not advance the clock. |
+| [3.2](#32-check-the-live-servers-utc-clock) | Save the API container's configured business time and compare with step 1.4. | API and worker use the declared fixed UTC phase; future usage timestamps do not advance that clock. |
 | [3.3](#33-verify-the-served-specification-and-make-a-browser-request) | Fetch `/reference/openapi.yaml` and compare with the source; open Scalar and send `GET /customers/acme/credit`. | `cmp` exits `0`; browser request through the docs proxy returns HTTP `200` and an empty account. |
 | [3.4](#34-query-and-compare-the-seed-data) | Query the catalog, accounts, and activity through a separate PostgreSQL connection. | Time zone `UTC`; every literal value in the seed table below matches; activity counts are zero. |
 
@@ -53,16 +53,16 @@ printf 'Step exit status: %s\n' "$acceptance_step_status"
 (
   set -euo pipefail
   test -f "${acceptance_evidence:?Complete step 1.2 or restore its saved directory.}/acceptance-results.md"
-  docker compose exec -T api date -u +%Y-%m-%dT%H:%M:%SZ \
+  docker compose exec -T api printenv E2B_DEMO_NOW \
     | tee "$acceptance_evidence/api-clock.txt"
 )
 acceptance_step_status=$?
 printf 'Step exit status: %s\n' "$acceptance_step_status"
 ```
 
-The clock check alone does not establish that the complete live assignment can
-match its fixed late-usage results. Use step 1.4's calendar and receipt-time table;
-earlier workflow commands may remain committed when a later precondition fails.
+Also read `docker compose exec -T worker printenv E2B_DEMO_NOW`; both values
+must be `2026-10-31T00:00:00Z` initially. Use step 1.4's phase table before
+closing October and November. OS time is unrelated to this business clock.
 
 ### 3.3 Verify the served specification and make a browser request
 
@@ -160,7 +160,7 @@ acceptance_run_seed_inspection() {
   (
     set -euo pipefail
     test -f "${acceptance_evidence:?Complete step 1.2 or restore its saved directory.}/acceptance-results.md"
-    docker compose exec -T api date -u +%Y-%m-%dT%H:%M:%SZ \
+    docker compose exec -T api printenv E2B_DEMO_NOW \
       | tee "$acceptance_evidence/api-clock.txt"
   )
   acceptance_step_status=$?
@@ -220,9 +220,9 @@ printf 'Scenario exit status: %s\n' "$acceptance_scenario_status"
 - PostgreSQL, API, worker, docs, and api-docs are healthy; the simulator is idle.
   The shell session retains `acceptance_api`, `acceptance_evidence`, and port exports.
 - The calendar and receipt-time prerequisites in step 1.4 hold at each relevant
-  checkpoint. The live workflow must receive step 15 during November and wait
-  until December for step 19 to match the fixed invoice expectations. Use section
-  2's isolated-schema automated workflows for an uninterrupted verification.
+  checkpoint. Advance configuration to November before step 13 and December
+  before step 19. The same fixed clock drives API and worker; no host-calendar
+  wait is necessary. The [E2E suite](../e2e-testing.md) automates these transitions.
 - For a new run, `/state/acceptance-assignment.json` has no saved workflow progress.
   Recovery uses the same project, source, and state file at its saved checkpoint.
 
@@ -431,6 +431,21 @@ Use the canonical [24-step assignment table](../../simulator/billing-scenarios.m
 Run the command below once per remaining row 10–24, comparing its result before
 continuing. Rows 1–9 are already complete; sections 4.2–4.5 add the operator fault checks.
 
+After step 12 has completed and pending accounting is zero, run:
+
+```sh
+acceptance_advance 2026-11-01T00:00:00Z
+```
+
+Execute steps 13–18 individually. After step 18, run:
+
+```sh
+acceptance_advance 2026-12-01T00:00:00Z
+```
+
+Then execute steps 19–24 individually. Preserve the same source and checkpoint.
+
+
 ```sh
 (
   set -euo pipefail
@@ -467,9 +482,8 @@ state on used accounts fails the fresh-account precondition.
 
 Use the numbered commands above for the live walkthrough, preserving the same
 project and checkpoint across the calendar boundaries in step 1.4. The complete
-assignment is verified without those live-calendar waits by section 2's automated
-fixtures; a combined live command block cannot satisfy both receipt and closing
-times in one uninterrupted run.
+assignment uses the explicit configuration phases above. Section 2's backend
+E2E suite verifies the same transitions and operator checks without human input.
 
 ## 5. Final invoices and independently persisted state
 
