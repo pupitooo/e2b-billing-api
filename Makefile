@@ -2,6 +2,7 @@ SHELL := /bin/sh
 .DEFAULT_GOAL := help
 
 COMPOSE := docker compose
+PAGES_URL ?= https://pupitooo.github.io/e2b-billing-api/
 SERVICE ?=
 RUN ?=
 # Test regexes are data; preserve dollar anchors in command-line overrides.
@@ -62,7 +63,7 @@ override E2B_DEMO_NOW := $(DELOREAN_DATE)T00:00:00Z
 export E2B_DEMO_NOW
 endif
 
-.PHONY: help services check-service up delorean stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test e2e-test _test-db _test-go _test-worker docs api-docs docs-check demo-check adminer-check simulate simulate-help fmt fmt-check vet check install-hooks
+.PHONY: help services check-service up delorean stop down restart logs ps links migrate migration-status psql test go-test db-test api-test inbox-test e2e-test _test-db _test-go _test-worker docs api-docs docs-check docs-export demo-check adminer-check simulate simulate-help fmt fmt-check vet check install-hooks
 
 help:
 	@printf '%s\n' \
@@ -91,6 +92,7 @@ help:
 	  'docs     Start the Markdown guides, Scalar reference, and API' \
 	  'api-docs Start the portal and print the Scalar reference link' \
 	  'docs-check Validate published guides, links, and assets without services' \
+	  'docs-export Export guides and read-only Scalar to tools/pages for GitHub Pages' \
 	  'demo-check Run the static GUI tests in an ephemeral Node container' \
 	  'adminer-check Check exact integer display with the pinned Adminer runtime' \
 	  'simulate Run or resume platform usage; MODE=step releases one step' \
@@ -135,6 +137,13 @@ docs-check:
 	@$(COMPOSE) build docs
 	@$(COMPOSE) run --rm --no-deps --entrypoint mkdocs docs build --strict --config-file /source/site/mkdocs.yml
 	@$(COMPOSE) run --rm --no-deps --entrypoint python docs /source/site/test_publication.py
+
+docs-export:
+	@$(COMPOSE) build docs
+	@mkdir -p tools/pages
+	@$(COMPOSE) run --rm --no-deps --user "$$(id -u):$$(id -g)" \
+	  --volume "$(CURDIR)/tools/pages:/export" --entrypoint python docs \
+	  /source/site/export_pages.py --site-url $(call shell_quote,$(PAGES_URL)) --output /export
 
 demo-check:
 	@docker run --rm --volume "$(CURDIR):/workspace:ro" --workdir /workspace \

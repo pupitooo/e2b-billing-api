@@ -1,0 +1,57 @@
+name: Documentation Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build static documentation
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read GitHub Pages configuration
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Validate local and hosted documentation
+        run: make docs-check
+      - name: Export guides, diagrams, and read-only API reference
+        env:
+          PAGES_URL: ${{ steps.pages.outputs.base_url }}
+        run: make docs-export
+      - name: Upload static documentation
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: tools/pages/
+
+  deploy:
+    name: Publish documentation
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4

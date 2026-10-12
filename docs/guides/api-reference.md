@@ -1,6 +1,8 @@
 # HTTP API reference
 
-Run `make docs` and open the printed **API reference** address, by default
+Open the [API reference](/reference/) to browse endpoint schemas and examples.
+The GitHub Pages edition is read-only and hosts no API backend. For browser
+requests, run `make docs` and open the printed **API reference** address, by default
 [http://127.0.0.1:8082/reference/](http://127.0.0.1:8082/reference/).
 Scalar provides the three-panel `modern` layout and an embedded **Test Request**
 client. The [OpenAPI 3.1.2 specification](../api/openapi.yaml) defines every endpoint's

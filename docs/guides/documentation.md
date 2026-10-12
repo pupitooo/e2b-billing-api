@@ -67,6 +67,59 @@ service-specific commands such as `make logs SERVICE=docs` to
 `make logs SERVICE=api-docs` when investigating Scalar. `make logs SERVICE=docs`
 now inspects MkDocs and the documentation gateway.
 
+## GitHub Pages publication
+
+The static edition's publication address is
+[https://pupitooo.github.io/e2b-billing-api/](https://pupitooo.github.io/e2b-billing-api/).
+It contains the same selected guides, PNG diagrams, editable Mermaid sources,
+browser-side search, and Scalar API reference. It works on mobile without a
+running local computer. Demo and database browser navigation is omitted;
+their homepage links are labelled local only. Their guides remain available
+for readers running the project themselves.
+
+The hosted reference has the same `modern` layout, schemas, examples, responses,
+and retry rules. Its request client is disabled because Pages hosts no API.
+Generated OpenAPI files adapt documentation links to the site's base path and
+identify the example servers as local services. Endpoint definitions and schemas
+come from the single `docs/api/openapi.yaml` contract; the source and local
+reference retain their existing server configuration. The bundled Scalar script
+is copied from the same pinned image as the local reference, with no CDN dependency.
+
+### Activate publication
+
+1. In the repository's **Settings → Pages → Build and deployment**, select
+   **GitHub Actions** as the source. No custom domain or deployment secret is needed.
+2. Push the reviewed publication changes to `main`.
+3. Open **Actions → Documentation Pages** and check the build and deployment.
+   Its `github-pages` environment reports the published URL. Use **Run workflow**
+   on `main` to retry or publish without another commit.
+
+The [Pages workflow](../../.github/workflows/pages.yml) validates both editions,
+exports only the selected documentation, and uploads that output as a Pages
+artifact. Each push to `main` publishes automatically; pull requests only run
+the existing documentation validation. Publication jobs are serialized. Only
+the deployment job receives Pages write and identity-token permissions.
+GitHub supplies the base URL, including the repository prefix or a configured
+custom domain. Relative theme, search and reference assets work under either.
+See [GitHub's custom workflow guide](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+
+### Export and preview without publishing
+
+```sh
+make docs-export PAGES_URL=http://127.0.0.1:8083/pages/
+python3 -m http.server 8083 --bind 127.0.0.1 --directory tools
+```
+
+Open [http://127.0.0.1:8083/pages/](http://127.0.0.1:8083/pages/) for guides and
+`/pages/reference/` for Scalar. Output goes to ignored `tools/pages/`; source
+Markdown and configuration remain editable. Export uses the pinned docs image
+without starting PostgreSQL, API, worker or Adminer. It replaces stale output,
+including any previous tool pages.
+
+Run `make docs-export` without `PAGES_URL` to rebuild for the default hosted
+address before uploading manually. The workflow supplies its own publication
+address, so local preview settings cannot change deployment.
+
 ## Navigation and reading order
 
 The [home page](../index.md) uses the same categories and short page names as
@@ -135,7 +188,10 @@ files, unresolved document links, and invalid anchors fail the build. Generated
 HTML is temporary container data; nothing is written into the checkout.
 Isolated build scenarios also verify that private Markdown and JSON stay out of
 the output and search index, theme assets survive, and missing selected documents
-broken links/anchors, or navigation under reserved proxy routes fail. CI runs the same checks before the application suite.
+broken links/anchors, or navigation under reserved proxy routes fail. Static export
+scenarios check both root and repository-prefix hosting, resource links across
+every HTML page, search exclusion, stale-output cleanup, API schema preservation,
+and disabled request controls. CI runs the same checks before the application suite.
 
 The documentation image uses pinned Material and Scalar images. The Material
 image supplies MkDocs, its extensions and theme; Caddy is copied from the same

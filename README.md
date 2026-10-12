@@ -68,6 +68,11 @@ see the [DeLorean reset guide](docs/guides/local-development.md#reset-a-demo-wit
 
 ## Documentation and tools
 
+Read the [hosted documentation](https://pupitooo.github.io/e2b-billing-api/)
+on desktop or mobile: guides, diagrams, search, and a read-only API reference.
+The [publication guide](docs/guides/documentation.md#github-pages-publication)
+explains activation and automatic deployment from `main`.
+
 Open the **Documentation portal** link printed by `make links`, by default
 [http://127.0.0.1:8082/](http://127.0.0.1:8082/). The searchable portal contains
 setup, operations, API contracts and examples, financial rules, simulator scenarios,
