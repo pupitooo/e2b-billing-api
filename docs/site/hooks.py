@@ -12,6 +12,21 @@ REPOSITORY_ROOT = "https://github.com/pupitooo/e2b-billing-api/blob/main/"
 PROXY_ROUTE_PREFIXES = ("api/", "reference/", "demo/", "database/")
 REFERENCE_SPEC_ROUTE = "/reference/openapi.yaml"
 MARKDOWN_LINK = re.compile(r"(?<=\]\()([^\s)]+)(?=\))")
+LOCAL_TOOL_LINK = re.compile(r"\[([^\]]+)\]\(/(?:demo|database)/\)")
+
+
+def hosted_markdown(markdown, site_url):
+    """Resolve portal links beneath the hosted base path and label local tools."""
+    base_path = urlsplit(site_url).path.rstrip("/")
+    markdown = LOCAL_TOOL_LINK.sub(r"\1 (local only)", markdown)
+
+    def hosted_link(match):
+        target = match.group(0)
+        if target.startswith("/") and not target.startswith("//"):
+            return base_path + target
+        return target
+
+    return MARKDOWN_LINK.sub(hosted_link, markdown)
 
 
 def navigation_documents(entries):
@@ -58,7 +73,7 @@ def on_files(files, config):
     return files
 
 
-def on_page_markdown(markdown, page, **kwargs):
+def on_page_markdown(markdown, page, config, **kwargs):
     """Render specification and repository links without exposing source files."""
     def rendered_link(match):
         target = match.group(0)
@@ -74,4 +89,7 @@ def on_page_markdown(markdown, page, **kwargs):
             return REPOSITORY_ROOT + repository_path + ("#" + parsed.fragment if parsed.fragment else "")
         return target
 
-    return MARKDOWN_LINK.sub(rendered_link, markdown)
+    markdown = MARKDOWN_LINK.sub(rendered_link, markdown)
+    if config["extra"].get("publication_mode") == "pages":
+        return hosted_markdown(markdown, config["site_url"])
+    return markdown

@@ -1,7 +1,10 @@
 # E2B billing documentation
 
-The project implements the assignment in Go and PostgreSQL. Run `make docs`
-for this searchable portal; its guides also remain readable in the repository.
+The project implements the assignment in Go and PostgreSQL. The hosted edition
+contains guides, diagrams, search, and a read-only API reference. Run `make docs`
+for the local portal with API requests, demo console, and database browser.
+The guides also remain readable in the repository. See
+[documentation publication](guides/documentation.md#github-pages-publication).
 
 ## Quick links
 
@@ -11,7 +14,7 @@ for this searchable portal; its guides also remain readable in the repository.
 | Try billing in the browser | [Demo guide](guides/demo-console.md), [Demo console](/demo/) |
 | Connect to the database | [Database](guides/database-operations.md#database-connection), [Database browser](/database/) |
 | Run tests | [Tests](guides/testing.md) |
-| Send an API request | [API reference](/reference/) with the embedded request client |
+| Read the API contract | [API reference](/reference/); the local portal also provides a request client |
 | Understand the billing flow | [Usage to invoice](architecture/usage-to-invoice.md), [processing sequences and edge cases](architecture/processing-sequences.md) |
 | Understand competing operations | [Concurrency and locking](architecture/concurrency-and-locking.md) |
 | Review selected and open contracts | [Implemented contracts](architecture/implemented-contracts.md), [proposed contracts](architecture/proposed-contracts.md) |

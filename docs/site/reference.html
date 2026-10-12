@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>E2B Billing API Reference</title>
+    <link rel="icon" href="../assets/images/favicon.png">
+    <style>
+      body { margin: 0; }
+      .reference-notice { padding: 12px 16px; font: 14px/1.5 system-ui, sans-serif; background: #f2f4f8; color: #17212f; }
+      .reference-notice a { color: #254e9c; margin-right: 16px; }
+    </style>
+  </head>
+  <body>
+    <nav class="reference-notice" aria-label="Documentation">
+      <a href="../">Guides</a>
+      <a href="./openapi.yaml">OpenAPI specification</a>
+      Documentation only. Run the project locally to send API requests.
+    </nav>
+    <div id="app"></div>
+    <script src="./scalar.js"></script>
+    <script>
+      Scalar.createApiReference('#app', {
+        url: './openapi.yaml',
+        layout: 'modern',
+        operationTitleSource: 'path',
+        theme: 'default',
+        withDefaultFonts: false,
+        showDeveloperTools: 'never',
+        hideClientButton: true,
+        hideTestRequestButton: true,
+        agent: { disabled: true },
+        metaData: { title: 'E2B Billing API Reference' }
+      })
+    </script>
+  </body>
+</html>

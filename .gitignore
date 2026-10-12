@@ -106,6 +106,8 @@ node_modules/
 !/docs/site/Dockerfile
 !/docs/site/serve.sh
 !/docs/site/runtime.py
+!/docs/site/export_pages.py
+!/docs/site/reference.html
 !/docs/guides/local-development.md
 !/docs/guides/runtime-configuration.md
 !/docs/guides/database-operations.md

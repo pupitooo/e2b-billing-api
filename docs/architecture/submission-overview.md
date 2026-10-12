@@ -35,6 +35,10 @@ PostgreSQL provides durable input, exact integer-valued `numeric`, constraints, 
 
 Docker Compose and Make provide one reproducible local runtime for PostgreSQL, API, worker, simulator, the Markdown documentation portal and Scalar API reference. Scalar reads the same OpenAPI contract and provides browser requests. The simulator's durable state makes repeats, outages and lost committed responses reviewable without a real sandbox platform.
 
+The [GitHub Pages edition](../guides/documentation.md#github-pages-publication)
+exports guides, diagrams, search and a read-only Scalar reference for desktop
+and mobile. It hosts no application backend, demo console or database browser.
+
 Invoice issuance uses one customer-account-locked transaction and includes only already processed groups. It never drains pending usage. Later accounting, including previously accepted input, retains historical prices and original-month gross spend but routes to an eligible open billing month. Publication freezes groups, snapshots the buyer and lines, and advances numbering atomically. Retries return the committed invoice. Separate billing months can introduce separate rounding boundaries.
 
 ## Remaining limits and improvements
