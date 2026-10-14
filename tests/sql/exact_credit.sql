@@ -17,9 +17,9 @@ SET LOCAL search_path TO e2b_exact_credit_test;
 
 INSERT INTO rated_usage_groups (
     group_id, customer_id, price_version_id, metric, usage_month, billing_month,
-    total_units, exact_charge_microcents, booked_charge_cents, allocated_credit_cents
+    total_units, exact_charge_microcents, allocated_credit_cents
 ) VALUES ('credit-migration-group', 'acme', 'cpu-acme-2026-10-01', 'cpu_seconds',
-    '2026-10-01', '2026-10-01', 300000000, 1200000000, 1200, 1200);
+    '2026-10-01', '2026-10-01', 300000000, 1200000000, 1200);
 INSERT INTO credit_entries (credit_entry_id, customer_id, group_id, amount_cents, recorded_at)
 VALUES
     ('credit-migration-grant', 'acme', NULL, 2500, '2026-10-01T00:00:00Z'),
@@ -111,7 +111,7 @@ SELECT pg_temp.assert_result(
 -- A single fractional-cent debit and remaining balance are representable.
 INSERT INTO rated_usage_groups VALUES (
     'credit-small-group', 'cyberdyne', 'cpu-default-2026-10-01', 'cpu_seconds',
-    '2026-10-01', '2026-10-01', 1000, 5000, 0, 5000
+    '2026-10-01', '2026-10-01', 1000, 5000, 5000
 );
 INSERT INTO credit_entries VALUES
     ('credit-small-grant', 'cyberdyne', NULL, 1000000, '2026-10-01T00:00:00Z'),

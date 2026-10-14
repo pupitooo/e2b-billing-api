@@ -50,7 +50,7 @@ All columns are `NOT NULL` unless labeled nullable. `PK` and `FK` mark columns b
 | `metrics` | Supported metering identifiers. |
 | `api_idempotency_operations` | Append-only scoped request keys, normalized original inputs, successful resource results, and creation times. Written atomically with prices, purchases/cancellations, credit grants, invoice catch-up, and spend-limit changes; keys are retained indefinitely. |
 | `price_versions` | Historical prices for a metric, either a default (`customer_id IS NULL`) or a customer override. Each version stores an explicit effective instant; new API versions use midnight UTC on the supplied calendar date. |
-| `rated_usage_groups` | Totals grouped by customer, price version, original usage month, and billing month; stores exact units/gross microcents, booked gross cents, and allocated credit microcents. |
+| `rated_usage_groups` | Totals grouped by customer, price version, original usage month, and billing month; stores exact units, gross microcents, and allocated credit microcents; invoice cents are calculated at closing. |
 | `usage_ratings` | Links one `(source, event_id)` from `usage_inbox` to exactly one group. Many events can share a group. |
 | `monthly_usage` | Gross usage charges in exact microcents per customer and original UTC month, before credit and add-ons. |
 | `credit_entries` | Exact signed microcent history: positive grants without a group and negative usage debits referencing a group owned by the same customer. Server-generated `credit_entry_id` identifies each row; API keys live in the shared command history. Usage effects commit with the unique event rating and usage_inbox row checkpoint. |

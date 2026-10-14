@@ -69,7 +69,7 @@ func testMissingPriceProcessing(t *testing.T) {
 			wantQuarantineState: priceBoundaryState{Units: "0", GrossMicrocents: "0", AllocatedCreditMicrocents: "0", MonthlyGrossMicrocents: "0", CreditDebitMicrocents: "0", CreditBalanceMicrocents: "500000000"},
 			wantRecoveredState: priceBoundaryState{
 				Groups: 1, Units: "100000000", PriceVersionID: "catalog-recovery", UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossMicrocents: "400000000", AllocatedCreditMicrocents: "400000000", BookedCents: 400,
+				GrossMicrocents: "400000000", AllocatedCreditMicrocents: "400000000",
 				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "400000000", CreditDebits: 1, CreditDebitMicrocents: "-400000000", CreditBalanceMicrocents: "100000000", StateVersion: 1,
 			},
 		},
@@ -85,7 +85,7 @@ func testMissingPriceProcessing(t *testing.T) {
 			wantQuarantineState: priceBoundaryState{Units: "0", GrossMicrocents: "0", AllocatedCreditMicrocents: "0", MonthlyGrossMicrocents: "0", CreditDebitMicrocents: "0", CreditBalanceMicrocents: "500000000"},
 			wantRecoveredState: priceBoundaryState{
 				Groups: 1, Units: "100000000", PriceVersionID: "catalog-recovery", UsageMonth: "2026-09-01", BillingMonth: "2026-09-01",
-				GrossMicrocents: "500000000", AllocatedCreditMicrocents: "500000000", BookedCents: 500,
+				GrossMicrocents: "500000000", AllocatedCreditMicrocents: "500000000",
 				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "500000000", CreditDebits: 1, CreditDebitMicrocents: "-500000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
 		},
@@ -103,7 +103,7 @@ func testMissingPriceProcessing(t *testing.T) {
 			wantQuarantineState: priceBoundaryState{Units: "0", GrossMicrocents: "0", AllocatedCreditMicrocents: "0", MonthlyGrossMicrocents: "0", CreditDebitMicrocents: "0", CreditBalanceMicrocents: "500000000"},
 			wantRecoveredState: priceBoundaryState{
 				Groups: 1, Units: "100000000", PriceVersionID: "catalog-recovery", UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossMicrocents: "400000000", AllocatedCreditMicrocents: "400000000", BookedCents: 400,
+				GrossMicrocents: "400000000", AllocatedCreditMicrocents: "400000000",
 				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "400000000", CreditDebits: 1, CreditDebitMicrocents: "-400000000", CreditBalanceMicrocents: "100000000", StateVersion: 1,
 			},
 		},
@@ -121,7 +121,7 @@ func testMissingPriceProcessing(t *testing.T) {
 			wantQuarantineState: priceBoundaryState{Units: "0", GrossMicrocents: "0", AllocatedCreditMicrocents: "0", MonthlyGrossMicrocents: "0", CreditDebitMicrocents: "0", CreditBalanceMicrocents: "500000000"},
 			wantRecoveredState: priceBoundaryState{
 				Groups: 1, Units: "100000000", PriceVersionID: "catalog-recovery", UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossMicrocents: "400000000", AllocatedCreditMicrocents: "400000000", BookedCents: 400,
+				GrossMicrocents: "400000000", AllocatedCreditMicrocents: "400000000",
 				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "400000000", CreditDebits: 1, CreditDebitMicrocents: "-400000000", CreditBalanceMicrocents: "100000000", StateVersion: 1,
 			},
 		},

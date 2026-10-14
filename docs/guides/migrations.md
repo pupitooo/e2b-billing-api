@@ -25,6 +25,35 @@ including the check for incompatible allocations that would stop migration 004.
 
 To extend the schema, add the next numbered SQL file and a corresponding version check, include, and version record in `migrate.sql`. Once a migration is released, keep it unchanged.
 
+## Exact usage-group storage
+
+Usage groups store exact gross and allocated credit in microcents. Rounded cent
+amounts belong to invoice presentation and are not stored in the group. Migration
+002 defines this schema, and migration 004 converts the named legacy credit check
+to the exact allocation bound. No new migration version is added.
+
+Applied migration versions are not replayed by `make migrate`. For an existing
+database already upgraded through migration 004, stop the API and worker, take a
+backup, and remove the unused rounded projection explicitly before starting the
+updated application. This removes only a derived field, retaining exact amounts,
+credit entries, usage links and invoice snapshots:
+
+```sh
+make stop SERVICE=api
+make stop SERVICE=worker
+make psql
+```
+
+```sql
+BEGIN;
+ALTER TABLE rated_usage_groups DROP COLUMN booked_charge_cents;
+COMMIT;
+```
+
+Then restart the API and worker from the changed source. Fresh databases use the
+revised foundation directly. Do not clear migration records to replay the
+foundation over existing financial data.
+
 ## Add-on lifecycle upgrade
 
 Migration `013_addon_cancellations.sql` adds `addon_cancellations`, preserves
@@ -94,8 +123,8 @@ Identities, signs, timestamps, operation keys, row counts, limits, and state
 versions survive. The runner commits schema changes and the version together
 under its advisory lock; repeated runs skip the conversion.
 
-Legacy allocations can exceed exact gross because the old model allowed credit
-up to rounded gross cents. Such groups need a reviewed accounting correction.
+Before exact conversion, legacy allocations are whole-cent amounts that can
+exceed a group's exact microcent gross. Such groups need a reviewed accounting correction.
 The migration stops before changing history and rolls back atomically. On the
 old schema, inspect affected groups with:
 
@@ -116,7 +145,7 @@ verify calculations and schema; runtime accounting, public command, and immutabl
 
 `make test` discovers all `tests/sql/*.sql` files and runs them in UTC and `Asia/Shanghai`. The non-UTC session checks that any values derived from the database session's default time zone remain correct when that zone differs from the application logic, which always uses UTC. This exposes accidental dependence on the session time zone, especially at month boundaries. Model tests roll back all fixtures. Seed tests reconstruct the catalog in a private schema inside a rolled-back transaction, so tests also preserve edited application data. The PostgreSQL service's existing read-only `/migrations` mount supplies the seed test scripts.
 
-The worker locks the customer's state row and commits the rating link, group totals, credit debit/balance, original month's gross spend, state version, and inbox `processed_at` together. Constraints represent those records but do not automatically reconcile ledger sums, projection totals, or the calculated price and booked cents. The unique rating link alone does not prove that a complete financial transaction ran exactly once.
+The worker locks the customer's state row and commits the rating link, group totals, credit debit/balance, original month's gross spend, state version, and inbox `processed_at` together. Constraints represent those records but do not automatically reconcile ledger sums, projection totals, or the calculated exact price. The unique rating link alone does not prove that a complete financial transaction ran exactly once.
 
 Migrations 005 and 007 persist accounting, closed months, invoices and group freezes; version 006 is a reserved no-op. Migration 008 introduced error exclusions for the former pending-usage capture flow; migration 009 retires that flow and all three supporting tables. Closing now publishes only already processed groups in one atomic transaction. Usage processed later routes forward without rewriting issued invoices.
 

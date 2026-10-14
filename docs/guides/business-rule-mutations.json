@@ -125,44 +125,33 @@
     },
     {
       "id": "B004",
-      "rule": "Round accumulated price groups rather than individual receipts",
+      "rule": "Accumulate exact price groups without rounding individual receipts",
       "file": "internal/postgres/processor.go",
       "package": "./tests/inbox",
       "filter": "^TestProcessBatch$/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments$",
       "edits": [
         {
-          "original": "group, gross, err := cumulativeGross",
-          "replacement": "group, _, err := cumulativeGross"
+          "original": "VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8::numeric,$9::numeric)",
+          "replacement": "VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,round($8::numeric/1000000)*1000000,$9::numeric)"
         },
         {
-          "original": "cents, err := gross.RoundCents()",
-          "replacement": "cents, err := rating.Charge.RoundCents()"
-        },
-        {
-          "original": "booked_charge_cents=$9,",
-          "replacement": "booked_charge_cents=rated_usage_groups.booked_charge_cents+EXCLUDED.booked_charge_cents,"
+          "original": "exact_charge_microcents=rated_usage_groups.exact_charge_microcents+EXCLUDED.exact_charge_microcents,",
+          "replacement": "exact_charge_microcents=rated_usage_groups.exact_charge_microcents+round(EXCLUDED.exact_charge_microcents/1000000)*1000000,"
         }
       ],
-      "sourceSha256": "bc0c1f5f8577582e77cae34cdf0de71ddbd847b7739d76796c804c17fc592410",
+      "sourceSha256": "d5faf191e0cd5fb6926c3a70a891a56b58b19e6757c64c81f70a9124c374a2dc",
       "testCommand": [
-        "go",
-        "test",
-        "-tags=integration",
-        "-count=1",
-        "-failfast",
-        "-timeout=45s",
-        "-v",
-        "-run",
-        "^TestProcessBatch$/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments$",
-        "./tests/inbox"
+        "make",
+        "inbox-test",
+        "RUN=^TestProcessBatch$/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments$"
       ],
       "baseline": {
         "exitCode": 0,
-        "output": "=== RUN   TestProcessBatch\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments\n--- PASS: TestProcessBatch (0.10s)\n    --- PASS: TestProcessBatch/partitioned_usage_preserves_one_financial_group (0.10s)\n        --- PASS: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group (0.10s)\n            --- PASS: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments (0.10s)\nPASS\nok  \te2b/billing-api/tests/inbox\t0.100s\n"
+        "output": "=== RUN   TestProcessBatch\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments\n--- PASS: TestProcessBatch (0.13s)\n    --- PASS: TestProcessBatch/partitioned_usage_preserves_one_financial_group (0.13s)\n        --- PASS: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group (0.13s)\n            --- PASS: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments (0.13s)\nPASS\nok  \te2b/billing-api/tests/inbox\t0.136s\n"
       },
       "mutated": {
-        "exitCode": 1,
-        "output": "=== RUN   TestProcessBatch\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments\n    partitioned_usage_test.go:68: Partition={name:two exact half-cent fragments units:[125000 125000]} group units=250000 gross=1000000 credit=0 booked=2 balance=0; want 250000 1000000 0 1 0\n--- FAIL: TestProcessBatch (0.09s)\n    --- FAIL: TestProcessBatch/partitioned_usage_preserves_one_financial_group (0.09s)\n        --- FAIL: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group (0.09s)\n            --- FAIL: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments (0.09s)\nFAIL\nFAIL\te2b/billing-api/tests/inbox\t0.096s\nFAIL\n"
+        "exitCode": 2,
+        "output": "=== RUN   TestProcessBatch\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group\n=== RUN   TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments\n    partitioned_usage_test.go:67: Partition={name:two exact half-cent fragments units:[125000 125000]} group units=250000 gross=2000000 credit=0 balance=0; want 250000 1000000 0 0\n--- FAIL: TestProcessBatch (0.09s)\n    --- FAIL: TestProcessBatch/partitioned_usage_preserves_one_financial_group (0.09s)\n        --- FAIL: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group (0.09s)\n            --- FAIL: TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments (0.09s)\nFAIL\nFAIL\te2b/billing-api/tests/inbox\t0.088s\nFAIL\n\nmake: *** [inbox-test] Error 1\n"
       },
       "outcome": "killed_by_assertion",
       "failedTests": [
@@ -170,7 +159,12 @@
         "TestProcessBatch/partitioned_usage_preserves_one_financial_group (0.09s)",
         "TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group (0.09s)",
         "TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments (0.09s)"
-      ]
+      ],
+      "environment": {
+        "COMPOSE_PROJECT_NAME": "e2b-remove-booked",
+        "E2B_POSTGRES_PORT": "0",
+        "E2B_API_PORT": "0"
+      }
     },
     {
       "id": "B005",

@@ -355,7 +355,7 @@ FROM usage_ratings r JOIN usage_inbox i USING (source, event_id)
 JOIN rated_usage_groups g USING (group_id)
 WHERE r.source = 'acceptance-assignment' ORDER BY i.event_id;
 SELECT customer_id, price_version_id, usage_month, billing_month, total_units,
-       exact_charge_microcents, allocated_credit_microcents, booked_charge_cents
+       exact_charge_microcents, allocated_credit_microcents
 FROM rated_usage_groups ORDER BY customer_id, billing_month, usage_month, price_version_id;
 SELECT customer_id, usage_month, gross_charge_microcents
 FROM monthly_usage ORDER BY customer_id, usage_month;

@@ -13,7 +13,7 @@ connecting financial calculations, database fields, and the assignment's example
 - [Historical rating](#4-rating-the-cost-under-the-historical-price): price versions, customer overrides, exact charges, rating links, interval boundaries, and an [example of incorrect current-price billing](#example-why-summing-all-units-and-using-the-current-price-fails).
 - [Rated usage groups](#5-rated_usage_groups-the-rated-accounting-intermediate): grouping keys, stored totals, shared rounding boundaries, and frozen invoiced groups.
 - [Credits](#6-credits-gross-charge-allocated-credit-and-balance): gross charges, ledger entries, balances, group allocations, [gross spend limits](#why-the-limit-uses-gross-charges), and [credit before rounding](#what-credit-before-rounding-means).
-- [Rounding](#7-rounding-when-and-where-cents-are-produced): half-up boundaries, gross and net cent presentation, balancing credit lines, and the [running gross projection](#running-gross-projection-during-accounting).
+- [Rounding](#7-rounding-when-and-where-cents-are-produced): half-up boundaries, gross and net cent presentation, balancing credit lines, and the [exact group accumulation](#exact-group-accumulation-during-accounting).
 - [Invoice lines](#8-invoice-lines-what-appears-on-a-particular-invoice): immutable usage and add-on snapshots, exact audit amounts, and traceability to source events.
 - [Monthly invoices](#9-invoice-an-immutable-monthly-document): customer numbering, buyer snapshots, signed line totals, idempotent closing, and [complete assignment invoice examples](#example-complete-assignment-invoices).
 - [Late usage](#10-late-usage-why-there-are-two-distinct-periods): original consumption months, later billing months, historical prices, spend limits, and closing boundaries.
@@ -45,7 +45,7 @@ Three different quantities appear in the boxes:
 - **Microcents** measure money: 1 cent is 1_000_000 microcents, called `microcents` in code and stored field names. One 1_000-unit event costs 5_000 microcents, so even its fraction of a cent is preserved.
 - **Cents** are the invoice's display unit: the group totals become usage of +5 cents and credit of −2 cents, totaling 3 cents.
 
-Steps 3 and 4 show the cumulative state **after all 1_000 events**, while step 2 shows the price of **one event**. The worker updates the group and applies available credit as each event is processed. It does not wait for all events to arrive before allocating credit. It also maintains `booked_charge_cents`, a running rounded gross projection; exact credit allocation continues to use microcents. Step 5 shows the final gross/net rounding used to construct the invoice's lines.
+Steps 3 and 4 show the cumulative state **after all 1_000 events**, while step 2 shows the price of **one event**. The worker updates the group and applies available credit as each event is processed. It does not wait for all events to arrive before allocating credit. Group charges and credit allocations remain exact microcents. Step 5 shows the final gross/net rounding used to construct the invoice's lines.
 
 `Rating` means assigning the historical price and calculating the exact charge. `rated_usage_groups` is the shared running total for compatible events: the same customer, price version, original usage month, and billing month. an invoice line in `invoices.snapshot.lines` is a frozen item on the issued document. An invoice can include several groups, so the single-group example is only the smallest complete path. Add-on purchases supply additional lines through a separate path and cannot consume usage credit.
 
@@ -112,7 +112,7 @@ This is the diagram's example, now mapped to the implementation. The example cus
 | 2. Rating | One event's 1_000 units + the historical price of 5 cents per million → 5_000 exact microcents. | `price_versions` supplies the rate; `accounting.Rate` calculates the charge. `usage_ratings` links each event to its group. |
 | 3. rated_usage_groups | 1_000 rated events → one group with 1_000_000 units and 5_000_000 gross microcents (USD 0.05). | `rated_usage_groups.total_units = 1_000_000`, `exact_charge_microcents = 5_000_000`. |
 | 4. Credits | Starting credit of 2_000_000 microcents pays for the first 400 events → total credit used of 2_000_000 microcents, zero credit left, and 3_000_000 net microcents. | `allocated_credit_microcents = 2_000_000`; `credit_entries` retains individual debits; `customer_billing_state.credit_balance_microcents = 0`. Gross microcents remain 5_000_000. |
-| 5. Rounding | Gross 5_000_000 microcents → 5 cents; net 3_000_000 microcents → 3 cents; their difference → 2 cents of displayed credit. | `accounting.InvoiceAmounts` calculates the final presentation. The worker's running gross projection is `booked_charge_cents = 5`. |
+| 5. Rounding | Gross 5_000_000 microcents → 5 cents; net 3_000_000 microcents → 3 cents; their difference → 2 cents of displayed credit. | `accounting.InvoiceAmounts` calculates the final presentation. |
 | 6. Invoice lines | The calculated cents → one usage line of +5 cents and one credit line of −2 cents. | Ordered `invoices.snapshot.lines`; `invoiced_usage_groups` links the invoice to its frozen group. |
 | 7. Invoice | Signed lines of +5 and −2 cents + buyer details and a reserved number → an immutable October invoice totaling 3 cents (USD 0.03). | One `invoices` row per customer/billing month, with `total_cents = 3` and the complete snapshot. |
 
@@ -230,7 +230,6 @@ The SQL table is `rated_usage_groups`. Its unique key is:
 | `billing_month` | The first day of the invoice period that includes the charge; it cannot precede the original month. |
 | `total_units` | The exact sum of counted units. |
 | `exact_charge_microcents` | The exact **gross charge before credit**. |
-| `booked_charge_cents` | The cumulatively rounded gross projection; exact credit allocation uses microcents. |
 | `allocated_credit_microcents` | The exact credit allocated to this group for its future invoice; at most `exact_charge_microcents`. |
 
 The discussion used the conceptual name `gross_charge_microcents` for a group's gross charge. **The actual group column is `exact_charge_microcents`.** The name `gross_charge_microcents` belongs to another table, `monthly_usage`, which sums the gross charges of all groups for a customer's original month.
@@ -245,11 +244,10 @@ usage_month             2026-10-01
 billing_month           2026-10-01
 total_units             1_000_000
 exact_charge_microcents      5_000_000
-booked_charge_cents     5
 allocated_credit_microcents  2_000_000
 ```
 
-`price_version_id` refers to the seeded default version. The example customer's starting credit is illustrative. The worker calculates the cent value as a rounded gross projection. The group's net charge is `5_000_000 − 2_000_000 = 3_000_000` microcents; the gross charge retains the full consumption value.
+`price_version_id` refers to the seeded default version. The example customer's starting credit is illustrative. The worker stores gross and credit in microcents; closing calculates the cent presentation. The group's net charge is `5_000_000 − 2_000_000 = 3_000_000` microcents; the gross charge retains the full consumption value.
 
 Grouping also enforces a correctness rule: adding sandbox or batch to the key would give each one its own rounding boundary, potentially changing the charge for the same total units. Omitting price or months would combine consumption with different accounting meanings.
 
@@ -311,7 +309,7 @@ remaining credit = 995_000 microcents = 0.995 cent
 net usage = 0 microcents
 ```
 
-`credit_balance_microcents` and `allocated_credit_microcents` are non-negative exact integers; `credit_entries.amount_microcents` is a signed exact integer. `accounting.AllocateCredit` allocates available credit to each newly processed event's exact charge. Allocations follow transaction order under the customer lock; a later grant does not rewrite earlier allocations. Fractional-cent credit remains in the account as microcents, even when a group's rounded gross projection is still zero cents.
+`credit_balance_microcents` and `allocated_credit_microcents` are non-negative exact integers; `credit_entries.amount_microcents` is a signed exact integer. `accounting.AllocateCredit` allocates available credit to each newly processed event's exact charge. Allocations follow transaction order under the customer lock; a later grant does not rewrite earlier allocations. Fractional-cent credit remains in the account as microcents, even when its eventual invoice gross rounds to zero cents.
 
 ## 7. Rounding: when and where cents are produced
 
@@ -341,15 +339,14 @@ of USD 0.002 therefore produce three zero-total invoices. Exact accounting and
 credit remain in microcents. See the [rounding contract](accounting-rules.md#rounding-and-invoice-presentation)
 and the [public three-month scenario](../simulator/billing-scenarios.md#zero-total-invoices-without-remainder-carry).
 
-### Running gross projection during accounting
+### Exact group accumulation during accounting
 
-After every event, the worker adds its exact charge to the group and replaces `booked_charge_cents` with the rounded **cumulative gross amount**. In the same transaction, it allocates credit against the event's exact charge:
+After every event, the worker adds its exact charge to the group. It checks that the cumulative gross fits the supported invoice-cent range, but stores no rounded cent amount. In the same transaction, it allocates credit against the event's exact charge:
 
 ```text
 credit_debit_microcents = min(credit_balance_microcents, event_charge_microcents)
 
 exact_charge_microcents += event_charge_microcents
-booked_charge_cents = round_half_up_cents(exact_charge_microcents)
 allocated_credit_microcents += credit_debit_microcents
 credit_balance_microcents -= credit_debit_microcents
 credit_entries.amount_microcents = -credit_debit_microcents  // only when the debit is positive
@@ -357,16 +354,16 @@ credit_entries.amount_microcents = -credit_debit_microcents  // only when the de
 
 The group grows as follows with 1_000-unit measurements at 5 cents per million:
 
-| Event count | `total_units` | `exact_charge_microcents` | Cumulative `booked_charge_cents` |
+| Event count | `total_units` | `exact_charge_microcents` | Invoice gross cents if closed |
 | --- | --- | --- | --- |
 | 1 | 1_000 | 5_000 | 0 |
 | 100 | 100_000 | 500_000 | 1 |
 | 200 | 200_000 | 1_000_000 | 1 |
 | 1_000 | 1_000_000 | 5_000_000 | 5 |
 
-The projection remains 1 cent between the 100th and 200th events, while exact gross microcents continue to increase and each event can consume available credit. The worker replaces the projection with the rounded group total; it does not sum individually rounded event charges.
+The last column illustrates invoice presentation, not a stored group field. Exact gross microcents continue to increase and each event can consume available credit. Closing rounds the complete group total; it does not sum individually rounded event charges.
 
-Splitting the same consumption into different events preserves the exact gross total and its rounded projection within **the same open group**. Credit uses the balance available at each event's processing time; allocations across different groups can depend on processing order and intervening grants.
+Splitting the same consumption into different events preserves the exact gross total and its eventual invoice presentation within **the same open group**. Credit uses the balance available at each event's processing time; allocations across different groups can depend on processing order and intervening grants.
 
 At closing, `InvoiceAmounts` calculates the invoice's cent presentation from the group's exact gross and allocated credit microcents. Closing does not allocate credit again. The snapshot preserves both the displayed cents and the exact audit amounts.
 

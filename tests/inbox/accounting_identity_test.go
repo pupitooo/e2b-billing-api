@@ -103,7 +103,7 @@ func testAccountingGroupIdentities(t *testing.T) {
 		{
 			name: "earlier group and grant keep their IDs",
 			setupSQL: `INSERT INTO rated_usage_groups VALUES
-				('group/earlier','acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',60000,240000,0,0);
+				('group/earlier','acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',60000,240000,0);
 				INSERT INTO monthly_usage VALUES ('acme','2026-10-01',240000);
 				INSERT INTO credit_entries VALUES ('grant/earlier','acme',NULL,1000000,'2026-10-10T00:00:00Z');
 				UPDATE customer_billing_state SET credit_balance_microcents=1000000,state_version=2 WHERE customer_id='acme'`,

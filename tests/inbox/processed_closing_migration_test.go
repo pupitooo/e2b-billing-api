@@ -25,8 +25,8 @@ func TestProcessedUsageClosingMigration(t *testing.T) {
 		(source,event_id,schema_version,customer_id,sandbox_id,metric,period_start,period_end,units,received_at,processed_at)
 		VALUES ('upgrade-history','accounted',1,'acme','sandbox','cpu_seconds','2026-10-10T12:00:00Z','2026-10-10T13:00:00Z',1000000,'2026-10-11T00:00:00Z','2026-10-11T00:00:00Z');
 		INSERT INTO rated_usage_groups
-		(group_id,customer_id,price_version_id,metric,usage_month,billing_month,total_units,exact_charge_microcents,booked_charge_cents,allocated_credit_microcents)
-		VALUES ('group/earlier','acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',1000000,4000000,4,4000000);
+		(group_id,customer_id,price_version_id,metric,usage_month,billing_month,total_units,exact_charge_microcents,allocated_credit_microcents)
+		VALUES ('group/earlier','acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',1000000,4000000,4000000);
 		INSERT INTO usage_ratings (source,event_id,group_id) VALUES ('upgrade-history','accounted','group/earlier');
 		INSERT INTO credit_entries (credit_entry_id,customer_id,group_id,amount_microcents,recorded_at) VALUES
 		('grant/earlier','acme',NULL,6000000,'2026-10-01T00:00:00Z'),

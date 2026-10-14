@@ -19,14 +19,14 @@ restored after each experiment; deliberate faults are absent from the deliverabl
 | B001 | Remove the older active add-on check from first closing | `TestCloseMonth/add-on_months_cannot_be_skipped/older_add-on_alone_blocks_November/reject_skipped_October` |
 | B002 | Change exact limit reach from `>=` to `>` | `TestLimitReached/exactly_the_limit_is_reached` |
 | B003 | Prefer a default to an eligible customer override | `TestRate/Acme_October_usage_selects_its_customer_override` |
-| B004 | Round each usage_inbox row and sum its booked cents instead of rounding the group | `TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments` |
+| B004 | Round each usage_inbox row to cents before accumulating exact group microcents | `TestProcessBatch/partitioned_usage_preserves_one_financial_group/half-cent_fragments_round_as_one_group/two_exact_half-cent_fragments` |
 | B005 | Credit an identical grant replay again | `TestCreditAPI/rejection_preserves_complete_financial_state/original_retry_still_grants_once` |
 
 All five selected mutations were killed by assertions. This sample establishes
 sensitivity for those specific faults; it is not a repository-wide mutation score
 and does not prove absence of all defects. Two exact half-cent fragments make the
 rounding distinction explicit: their group totals one cent while usage_inbox row rounding
-would incorrectly book two. Neighboring fragments and upfront partial credit
+would incorrectly store two cents worth of gross microcents. Neighboring fragments and upfront partial credit
 retain their separate literal scenarios.
 
 The add-on regression also fails against the original reviewed commit

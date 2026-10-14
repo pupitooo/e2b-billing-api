@@ -76,7 +76,7 @@ func TestAccountingIDSequencesMigration(t *testing.T) {
 				}
 			}
 			if _, err := pool.Exec(ctx, `INSERT INTO rated_usage_groups VALUES
-				($1,'acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',250000,1000000,1,1000000)`, tc.oldGroupID); err != nil {
+				($1,'acme','cpu-acme-2026-10-01','cpu_seconds','2026-10-01','2026-10-01',250000,1000000,1000000)`, tc.oldGroupID); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := pool.Exec(ctx, "INSERT INTO credit_entries VALUES ($1,'acme',NULL,2000000,'2026-10-01T00:00:00Z')", tc.oldGrantID); err != nil {

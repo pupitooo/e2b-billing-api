@@ -60,7 +60,7 @@ func testProcessingBounds(t *testing.T) {
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "processing-boundary-price",
 				UsageMonth: "9999-12-01", BillingMonth: "9999-12-01",
-				GrossMicrocents: "4000000", AllocatedCreditMicrocents: "1000000", BookedCents: 4,
+				GrossMicrocents: "4000000", AllocatedCreditMicrocents: "1000000",
 				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "4000000",
 				CreditDebits: 1, CreditDebitMicrocents: "-1000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
@@ -85,7 +85,7 @@ func testProcessingBounds(t *testing.T) {
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "processing-boundary-price",
 				UsageMonth: "9999-11-01", BillingMonth: "9999-12-01",
-				GrossMicrocents: "4000000", AllocatedCreditMicrocents: "1000000", BookedCents: 4,
+				GrossMicrocents: "4000000", AllocatedCreditMicrocents: "1000000",
 				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "4000000",
 				CreditDebits: 1, CreditDebitMicrocents: "-1000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
@@ -109,7 +109,7 @@ func testProcessingBounds(t *testing.T) {
 			wantNextWork:              false,
 			wantState: priceBoundaryState{
 				Groups: 0, Units: "0", PriceVersionID: "", UsageMonth: "", BillingMonth: "",
-				GrossMicrocents: "0", AllocatedCreditMicrocents: "0", BookedCents: 0,
+				GrossMicrocents: "0", AllocatedCreditMicrocents: "0",
 				Ratings: 0, MonthlyRows: 0, MonthlyGrossMicrocents: "0",
 				CreditDebits: 0, CreditDebitMicrocents: "0", CreditBalanceMicrocents: "1000000", StateVersion: 0,
 			},
@@ -133,7 +133,7 @@ func testProcessingBounds(t *testing.T) {
 			wantNextWork:              false,
 			wantState: priceBoundaryState{
 				Groups: 0, Units: "0", PriceVersionID: "", UsageMonth: "", BillingMonth: "",
-				GrossMicrocents: "0", AllocatedCreditMicrocents: "0", BookedCents: 0,
+				GrossMicrocents: "0", AllocatedCreditMicrocents: "0",
 				Ratings: 0, MonthlyRows: 0, MonthlyGrossMicrocents: "0",
 				CreditDebits: 0, CreditDebitMicrocents: "0", CreditBalanceMicrocents: "1000000", StateVersion: 0,
 			},
@@ -157,7 +157,7 @@ func testProcessingBounds(t *testing.T) {
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "processing-boundary-price",
 				UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossMicrocents: "9223372036854775807000000", AllocatedCreditMicrocents: "1000000", BookedCents: 9_223_372_036_854_775_807,
+				GrossMicrocents: "9223372036854775807000000", AllocatedCreditMicrocents: "1000000",
 				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "9223372036854775807000000",
 				CreditDebits: 1, CreditDebitMicrocents: "-1000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
@@ -182,7 +182,7 @@ func testProcessingBounds(t *testing.T) {
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "processing-boundary-price",
 				UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossMicrocents: "9223372036854775807000000", AllocatedCreditMicrocents: "0", BookedCents: 9_223_372_036_854_775_807,
+				GrossMicrocents: "9223372036854775807000000", AllocatedCreditMicrocents: "0",
 				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "9223372036854775807000000",
 				CreditDebits: 0, CreditDebitMicrocents: "0", CreditBalanceMicrocents: "1000000", StateVersion: 1,
 			},
