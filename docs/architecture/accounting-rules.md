@@ -125,8 +125,8 @@ one-event-to-one-rated_usage_groups-row relationship.
 
 The stable group key is `(customer_id, price_version_id, usage_month, billing_month)`.
 Sandbox identities and HTTP batch boundaries do not create rounding boundaries. Preserve gross microcents
-separately from credit. `booked_charge_cents` remains a rounded gross projection,
-not a credit debit or a net invoice amount.
+separately from credit. Groups store exact microcents only; invoice presentation
+rounds their gross and net totals to cents without changing the exact ledger.
 
 ## Accounting resource identities
 
@@ -468,12 +468,11 @@ Cyberdyne's first 123_456_789 units at 5 cents per million give:
 ```text
 charge_microcents = 123_456_789 × 5 = 617_283_945
 charge_usd = 617_283_945 / 100_000_000 = USD 6.172_839_45
-booked_gross_cents = floor((617_283_945 + 500_000) / 1_000_000) = 617
+invoice_gross_cents = floor((617_283_945 + 500_000) / 1_000_000) = 617
 ```
 
-The group retains 617_283_945 microcents in `exact_charge_microcents` and 617 cents in
-`booked_charge_cents`. New usage adds to the microcent total before the gross
-projection is rounded again. Credit uses the exact new charge before rounding;
+The group retains 617_283_945 microcents in `exact_charge_microcents`. New usage adds to the
+exact microcent total; invoice presentation rounds the accumulated gross to 617 cents. Credit uses the exact new charge before rounding;
 `allocated_credit_microcents` cannot exceed `exact_charge_microcents`. Migrations define
 storage and constraints; the application performs these calculations.
 

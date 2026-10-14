@@ -21,7 +21,6 @@ type priceBoundaryState struct {
 	BillingMonth              string
 	GrossMicrocents           string
 	AllocatedCreditMicrocents string
-	BookedCents               int64
 	Ratings                   int
 	MonthlyRows               int
 	MonthlyGrossMicrocents    string
@@ -68,7 +67,7 @@ func testPriceBoundaryProcessing(t *testing.T) {
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "cpu-default-2026-10-01",
 				UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossMicrocents: "5000000", AllocatedCreditMicrocents: "2000000", BookedCents: 5,
+				GrossMicrocents: "5000000", AllocatedCreditMicrocents: "2000000",
 				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "5000000",
 				CreditDebits: 1, CreditDebitMicrocents: "-2000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
@@ -88,7 +87,7 @@ func testPriceBoundaryProcessing(t *testing.T) {
 			wantState: priceBoundaryState{
 				Groups: 1, Units: "1000000", PriceVersionID: "cpu-default-2026-10-15",
 				UsageMonth: "2026-10-01", BillingMonth: "2026-10-01",
-				GrossMicrocents: "6000000", AllocatedCreditMicrocents: "2000000", BookedCents: 6,
+				GrossMicrocents: "6000000", AllocatedCreditMicrocents: "2000000",
 				Ratings: 1, MonthlyRows: 1, MonthlyGrossMicrocents: "6000000",
 				CreditDebits: 1, CreditDebitMicrocents: "-2000000", CreditBalanceMicrocents: "0", StateVersion: 1,
 			},
@@ -108,7 +107,7 @@ func testPriceBoundaryProcessing(t *testing.T) {
 			wantNextWork:            false,
 			wantState: priceBoundaryState{
 				Groups: 0, Units: "0", PriceVersionID: "", UsageMonth: "", BillingMonth: "",
-				GrossMicrocents: "0", AllocatedCreditMicrocents: "0", BookedCents: 0,
+				GrossMicrocents: "0", AllocatedCreditMicrocents: "0",
 				Ratings: 0, MonthlyRows: 0, MonthlyGrossMicrocents: "0",
 				CreditDebits: 0, CreditDebitMicrocents: "0", CreditBalanceMicrocents: "2000000", StateVersion: 0,
 			},
@@ -179,7 +178,6 @@ func readPriceBoundaryState(ctx context.Context, pool *pgxpool.Pool, customer st
 	err := pool.QueryRow(ctx, `SELECT count(*),COALESCE(sum(total_units),0)::text,
         COALESCE(min(price_version_id),''),COALESCE(min(usage_month)::text,''),COALESCE(min(billing_month)::text,''),
         COALESCE(sum(exact_charge_microcents),0)::text,COALESCE(sum(allocated_credit_microcents),0)::text,
-        COALESCE(sum(booked_charge_cents),0)::bigint,
         (SELECT count(*) FROM usage_ratings),
         (SELECT count(*) FROM monthly_usage),
         (SELECT COALESCE(sum(gross_charge_microcents),0)::text FROM monthly_usage),
@@ -189,7 +187,7 @@ func readPriceBoundaryState(ctx context.Context, pool *pgxpool.Pool, customer st
         (SELECT state_version FROM customer_billing_state WHERE customer_id=$1)
         FROM rated_usage_groups`, customer).Scan(&state.Groups, &state.Units, &state.PriceVersionID,
 		&state.UsageMonth, &state.BillingMonth, &state.GrossMicrocents, &state.AllocatedCreditMicrocents,
-		&state.BookedCents, &state.Ratings, &state.MonthlyRows, &state.MonthlyGrossMicrocents,
+		&state.Ratings, &state.MonthlyRows, &state.MonthlyGrossMicrocents,
 		&state.CreditDebits, &state.CreditDebitMicrocents, &state.CreditBalanceMicrocents, &state.StateVersion)
 	return state, err
 }

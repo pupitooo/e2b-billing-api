@@ -45,7 +45,7 @@ sequenceDiagram
         D-->>W: Committed closure history
         W->>W: Choose billing_month<br/>Allocate exact available credit
         W->>D: SELECT rated_usage_groups<br/>Existing cumulative gross
-        W->>W: Add the exact charge to cumulative gross<br/>Round the total to booked cents
+        W->>W: Add the exact charge to cumulative gross<br/>Validate the supported invoice-cent range
         W->>D: UPSERT rated_usage_groups<br/>INSERT usage_ratings link
         W->>D: INSERT credit_entries debit<br/>Only when credit is used
         W->>D: UPSERT monthly_usage<br/>Original usage_month

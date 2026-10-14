@@ -47,10 +47,8 @@ CREATE TABLE rated_usage_groups (
         total_units >= 0 AND total_units < 'Infinity'::numeric AND total_units = trunc(total_units)
     ),
     exact_charge_microcents billing_microcents NOT NULL,
-    booked_charge_cents bigint NOT NULL CHECK (booked_charge_cents >= 0),
-    allocated_credit_cents bigint NOT NULL CHECK (
-        allocated_credit_cents >= 0 AND allocated_credit_cents <= booked_charge_cents
-    ),
+    allocated_credit_cents bigint NOT NULL CONSTRAINT rated_usage_groups_credit_cents_nonnegative
+        CHECK (allocated_credit_cents >= 0),
     CHECK (billing_month >= usage_month),
     FOREIGN KEY (price_version_id, metric) REFERENCES price_versions (price_version_id, metric),
     UNIQUE (customer_id, price_version_id, usage_month, billing_month),

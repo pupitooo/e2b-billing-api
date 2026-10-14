@@ -54,7 +54,6 @@ erDiagram
         date billing_month "First day; not before usage_month"
         numeric total_units "Non-negative integer"
         billing_microcents exact_charge_microcents
-        bigint booked_charge_cents "Non-negative"
         billing_microcents allocated_credit_microcents "At most exact gross microcents"
     }
     customers {

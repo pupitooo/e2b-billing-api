@@ -250,7 +250,7 @@ func assertReferenceAccount(t *testing.T, pool *pgxpool.Pool, store *postgres.St
 	if balance != fmt.Sprint(want.balance) || version != want.version || next != want.nextNumber || !reflect.DeepEqual(limit, want.limit) || receipts != len(want.receipts) || ratings != len(want.receipts) || grants != len(want.grantKeys) {
 		t.Fatalf("After %+v: balance=%s version=%d next=%d limit=%v receipts=%d ratings=%d grants=%d; want %+v", input, balance, version, next, limit, receipts, ratings, grants, want)
 	}
-	rows, err := pool.Query(ctx, `SELECT to_char(usage_month,'YYYY-MM'),to_char(billing_month,'YYYY-MM'),total_units::bigint,exact_charge_microcents::bigint,allocated_credit_microcents::bigint,price_version_id,booked_charge_cents FROM rated_usage_groups`)
+	rows, err := pool.Query(ctx, `SELECT to_char(usage_month,'YYYY-MM'),to_char(billing_month,'YYYY-MM'),total_units::bigint,exact_charge_microcents::bigint,allocated_credit_microcents::bigint,price_version_id FROM rated_usage_groups`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,12 +259,11 @@ func assertReferenceAccount(t *testing.T, pool *pgxpool.Pool, store *postgres.St
 	for rows.Next() {
 		var group referenceGroup
 		var price string
-		var cents int64
-		if err := rows.Scan(&group.usageMonth, &group.billingMonth, &group.units, &group.gross, &group.credit, &price, &cents); err != nil {
+		if err := rows.Scan(&group.usageMonth, &group.billingMonth, &group.units, &group.gross, &group.credit, &price); err != nil {
 			t.Fatal(err)
 		}
-		if price != "cpu-acme-2026-10-01" || cents != referenceRoundedCents(group.gross) {
-			t.Fatalf("After %+v group=%+v: price=%s cents=%d; want cpu-acme-2026-10-01 cents=%d", input, group, price, cents, referenceRoundedCents(group.gross))
+		if price != "cpu-acme-2026-10-01" {
+			t.Fatalf("After %+v group=%+v: price=%s; want cpu-acme-2026-10-01", input, group, price)
 		}
 		got[group.usageMonth+"/"+group.billingMonth] = group
 	}

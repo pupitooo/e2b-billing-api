@@ -193,7 +193,8 @@ func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounti
 		return err
 	}
 
-	cents, err := gross.RoundCents()
+	// Keep the supported invoice-cent range without storing a rounded projection.
+	_, err = gross.RoundCents()
 	if err != nil {
 		return quarantine(ctx, tx, e, err.Error())
 	}
@@ -205,7 +206,7 @@ func persistRating(ctx context.Context, tx pgx.Tx, item receipt, rating accounti
 		}
 	}
 
-	if err := updateGroup(ctx, tx, group, item, rating, month, cents, allocation.Used); err != nil {
+	if err := updateGroup(ctx, tx, group, item, rating, month, allocation.Used); err != nil {
 		return err
 	}
 
@@ -271,19 +272,18 @@ func cumulativeGross(ctx context.Context, tx pgx.Tx, customer string, price acco
 	return group, previous.Add(charge), nil
 }
 
-func updateGroup(ctx context.Context, tx pgx.Tx, group string, item receipt, rating accounting.Rating, month time.Time, cents int64, used accounting.Amount) error {
+func updateGroup(ctx context.Context, tx pgx.Tx, group string, item receipt, rating accounting.Rating, month time.Time, used accounting.Amount) error {
 	e := item.event
 	_, err := tx.Exec(ctx, `INSERT INTO rated_usage_groups
         (group_id,customer_id,price_version_id,metric,usage_month,billing_month,total_units,
-         exact_charge_microcents,booked_charge_cents,allocated_credit_microcents)
-        VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8::numeric,$9,$10::numeric)
+         exact_charge_microcents,allocated_credit_microcents)
+        VALUES ($1,$2,$3,$4,$5,$6,$7::numeric,$8::numeric,$9::numeric)
         ON CONFLICT (customer_id,price_version_id,usage_month,billing_month) DO UPDATE SET
         total_units=rated_usage_groups.total_units+EXCLUDED.total_units,
         exact_charge_microcents=rated_usage_groups.exact_charge_microcents+EXCLUDED.exact_charge_microcents,
-        booked_charge_cents=$9,
         allocated_credit_microcents=rated_usage_groups.allocated_credit_microcents+EXCLUDED.allocated_credit_microcents`,
 		group, e.CustomerID, rating.Price.ID, e.Metric, rating.UsageMonth, month, fmt.Sprint(e.Units),
-		rating.Charge.Microcents().String(), cents, used.Microcents().String())
+		rating.Charge.Microcents().String(), used.Microcents().String())
 	if err != nil {
 		return err
 	}

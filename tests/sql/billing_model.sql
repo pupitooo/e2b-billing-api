@@ -42,6 +42,14 @@ BEGIN
 END;
 $function$;
 
+SELECT pg_temp.assert_result(
+    scenario => 'usage groups omit the rounded cent projection',
+    input_sql => $$SELECT count(*) AS obsolete_columns FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'rated_usage_groups'
+          AND column_name = 'booked_charge_cents'$$,
+    want_result => '{"obsolete_columns": 0}'::jsonb
+);
+
 INSERT INTO customers (customer_id, name, country, billing_address)
 VALUES
     ('billing-model-acme', 'Test Acme', 'US', 'Test address'),
@@ -75,14 +83,14 @@ INSERT INTO price_versions (
 
 INSERT INTO rated_usage_groups (
     group_id, customer_id, price_version_id, metric, usage_month, billing_month,
-    total_units, exact_charge_microcents, booked_charge_cents, allocated_credit_microcents
+    total_units, exact_charge_microcents, allocated_credit_microcents
 ) VALUES
     ('billing-model-acme-oct', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu',
-        '2026-10-01', '2026-10-01', 300000000, 1200000000, 1200, 1200000000),
+        '2026-10-01', '2026-10-01', 300000000, 1200000000, 1200000000),
     ('billing-model-cyberdyne-oct', 'billing-model-cyberdyne', 'billing-model-default', 'billing-model-cpu',
-        '2026-10-01', '2026-10-01', 123456789, 617283945, 617, 0),
+        '2026-10-01', '2026-10-01', 123456789, 617283945, 0),
     ('billing-model-acme-late', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu',
-        '2026-10-01', '2026-11-01', 50000000, 200000000, 200, 0);
+        '2026-10-01', '2026-11-01', 50000000, 200000000, 0);
 
 -- These instants are October in UTC and November in Asia/Shanghai.
 INSERT INTO usage_inbox (
@@ -185,7 +193,7 @@ SELECT pg_temp.assert_result(
 
 -- Input: the maximum bigint usage multiplied by a five-cent rate exceeds bigint.
 UPDATE rated_usage_groups SET total_units = 9223372036854775807,
-    exact_charge_microcents = 46116860184273879035, booked_charge_cents = 46116860184274
+    exact_charge_microcents = 46116860184273879035
 WHERE group_id = 'billing-model-cyberdyne-oct';
 SELECT pg_temp.assert_result(
     scenario => 'microcent products above bigint remain exact',
@@ -278,15 +286,15 @@ BEGIN
 
     PERFORM pg_temp.assert_rejection(
             scenario => 'Another customer override',
-            input_sql => $$INSERT INTO rated_usage_groups VALUES ('billing-model-wrong-owner', 'billing-model-cyberdyne', 'billing-model-acme-price', 'billing-model-cpu', '2026-10-01', '2026-10-01', 1, 4, 0, 0)$$,
+            input_sql => $$INSERT INTO rated_usage_groups VALUES ('billing-model-wrong-owner', 'billing-model-cyberdyne', 'billing-model-acme-price', 'billing-model-cpu', '2026-10-01', '2026-10-01', 1, 4, 0)$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Price metric mismatch',
-            input_sql => $$INSERT INTO rated_usage_groups VALUES ('billing-model-wrong-metric', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-other', '2026-10-01', '2026-12-01', 1, 4, 0, 0)$$,
+            input_sql => $$INSERT INTO rated_usage_groups VALUES ('billing-model-wrong-metric', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-other', '2026-10-01', '2026-12-01', 1, 4, 0)$$,
             want_sqlstate => '23503');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Duplicate rounding group',
-            input_sql => $$INSERT INTO rated_usage_groups SELECT 'billing-model-duplicate-group', customer_id, price_version_id, metric, usage_month, billing_month, total_units, exact_charge_microcents, booked_charge_cents, allocated_credit_microcents FROM rated_usage_groups WHERE group_id = 'billing-model-acme-oct'$$,
+            input_sql => $$INSERT INTO rated_usage_groups SELECT 'billing-model-duplicate-group', customer_id, price_version_id, metric, usage_month, billing_month, total_units, exact_charge_microcents, allocated_credit_microcents FROM rated_usage_groups WHERE group_id = 'billing-model-acme-oct'$$,
             want_sqlstate => '23505');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Changing group ownership',
@@ -298,11 +306,11 @@ BEGIN
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Month must start on day one',
-            input_sql => $$INSERT INTO rated_usage_groups VALUES ('billing-model-bad-month', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu', '2026-10-02', '2026-11-01', 1, 4, 0, 0)$$,
+            input_sql => $$INSERT INTO rated_usage_groups VALUES ('billing-model-bad-month', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu', '2026-10-02', '2026-11-01', 1, 4, 0)$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Billing before original usage month',
-            input_sql => $$INSERT INTO rated_usage_groups VALUES ('billing-model-earlier-month', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu', '2026-11-01', '2026-10-01', 1, 4, 0, 0)$$,
+            input_sql => $$INSERT INTO rated_usage_groups VALUES ('billing-model-earlier-month', 'billing-model-acme', 'billing-model-acme-price', 'billing-model-cpu', '2026-11-01', '2026-10-01', 1, 4, 0)$$,
             want_sqlstate => '23514');
     PERFORM pg_temp.assert_rejection(
             scenario => 'Non-finite month',

@@ -23,8 +23,8 @@ ALTER TABLE customer_billing_state
     USING credit_balance_cents::numeric * 1000000;
 ALTER TABLE customer_billing_state RENAME COLUMN credit_balance_cents TO credit_balance_microcents;
 
--- Migration 002's multi-column credit CHECK has this PostgreSQL-generated name.
-ALTER TABLE rated_usage_groups DROP CONSTRAINT rated_usage_groups_check;
+-- Replace the legacy cent check with exact allocation bounds after conversion.
+ALTER TABLE rated_usage_groups DROP CONSTRAINT rated_usage_groups_credit_cents_nonnegative;
 ALTER TABLE rated_usage_groups
     ALTER COLUMN allocated_credit_cents TYPE billing_microcents
     USING allocated_credit_cents::numeric * 1000000;
